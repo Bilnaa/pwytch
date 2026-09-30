@@ -3,7 +3,7 @@
 
 TEMPLATE := cookiecutter-fastapi
 
-.PHONY: init help
+.PHONY: init help main stream live-chat replay search bookmarks stats
 
 help:
 	@echo "Usage: make init name=<service-name>"
@@ -20,23 +20,23 @@ endif
 
 
 main:
-      uv run --directory main fastapi dev --port 8000
+	uv run --directory main fastapi dev --port 8000
 
 stream:
-      uv run --directory stream fastapi dev --port 8001
+	uv run --directory stream fastapi dev --port 8001
 
 live-chat:
-      uv run --directory live-chat fastapi dev --port 8002
+	uv run --directory live-chat fastapi dev --port 8002
 
 replay:
-      uv run --directory replay fastapi dev --port 8003
+	uv run --directory replay fastapi dev --port 8003
 
 search:
-      uv run --directory search fastapi dev --port 8004
+	uv run --directory search fastapi dev --port 8004
 
 bookmarks:
-      uv run --directory bookmarks fastapi dev --port 8005
+	uv run --directory bookmarks fastapi dev --port 8005
 
 stats:
-      uv run --directory stats fastapi dev --port 8006
+	uv run --directory stats fastapi dev --port 8006
 
