@@ -5,9 +5,45 @@
   </component>
   <component name="ChangeListManager">
     <list default="true" id="a8c6e718-5a90-4df9-bb34-9729693b758b" name="Changes" comment="">
+      <change afterPath="$PROJECT_DIR$/.gitignore" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/.idea/live-chat.iml" beforeDir="false" afterPath="$PROJECT_DIR$/.idea/live-chat.iml" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/.idea/main.iml" beforeDir="false" afterPath="$PROJECT_DIR$/.idea/main.iml" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/.idea/modules.xml" beforeDir="false" afterPath="$PROJECT_DIR$/.idea/modules.xml" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/.idea/workspace.xml" beforeDir="false" afterPath="$PROJECT_DIR$/.idea/workspace.xml" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/.idea/stream.iml" beforeDir="false" afterPath="$PROJECT_DIR$/.idea/stream.iml" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/.idea/vcs.xml" beforeDir="false" afterPath="$PROJECT_DIR$/.idea/vcs.xml" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/AGENTS.md" beforeDir="false" afterPath="$PROJECT_DIR$/AGENTS.md" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/CLAUDE.md" beforeDir="false" afterPath="$PROJECT_DIR$/CLAUDE.md" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/Makefile" beforeDir="false" afterPath="$PROJECT_DIR$/Makefile" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/cookiecutter-fastapi/cookiecutter.json" beforeDir="false" afterPath="$PROJECT_DIR$/cookiecutter-fastapi/cookiecutter.json" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/cookiecutter-fastapi/hooks/post_gen_project.py" beforeDir="false" afterPath="$PROJECT_DIR$/cookiecutter-fastapi/hooks/post_gen_project.py" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/cookiecutter-fastapi/{{cookiecutter.service_name}}/.gitignore" beforeDir="false" afterPath="$PROJECT_DIR$/cookiecutter-fastapi/{{cookiecutter.service_name}}/.gitignore" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/cookiecutter-fastapi/{{cookiecutter.service_name}}/Dockerfile" beforeDir="false" afterPath="$PROJECT_DIR$/cookiecutter-fastapi/{{cookiecutter.service_name}}/Dockerfile" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/cookiecutter-fastapi/{{cookiecutter.service_name}}/README.md" beforeDir="false" afterPath="$PROJECT_DIR$/cookiecutter-fastapi/{{cookiecutter.service_name}}/README.md" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/cookiecutter-fastapi/{{cookiecutter.service_name}}/app/main.py" beforeDir="false" afterPath="$PROJECT_DIR$/cookiecutter-fastapi/{{cookiecutter.service_name}}/app/main.py" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/cookiecutter-fastapi/{{cookiecutter.service_name}}/app/routers/health.py" beforeDir="false" afterPath="$PROJECT_DIR$/cookiecutter-fastapi/{{cookiecutter.service_name}}/app/routers/health.py" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/cookiecutter-fastapi/{{cookiecutter.service_name}}/tests/test_health.py" beforeDir="false" afterPath="$PROJECT_DIR$/cookiecutter-fastapi/{{cookiecutter.service_name}}/tests/test_health.py" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/live-chat/.gitignore" beforeDir="false" afterPath="$PROJECT_DIR$/live-chat/.gitignore" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/live-chat/Dockerfile" beforeDir="false" afterPath="$PROJECT_DIR$/live-chat/Dockerfile" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/live-chat/README.md" beforeDir="false" afterPath="$PROJECT_DIR$/live-chat/README.md" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/live-chat/app/main.py" beforeDir="false" afterPath="$PROJECT_DIR$/live-chat/app/main.py" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/live-chat/app/routers/health.py" beforeDir="false" afterPath="$PROJECT_DIR$/live-chat/app/routers/health.py" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/live-chat/tests/test_health.py" beforeDir="false" afterPath="$PROJECT_DIR$/live-chat/tests/test_health.py" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/main/.gitignore" beforeDir="false" afterPath="$PROJECT_DIR$/main/.gitignore" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/main/Dockerfile" beforeDir="false" afterPath="$PROJECT_DIR$/main/Dockerfile" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/main/README.md" beforeDir="false" afterPath="$PROJECT_DIR$/main/README.md" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/main/app/main.py" beforeDir="false" afterPath="$PROJECT_DIR$/main/app/main.py" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/main/app/routers/health.py" beforeDir="false" afterPath="$PROJECT_DIR$/main/app/routers/health.py" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/main/pyproject.toml" beforeDir="false" afterPath="$PROJECT_DIR$/main/pyproject.toml" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/main/tests/test_health.py" beforeDir="false" afterPath="$PROJECT_DIR$/main/tests/test_health.py" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/main/uv.lock" beforeDir="false" afterPath="$PROJECT_DIR$/main/uv.lock" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/stream/.gitignore" beforeDir="false" afterPath="$PROJECT_DIR$/stream/.gitignore" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/stream/Dockerfile" beforeDir="false" afterPath="$PROJECT_DIR$/stream/Dockerfile" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/stream/README.md" beforeDir="false" afterPath="$PROJECT_DIR$/stream/README.md" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/stream/app/main.py" beforeDir="false" afterPath="$PROJECT_DIR$/stream/app/main.py" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/stream/app/routers/health.py" beforeDir="false" afterPath="$PROJECT_DIR$/stream/app/routers/health.py" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/stream/pyproject.toml" beforeDir="false" afterPath="$PROJECT_DIR$/stream/pyproject.toml" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/stream/tests/test_health.py" beforeDir="false" afterPath="$PROJECT_DIR$/stream/tests/test_health.py" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/stream/uv.lock" beforeDir="false" afterPath="$PROJECT_DIR$/stream/uv.lock" afterDir="false" />
     </list>
     <option name="SHOW_DIALOG" value="false" />
     <option name="HIGHLIGHT_CONFLICTS" value="true" />
@@ -33,23 +69,23 @@
     <option name="hideEmptyMiddlePackages" value="true" />
     <option name="showLibraryContents" value="true" />
   </component>
-  <component name="PropertiesComponent">{
-  &quot;keyToString&quot;: {
-    &quot;ModuleVcsDetector.initialDetectionPerformed&quot;: &quot;true&quot;,
-    &quot;RunOnceActivity.ShowReadmeOnStart&quot;: &quot;true&quot;,
-    &quot;RunOnceActivity.git.unshallow&quot;: &quot;true&quot;,
-    &quot;RunOnceActivity.typescript.service.memoryLimit.init&quot;: &quot;true&quot;,
-    &quot;codeWithMe.voiceChat.enabledByDefault&quot;: &quot;false&quot;,
-    &quot;git-widget-placeholder&quot;: &quot;microservice/live-chat&quot;,
-    &quot;last_opened_file_path&quot;: &quot;C:/Users/XIV/Desktop/Programmation/Projets/Python/Micro-Services/Pwytch/26-27-m2-lead-dev-microservices-group-01&quot;,
-    &quot;node.js.detected.package.eslint&quot;: &quot;true&quot;,
-    &quot;node.js.detected.package.tslint&quot;: &quot;true&quot;,
-    &quot;node.js.selected.package.eslint&quot;: &quot;(autodetect)&quot;,
-    &quot;node.js.selected.package.tslint&quot;: &quot;(autodetect)&quot;,
-    &quot;nodejs_package_manager_path&quot;: &quot;npm&quot;,
-    &quot;python.packages.toolwindow.project.migrated.to.right.top.v2&quot;: &quot;true&quot;
+  <component name="PropertiesComponent"><![CDATA[{
+  "keyToString": {
+    "ModuleVcsDetector.initialDetectionPerformed": "true",
+    "RunOnceActivity.ShowReadmeOnStart": "true",
+    "RunOnceActivity.git.unshallow": "true",
+    "RunOnceActivity.typescript.service.memoryLimit.init": "true",
+    "codeWithMe.voiceChat.enabledByDefault": "false",
+    "git-widget-placeholder": "microservice/live-chat",
+    "last_opened_file_path": "//wsl.localhost/Ubuntu/home/sacha/26-27-m2-lead-dev-microservices-group-01",
+    "node.js.detected.package.eslint": "true",
+    "node.js.detected.package.tslint": "true",
+    "node.js.selected.package.eslint": "(autodetect)",
+    "node.js.selected.package.tslint": "(autodetect)",
+    "nodejs_package_manager_path": "npm",
+    "python.packages.toolwindow.project.migrated.to.right.top.v2": "true"
   }
-}</component>
+}]]></component>
   <component name="SharedIndexes">
     <attachedChunks>
       <set>
@@ -66,6 +102,7 @@
       <updated>1790775242278</updated>
       <workItem from="1790775243594" duration="2118000" />
       <workItem from="1790779326173" duration="607000" />
+      <workItem from="1790780051389" duration="434000" />
     </task>
     <servers />
   </component>
