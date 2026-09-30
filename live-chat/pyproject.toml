@@ -1,19 +1,13 @@
 [project]
 name = "live-chat"
 version = "0.1.0"
-description = "Chat temps réel par live en WebSocket"
-readme = "README.md"
-authors = [
-    { name = "Sacha", email = "sacha.harel@gmail.com" }
-]
-requires-python = ">=3.13"
+requires-python = ">=3.12"
 dependencies = [
     "fastapi[standard]>=0.142.2",
 ]
 
-[project.scripts]
-live-chat = "live_chat:main"
-
-[build-system]
-requires = ["uv_build>=0.12.19,<0.13.0"]
-build-backend = "uv_build"
+[dependency-groups]
+dev = [
+    "httpx>=0.28.1",
+    "pytest>=9.1.1",
+]
