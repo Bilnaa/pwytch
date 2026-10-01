@@ -1,3 +1,6 @@
 STREAM_STARTED = "stream/started"
 STREAM_ENDED = "stream/ended"
+CHAT_MESSAGE = "chat/message"
+SEARCH_HIT = "search/hit"
+BOOKMARK_DELETED = "bookmarks/deleted"
 PLAYER_EVENT = "player/event"

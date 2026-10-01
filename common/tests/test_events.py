@@ -1,61 +1,119 @@
-from datetime import datetime, timezone
-from uuid import UUID
+from datetime import datetime
 
 import pytest
+from common.events import PlayerEvent, StreamEnded, StreamStarted
 from pydantic import ValidationError
 
-from common.events import (
-    BaseEvent,
-    PlayerEvent,
-    StreamEnded,
-    StreamStarted,
-)
 
-NOW = datetime(2026, 10, 1, 18, 0, tzinfo=timezone.utc)
-
-EVENTS = [
-    StreamStarted(
-        stream_id=1, streamer_id=2, streamer_name="alice", title="Speedrun", game="Celeste",
-        started_at=NOW,
-    ),
-    StreamEnded(stream_id=1, streamer_id=2, ended_at=NOW, duration_s=12.5, reason="normal"),
-    PlayerEvent(stream_id=1, event_type="play", user_id=None, occurred_at=NOW),
-]
+def make_stream_started_payload(**overrides):
+    base = {
+        "event_id": "0b6f8c1e-4a52-4f0e-9d3b-2f1a7c9e5d10",
+        "stream_id": 42,
+        "streamer_id": 3,
+        "streamer_name": "Zerator",
+        "title": "Speedrun any%",
+        "game": "Celeste",
+        "started_at": "2026-10-01T18:00:00Z",
+    }
+    return {**base, **overrides}
 
 
-@pytest.mark.parametrize("event", EVENTS, ids=lambda event: type(event).__name__)
-def test_event_survives_a_json_round_trip(event):
-    restored = type(event).model_validate_json(event.model_dump_json())
+def make_stream_ended_payload(**overrides):
+    base = {
+        "event_id": "5c2d9a7e-1b3f-4e8a-a6c4-8d0e2f4b6a19",
+        "stream_id": 42,
+        "streamer_id": 3,
+        "ended_at": "2026-10-01T20:00:00Z",
+        "duration_s": 7200,
+        "reason": "normal",
+    }
+    return {**base, **overrides}
 
-    assert restored == event
+
+def test_stream_started_is_built_from_valid_payload():
+    event = StreamStarted.model_validate(make_stream_started_payload())
+
+    assert event.streamer_name == "Zerator"
+    assert isinstance(event.started_at, datetime)
 
 
-def test_event_id_is_generated_and_unique():
-    first = EVENTS[0]
-    second = first.model_copy(update={"event_id": BaseEvent().event_id})
+def test_stream_started_round_trips_through_json():
+    event = StreamStarted.model_validate(make_stream_started_payload())
 
-    assert isinstance(first.event_id, UUID)
+    assert StreamStarted.model_validate_json(event.model_dump_json()) == event
+
+
+def test_version_defaults_to_one():
+    event = StreamStarted.model_validate(make_stream_started_payload())
+
+    assert event.version == 1
+
+
+def test_stream_started_without_streamer_name_is_rejected():
+    payload = make_stream_started_payload()
+    del payload["streamer_name"]
+
+    with pytest.raises(ValidationError):
+        StreamStarted.model_validate(payload)
+
+
+def test_stream_ended_is_built_from_valid_payload():
+    event = StreamEnded.model_validate(make_stream_ended_payload())
+
+    assert event.duration_s == 7200
+    assert event.reason == "normal"
+
+
+def test_stream_ended_accepts_fractional_duration():
+    event = StreamEnded.model_validate(make_stream_ended_payload(duration_s=12.5))
+
+    assert event.duration_s == 12.5
+
+
+def test_stream_ended_with_unknown_reason_is_rejected():
+    with pytest.raises(ValidationError):
+        StreamEnded.model_validate(make_stream_ended_payload(reason="crash"))
+
+
+def test_event_with_invalid_event_id_is_rejected():
+    with pytest.raises(ValidationError):
+        StreamStarted.model_validate(
+            make_stream_started_payload(event_id="pas-un-uuid")
+        )
+
+
+def test_event_id_is_generated_when_missing():
+    payload = make_stream_ended_payload()
+    del payload["event_id"]
+
+    first = StreamEnded.model_validate(payload)
+    second = StreamEnded.model_validate(payload)
+
     assert first.event_id != second.event_id
 
 
-def test_event_id_is_serialized_as_a_string():
-    assert isinstance(EVENTS[0].model_dump(mode="json")["event_id"], str)
+def make_player_event_payload(**overrides):
+    base = {
+        "stream_id": 42,
+        "event_type": "play",
+        "user_id": None,
+        "occurred_at": "2026-10-01T18:05:00Z",
+    }
+    return {**base, **overrides}
 
 
-def test_version_defaults_to_1():
-    assert EVENTS[0].version == 1
+def test_player_event_accepts_an_anonymous_viewer():
+    event = PlayerEvent.model_validate(make_player_event_payload())
+
+    assert event.user_id is None
 
 
-def test_stream_ended_rejects_an_unknown_reason():
+def test_player_event_round_trips_through_json():
+    event = PlayerEvent.model_validate(make_player_event_payload(user_id=3))
+
+    assert PlayerEvent.model_validate_json(event.model_dump_json()) == event
+
+
+def test_player_event_with_unknown_type_is_rejected():
     with pytest.raises(ValidationError):
-        StreamEnded(stream_id=1, streamer_id=2, ended_at=NOW, duration_s=1, reason="crash")
-
-
-def test_player_event_rejects_an_unknown_type():
-    with pytest.raises(ValidationError):
-        PlayerEvent(stream_id=1, event_type="seek", user_id=1, occurred_at=NOW)
-
-
-def test_missing_field_is_rejected():
-    with pytest.raises(ValidationError):
-        StreamStarted.model_validate_json('{"stream_id": 1}')
+        PlayerEvent.model_validate(make_player_event_payload(event_type="seek"))

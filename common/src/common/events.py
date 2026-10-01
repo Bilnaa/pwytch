@@ -8,7 +8,6 @@ from pydantic import BaseModel, Field
 class BaseEvent(BaseModel):
     # consumers drop an event whose event_id they already saw (QoS 1 can deliver twice)
     event_id: UUID = Field(default_factory=uuid4)
-    # bumped when the schema of an event changes, so consumers can tell the formats apart
     version: int = 1
 
 
