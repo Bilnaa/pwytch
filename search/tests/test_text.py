@@ -1,5 +1,5 @@
 import pytest
-from app.text import normalize
+from app.helpers.text import normalize
 
 
 @pytest.mark.parametrize(

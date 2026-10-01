@@ -2,7 +2,6 @@ import unicodedata
 
 
 def normalize(text: str) -> str:
-
     text = text.casefold().strip()
     text = "".join(
         charactere
