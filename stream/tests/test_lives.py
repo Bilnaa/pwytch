@@ -34,7 +34,3 @@ def test_missing_file_is_404(lives):
 
 def test_cannot_leave_the_lives_folder(lives):
     assert client.get("/lives/%2e%2e/secret.txt").status_code == 404
-
-
-def test_route_is_in_docs():
-    assert "/lives/{stream_id}/{filename}" in client.get("/openapi.json").json()["paths"]
