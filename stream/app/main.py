@@ -3,7 +3,7 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI
 
 from app import hls
-from app.routers import health, ingest
+from app.routers import health, ingest, lives
 
 
 @asynccontextmanager
@@ -16,6 +16,7 @@ app = FastAPI(title="stream", lifespan=lifespan)
 
 app.include_router(health.router)
 app.include_router(ingest.router)
+app.include_router(lives.router)
 
 
 @app.get("/")
