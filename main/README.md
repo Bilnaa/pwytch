@@ -46,6 +46,7 @@ Les tables sont créées au démarrage (`Base.metadata.create_all`) si elles n'e
 | `/streams`       | HTTP POST | Crée une session de live (protégé)    |
 | `/streams`       | HTTP GET  | Liste les sessions, filtrable par statut |
 | `/streams/{id}`  | HTTP GET  | Renvoie le détail d'une session       |
+| `/streams/{stream_id}/ingest` | WebSocket | Reçoit le flux vidéo du streamer et le relaie à `stream` (jeton en query) |
 | `/lives/{stream_id}/{filename}` | HTTP GET | Relaie la playlist ou un segment HLS d'un live depuis `stream` |
 
 La doc interactive est sur `http://localhost:8000/docs`.
@@ -157,6 +158,28 @@ Une session `created` depuis plus de 10 minutes sans ingestion est passée en `c
 `GET /streams/{id}` renvoie la session, ou 404.
 
 Le passage en `live` et en `ended` est prêt dans `app/services/streams.py` (`mark_started`, `mark_ended`) mais rien ne l'appelle encore : il faudra les brancher sur `stream/started` et `stream/ended` quand #11 (MQTT) sera faite.
+### `WS /streams/{stream_id}/ingest?token=<jwt>`
+
+Le navigateur du streamer envoie des morceaux WebM en binaire. `main` vérifie le jeton et que le streamer est bien le propriétaire de la session, puis ouvre une WebSocket vers `stream` (`/streams/{stream_id}/ingest`, avec `streamer_id`, `streamer_name`, `title` et `game` en query) et recopie chaque morceau sans le modifier.
+
+```
+streamer --WebSocket--> main (auth) --WebSocket--> stream --stdin--> ffmpeg
+```
+
+Les refus sont envoyés après l'ouverture de la connexion : avant, le navigateur ne recevrait qu'un 403 HTTP et perdrait le code.
+
+| Code de fermeture | Cas |
+|-------------------|-----|
+| 4401 | Jeton absent ou invalide (un jeton absent de l'URL est refusé par un 403 HTTP) |
+| 4403 | La session appartient à un autre streamer |
+| 4404 | La session n'existe pas |
+| 4409 | La session est `ended` ou `cancelled` |
+| 1011 | `stream` est injoignable, a coupé la connexion ou l'a refusée (ex. `Stream already live`). La raison est reprise dans le message de fermeture |
+
+Quand le streamer se déconnecte, la connexion vers `stream` est fermée proprement. Une session `live` peut être rouverte : c'est la reconnexion du streamer pendant la période de grâce de `stream`.
+
+`main` n'écrit pas encore le statut `live` : tant que #11 (MQTT) n'est pas faite, rien ne passe la session de `created` à `live`. Après un `1013` envoyé par `stream` (rien reçu pendant `SIGNAL_TIMEOUT_SECONDS`), le streamer reçoit un `1011` et doit rouvrir la connexion.
+
 ### `GET /lives/{stream_id}/{filename}`
 
 `main` appelle `stream` et renvoie sa réponse telle quelle, pour que le player hls.js du front ne contacte jamais `stream` directement. Pas besoin d'être connecté pour regarder.
