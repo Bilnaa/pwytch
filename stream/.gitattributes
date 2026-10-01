@@ -1,0 +1,2 @@
+# videos are never diffed or merged
+*.mp4 binary
