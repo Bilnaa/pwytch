@@ -1,0 +1,60 @@
+from datetime import datetime
+from typing import Literal
+from uuid import UUID, uuid4
+
+from pydantic import BaseModel, Field
+
+
+class BaseEvent(BaseModel):
+    # consumers drop an event whose event_id they already saw (QoS 1 can deliver twice)
+    event_id: UUID = Field(default_factory=uuid4)
+    # bumped when the schema of an event changes, so consumers can tell the formats apart
+    version: int = 1
+
+
+class StreamStarted(BaseEvent):
+    stream_id: int
+    streamer_id: int
+    streamer_name: str
+    title: str
+    game: str
+    started_at: datetime
+
+
+class StreamEnded(BaseEvent):
+    stream_id: int
+    streamer_id: int
+    ended_at: datetime
+    duration_s: float
+    reason: Literal["normal", "error"]
+
+
+class ChatMessage(BaseEvent):
+    message_id: str
+    stream_id: int
+    author_id: int
+    author_name: str
+    content: str
+    sent_at: datetime
+
+
+class SearchHit(BaseEvent):
+    item_type: Literal["streamer", "message"]
+    item_id: str
+    query: str
+    hit_at: datetime
+
+
+class BookmarkDeleted(BaseEvent):
+    bookmark_id: int
+    user_id: int
+    target_type: str
+    target_id: str
+    deleted_at: datetime
+
+
+class PlayerEvent(BaseEvent):
+    stream_id: int
+    event_type: Literal["play", "pause", "stop"]
+    user_id: int | None
+    occurred_at: datetime
