@@ -42,9 +42,15 @@ async def ingest(stream_id: int, websocket: WebSocket):
     try:
         await websocket.accept()
         while True:
-            await pipeline.write(await websocket.receive_bytes())
+            # a frozen streamer or a dead main keeps the connection open but sends nothing
+            chunk = await asyncio.wait_for(
+                websocket.receive_bytes(), settings.signal_timeout_seconds
+            )
+            await pipeline.write(chunk)
     except WebSocketDisconnect:
         pass
+    except TimeoutError:
+        await websocket.close(code=status.WS_1013_TRY_AGAIN_LATER, reason="No data received")
     except HlsError:
         await websocket.close(code=status.WS_1011_INTERNAL_ERROR, reason="Transcoding failed")
     finally:
