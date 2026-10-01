@@ -62,7 +62,9 @@ Le corps de la requête est lu au fur et à mesure et envoyé au même ffmpeg qu
 |-------|--------------------------------------------------------------------|
 | `204` | Tout le corps a été envoyé à ffmpeg                                |
 | `409` | Même cas que le `1008` de la WebSocket (`Stream already live` ou `Stream id already used`) |
-| `500` | ffmpeg a planté. Le détail est dans les logs                       |
+| `500` | ffmpeg a planté pendant l'envoi. Le détail est dans les logs       |
+
+Un fichier que ffmpeg ne sait pas lire renvoie quand même `204` : ffmpeg attend la fin du corps pour abandonner, l'erreur n'apparaît que dans les logs. Si la playlist ne contient que l'écran « Signal lost », c'est ça.
 
 ### Coupure et reconnexion
 
