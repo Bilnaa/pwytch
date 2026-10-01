@@ -1,6 +1,6 @@
 from fastapi.testclient import TestClient
 
-from bookmarks.app.routers.main import app
+from bookmarks.app.main import app
 
 client = TestClient(app)
 

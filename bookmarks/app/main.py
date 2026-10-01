@@ -10,8 +10,12 @@ app = FastAPI(title="bookmarks")
 
 app.include_router(health.router)
 
+from fastapi import APIRouter
 
-@app.patch("/bookmarks/{bookmark_id}")
+router = APIRouter(tags=["health"])
+
+
+@router.patch("/bookmarks/{bookmark_id}")
 async def update_bookmarks(
     bookmark_id: int, 
     bookmark: BookmarkUpdate,
@@ -19,10 +23,10 @@ async def update_bookmarks(
 ) -> dict:
     pass
 
-@app.post("/bookmarks")
+@router.post("/bookmarks")
 async def create_bookmarks(bookmark: BookmarkCreate) -> dict:
     pass
 
-@app.delete("/bookmarks/{bookmark_id}")
+@router.delete("/bookmarks/{bookmark_id}")
 async def delete_bookmarks(bookmark_id: int, bookmark: BookmarkUpdate) -> dict:
     pass
