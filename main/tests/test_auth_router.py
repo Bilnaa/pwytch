@@ -96,7 +96,8 @@ def test_login_ignores_username_case(client):
 
 
 @pytest.mark.parametrize(
-    ("username", "password"), [("alice", "wrong-pass"), ("bob", "s3cret-pass")]
+    ("username", "password"),
+    [("alice", "wrong-pass"), ("bob", "s3cret-pass"), ("ali\x00ce", "s3cret-pass")],
 )
 def test_login_with_bad_credentials_returns_401(client, username, password):
     client.post("/auth/register", json={"username": "alice", "password": "s3cret-pass"})

@@ -113,6 +113,17 @@ def test_authenticate_rejects_wrong_password(db_session):
         authenticate(db_session, "alice", "wrong-pass")
 
 
+@pytest.mark.parametrize("username", ["ali\x00ce", "alice-doe", "al", "a" * 31])
+def test_authenticate_rejects_invalid_username_without_querying_db(
+    db_session, username
+):
+    db_session.close()
+    db_session.bind = None  # any query would now fail
+
+    with pytest.raises(InvalidCredentialsError):
+        authenticate(db_session, username, "s3cret-pass")
+
+
 def test_authenticate_rejects_unknown_username(db_session):
     with pytest.raises(InvalidCredentialsError):
         authenticate(db_session, "bob", "s3cret-pass")
@@ -153,10 +164,24 @@ def test_get_user_from_token_rejects_expired_token(db_session):
         get_user_from_token(db_session, token)
 
 
+def test_get_user_from_token_rejects_token_without_exp(db_session):
+    register(db_session, "alice", "s3cret-pass")
+    token = jwt.encode(
+        {"sub": "alice"},
+        auth_settings.jwt_secret_key,
+        algorithm=auth_settings.jwt_algorithm,
+    )
+
+    with pytest.raises(InvalidCredentialsError):
+        get_user_from_token(db_session, token)
+
+
 def test_get_user_from_token_rejects_other_secret(db_session):
     register(db_session, "alice", "s3cret-pass")
     token = jwt.encode(
-        {"sub": "alice"}, "another-secret-key-at-least-32-bytes", algorithm="HS256"
+        {"sub": "alice", "exp": datetime.now(timezone.utc) + timedelta(minutes=1)},
+        "another-secret-key-at-least-32-bytes",
+        algorithm="HS256",
     )
 
     with pytest.raises(InvalidCredentialsError):

@@ -1,3 +1,4 @@
+import re
 from datetime import datetime, timedelta, timezone
 
 import jwt
@@ -9,6 +10,7 @@ from sqlalchemy.orm import Session
 
 from app.config import auth_settings
 from app.models import User
+from app.schemas.auth import USERNAME_PATTERN
 
 password_hash = PasswordHash.recommended()
 
@@ -57,7 +59,10 @@ def register(db: Session, username: str, password: str) -> User:
 
 
 def authenticate(db: Session, username: str, password: str) -> User:
-    user = db.scalar(select(User).where(User.username == username.lower()))
+    if re.fullmatch(USERNAME_PATTERN, username) is None:
+        user = None
+    else:
+        user = db.scalar(select(User).where(User.username == username.lower()))
     if user is None:
         verify_password(password, DUMMY_HASH)
         raise InvalidCredentialsError("Incorrect username or password")
@@ -79,14 +84,14 @@ def create_access_token(user: User) -> str:
 def get_user_from_token(db: Session, token: str) -> User:
     try:
         payload = jwt.decode(
-            token, auth_settings.jwt_secret_key, algorithms=[auth_settings.jwt_algorithm]
+            token,
+            auth_settings.jwt_secret_key,
+            algorithms=[auth_settings.jwt_algorithm],
+            options={"require": ["exp", "sub"]},
         )
     except InvalidTokenError as exc:
         raise InvalidCredentialsError("Could not validate credentials") from exc
-    username = payload.get("sub")
-    if username is None:
-        raise InvalidCredentialsError("Could not validate credentials")
-    user = db.scalar(select(User).where(User.username == username))
+    user = db.scalar(select(User).where(User.username == payload["sub"]))
     if user is None:
         raise InvalidCredentialsError("Could not validate credentials")
     return user

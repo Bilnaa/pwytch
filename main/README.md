@@ -87,6 +87,8 @@ Réponses :
 | `401` | `username` inconnu ou mauvais mot de passe (`Incorrect username or password`), avec l'en-tête `WWW-Authenticate: Bearer` |
 | `422` | Champ manquant, ou corps envoyé en JSON au lieu d'un formulaire       |
 
+Un `username` qui ne respecte pas les règles de l'inscription (longueur, caractères autorisés) ne peut correspondre à aucun compte : il reçoit directement `401` sans que la base soit interrogée. Sans ça, un caractère que PostgreSQL refuse (octet NUL, `%00`) provoquerait une `500`.
+
 Le message d'erreur est le même que le compte existe ou non. Si le `username` est inconnu, on vérifie quand même le mot de passe contre un hash factice (`DUMMY_HASH`) pour que la réponse prenne le même temps : on ne peut pas deviner les pseudos existants en mesurant le temps de réponse.
 
 Le jeton est un JWT signé avec `JWT_SECRET_KEY` (PyJWT, `HS256` par défaut). Son contenu :
@@ -95,6 +97,8 @@ Le jeton est un JWT signé avec `JWT_SECRET_KEY` (PyJWT, `HS256` par défaut). S
 |-------|-----------------------------------------------------------------|
 | `sub` | `username` du compte (en minuscules)                            |
 | `exp` | Date d'expiration, `ACCESS_TOKEN_EXPIRE_MINUTES` après la connexion |
+
+Les deux claims sont obligatoires : un jeton sans `exp` ou sans `sub` est refusé (`401`). Sans ça, PyJWT ne vérifie `exp` que s'il est présent, et un jeton sans `exp` n'expirerait jamais.
 
 Il n'est pas chiffré (n'importe qui peut lire son contenu), seulement signé : il ne contient donc rien de secret.
 

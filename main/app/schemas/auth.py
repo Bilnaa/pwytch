@@ -1,9 +1,11 @@
 from pydantic import BaseModel, ConfigDict, Field
 
+USERNAME_PATTERN = r"^[a-zA-Z0-9_]{3,30}$"
+
 
 class RegisterRequest(BaseModel):
     username: str = Field(
-        min_length=3, max_length=30, pattern=r"^[a-zA-Z0-9_]+$", examples=["john_doe"]
+        min_length=3, max_length=30, pattern=USERNAME_PATTERN, examples=["john_doe"]
     )
     password: str = Field(min_length=8, examples=["MyPassword123"])
 
