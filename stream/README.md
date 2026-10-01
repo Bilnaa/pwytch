@@ -32,6 +32,7 @@ Les variables se mettent dans `stream/.env` (copier `.env.example`).
 |---------------------------------|-----------|---------------------------------------|
 | `/health`                       | HTTP GET  | Renvoie `{"status": "ok"}`            |
 | `/streams/{stream_id}/ingest`   | WebSocket | Reçoit le flux WebM d'un live         |
+| `/lives/{stream_id}/{filename}` | HTTP GET  | Sert la playlist et les segments HLS  |
 
 ### `/streams/{stream_id}/ingest`
 
@@ -48,6 +49,12 @@ Codes de fermeture envoyés par `stream` (à gérer côté `main`) :
 | `1012` | `stream` s'arrête ou redémarre. La playlist est quand même terminée     |
 
 Quand c'est le client qui ferme (fin normale du live, en général `1000`), `stream` n'envoie rien.
+
+### `/lives/{stream_id}/{filename}`
+
+Le dossier `lives/` est monté en statique (`StaticFiles`) : `GET /lives/42/index.m3u8` renvoie la playlist, `GET /lives/42/index0.ts` un segment, 404 si le fichier n'existe pas. Appelé par `main` (relais vers les viewers) et `replay` (export mp4), jamais par le front.
+
+Les fichiers d'un live terminé restent servis, c'est ce qu'utilise le replay. On ne peut pas sortir du dossier (`/lives/../.env` renvoie 404) et il n'y a pas de listing des dossiers.
 
 ## Sortie
 
@@ -97,6 +104,10 @@ Dans un second terminal, depuis `stream/` :
 
     # la regarder
     ffplay lives/42/index.m3u8
+
+    # ou la récupérer en HTTP, comme le fera main
+    curl -i http://localhost:8001/lives/42/index.m3u8
+    ffplay http://localhost:8001/lives/42/index.m3u8
 
 `uv run python scripts/fake_streamer.py --help` liste les options (`--url`, `--delay`).
 
