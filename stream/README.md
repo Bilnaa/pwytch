@@ -23,6 +23,8 @@ ou depuis `stream/` :
 | Variable    | Défaut  | Rôle                                                          |
 |-------------|---------|---------------------------------------------------------------|
 | `LIVES_DIR` | `lives` | Dossier de sortie HLS, relatif à `stream/`. Ignoré par Git.   |
+| `RECONNECT_SECONDS` | `30` | Temps laissé au streamer pour revenir après une coupure      |
+| `SIGNAL_TIMEOUT_SECONDS` | `10` | Sans aucune donnée pendant ce temps, le streamer est considéré comme coupé |
 
 Les variables se mettent dans `stream/.env` (copier `.env.example`).
 
@@ -32,22 +34,61 @@ Les variables se mettent dans `stream/.env` (copier `.env.example`).
 |---------------------------------|-----------|---------------------------------------|
 | `/health`                       | HTTP GET  | Renvoie `{"status": "ok"}`            |
 | `/streams/{stream_id}/ingest`   | WebSocket | Reçoit le flux WebM d'un live         |
+| `/streams/{stream_id}/ingest`   | HTTP POST | Pareil en HTTP, pour tester sans webcam |
+| `/lives/{stream_id}/{filename}` | HTTP GET  | Sert la playlist et les segments HLS  |
 
 ### `/streams/{stream_id}/ingest`
 
 Chaque message binaire reçu est écrit tel quel dans l'entrée de ffmpeg. Le premier morceau doit contenir l'en-tête WebM (c'est le cas du premier morceau produit par `MediaRecorder`).
 
-Pour terminer un live, le client ferme simplement la connexion : ffmpeg termine la playlist et le live est fini.
+Quand le client ferme la connexion, le live n'est pas fini tout de suite : les viewers voient l'écran « Signal lost » pendant `RECONNECT_SECONDS`, puis le live se termine (voir « Coupure et reconnexion »).
 
 Codes de fermeture envoyés par `stream` (à gérer côté `main`) :
 
 | Code   | Quand                                                                   |
 |--------|-------------------------------------------------------------------------|
-| `1008` | Un ingest est déjà en cours pour ce `stream_id`                         |
+| `1008` | Un ingest est déjà en cours pour ce `stream_id` (raison `Stream already live`) ou ce `stream_id` a déjà servi (raison `Stream id already used`) |
 | `1011` | ffmpeg a planté (flux invalide, etc.). Le détail est dans les logs      |
 | `1012` | `stream` s'arrête ou redémarre. La playlist est quand même terminée     |
+| `1013` | Aucune donnée reçue depuis `SIGNAL_TIMEOUT_SECONDS` (raison `No data received`). Traité comme une coupure : il faut se reconnecter sur le même `stream_id` |
 
 Quand c'est le client qui ferme (fin normale du live, en général `1000`), `stream` n'envoie rien.
+
+### `POST /streams/{stream_id}/ingest`
+
+Outil de dev : permet de simuler un streamer sans webcam, sans front et sans `main`. `main` ne l'expose jamais.
+
+Le corps de la requête est lu au fur et à mesure et envoyé au même ffmpeg que la WebSocket : même sortie HLS, même écran « Signal lost » à la fin, mêmes refus. ffmpeg détecte le format tout seul, on peut donc envoyer du MPEG-TS comme du WebM (voir « À la main »).
+
+| Code  | Quand                                                              |
+|-------|--------------------------------------------------------------------|
+| `204` | Tout le corps a été envoyé à ffmpeg                                |
+| `409` | Même cas que le `1008` de la WebSocket (`Stream already live` ou `Stream id already used`) |
+| `500` | ffmpeg a planté pendant l'envoi. Le détail est dans les logs       |
+
+Un fichier que ffmpeg ne sait pas lire renvoie quand même `204` : ffmpeg attend la fin du corps pour abandonner, l'erreur n'apparaît que dans les logs. Si la playlist ne contient que l'écran « Signal lost », c'est ça.
+
+### Coupure et reconnexion
+
+Comme sur Twitch, une coupure du streamer ne termine pas le live :
+
+1. Le streamer se déconnecte (fin du live ou coupure réseau), ou n'envoie plus rien pendant `SIGNAL_TIMEOUT_SECONDS` (streamer figé, `main` bloqué ou tombé sans fermer la connexion) : ffmpeg termine son segment, puis un second ffmpeg prend le relais et diffuse en boucle la vidéo « Signal lost » (`assets/slate.mp4`) dans la même playlist.
+2. Si le streamer se reconnecte sur le même `stream_id` avant `RECONNECT_SECONDS`, l'écran s'arrête et le live reprend, toujours dans la même playlist.
+3. Sinon, le live se termine : la playlist reçoit `#EXT-X-ENDLIST` et devient le replay.
+
+La vidéo est une boucle de 6 s en 1280x720. Pour la changer, il suffit de remplacer `assets/slate.mp4` (elle est lue en boucle, sa durée n'a pas d'importance).
+
+Chaque passage live / écran est séparé par un `#EXT-X-DISCONTINUITY` dans la playlist, ce qui permet au lecteur (hls.js) d'enchaîner sans couper. Tout est encodé en 1280x720 à 30 i/s, quelle que soit la webcam, pour que le replay s'exporte toujours avec `-c copy`.
+
+Un `stream_id` terminé ne sert plus jamais : toute connexion dessus est refusée (`1008`, raison `Stream id already used`), même après un redémarrage de `stream`, puisque son dossier `lives/{stream_id}/` existe. Les fichiers d'un live ne sont donc jamais écrasés.
+
+Pour `main` : un « Go live » après la fin d'un live doit créer une nouvelle session (nouveau `stream_id`, voir #37). Pendant les `RECONNECT_SECONDS` qui suivent une coupure, il faut au contraire se reconnecter sur le même `stream_id`.
+
+### `/lives/{stream_id}/{filename}`
+
+Le dossier `lives/` est monté en statique (`StaticFiles`) : `GET /lives/42/index.m3u8` renvoie la playlist, `GET /lives/42/index0.ts` un segment, 404 si le fichier n'existe pas. Appelé par `main` (relais vers les viewers) et `replay` (export mp4), jamais par le front.
+
+Les fichiers d'un live terminé restent servis, c'est ce qu'utilise le replay. On ne peut pas sortir du dossier (`/lives/../.env` renvoie 404) et il n'y a pas de listing des dossiers.
 
 ## Sortie
 
@@ -67,7 +108,7 @@ index0.ts
 index1.ts
 ```
 
-À la fin du live (déconnexion du streamer ou arrêt du service), ffmpeg ajoute `#EXT-X-ENDLIST` en dernière ligne. Un lecteur qui voit cette ligne sait que le live est terminé. Si ffmpeg plante, cette ligne peut manquer.
+À la fin du live (délai de reconnexion écoulé ou arrêt du service), `stream` ajoute `#EXT-X-ENDLIST` en dernière ligne. Un lecteur qui voit cette ligne sait que le live est terminé.
 
 ## Tester
 
@@ -92,17 +133,32 @@ Dans un second terminal, depuis `stream/` :
     # l'envoyer comme le ferait un streamer, sur le live 42
     uv run python scripts/fake_streamer.py sample.webm 42
 
-    # la playlist doit finir par #EXT-X-ENDLIST
+    # pendant 30 s la playlist reçoit l'écran « Signal lost », puis finit par #EXT-X-ENDLIST
     cat lives/42/index.m3u8
 
     # la regarder
     ffplay lives/42/index.m3u8
 
+    # ou la récupérer en HTTP, comme le fera main
+    curl -i http://localhost:8001/lives/42/index.m3u8
+    ffplay http://localhost:8001/lives/42/index.m3u8
+
 `uv run python scripts/fake_streamer.py --help` liste les options (`--url`, `--delay`).
+
+Sans le script, en HTTP (`-re` envoie la vidéo à sa vitesse réelle, comme un vrai live) :
+
+    # une mire de 20 s, sans fichier
+    ffmpeg -re -f lavfi -i testsrc=duration=20:size=640x360:rate=25 -f lavfi -i sine=frequency=440:duration=20 -c:v libx264 -c:a aac -f mpegts http://localhost:8001/streams/43/ingest
+
+    # ou une vraie vidéo
+    ffmpeg -re -i video.mp4 -c:v libx264 -c:a aac -f mpegts http://localhost:8001/streams/44/ingest
+
+Pour voir une connexion qui reste ouverte sans rien envoyer : lancer le service avec `SIGNAL_TIMEOUT_SECONDS=5` et envoyer la vidéo avec `--delay 8`. Le script affiche `connection closed by the server (1013)` et la playlist passe sur l'écran « Signal lost ».
+
+Pour voir une coupure puis une reprise : lancer le service avec `RECONNECT_SECONDS=15`, envoyer la vidéo, attendre quelques secondes et la renvoyer sur le même live. La playlist contient alors live, écran, live, écran, puis `#EXT-X-ENDLIST`.
 
 ## Limites
 
-- L'état est en mémoire : si `stream` redémarre, les lives en cours s'arrêtent (leur playlist est terminée proprement, mais le streamer doit se reconnecter).
+- L'état est en mémoire : si `stream` redémarre, les lives en cours (et ceux sur l'écran « Signal lost ») s'arrêtent. Leur playlist est terminée proprement, mais le streamer doit relancer un live avec un nouveau `stream_id`.
 - Un processus ffmpeg par live : le nombre de lives simultanés est limité par le CPU de la machine.
 - Latence de 15 à 20 s entre le streamer et les viewers, normale pour du HLS avec des segments de 4 s.
-- Reconnecter un streamer sur un `stream_id` déjà terminé relance un ffmpeg qui réécrit la playlist.

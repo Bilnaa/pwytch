@@ -1,36 +1,83 @@
-from fastapi import APIRouter, WebSocket, WebSocketDisconnect, status
+import asyncio
+
+from fastapi import APIRouter, HTTPException, Request, WebSocket, WebSocketDisconnect, status
+from starlette.requests import ClientDisconnect
 
 from app.config import settings
-from app.hls import HlsError, HlsPipeline
+from app.hls import HlsError
+from app.live import Live, lives
 
 router = APIRouter(tags=["ingest"])
 
-active_streams: dict[int, HlsPipeline] = {}
+
+class Refused(Exception):
+    pass
+
+
+def get_live(stream_id: int) -> Live:
+    live = lives.get(stream_id)
+    if live is None:
+        try:
+            return Live.create(stream_id, settings.lives_dir)
+        except FileExistsError:
+            raise Refused("Stream id already used")
+    if live.ending:
+        raise Refused("Stream id already used")
+    if live.connected:
+        raise Refused("Stream already live")
+    # the streamer comes back during the grace period, the live goes on in the same playlist
+    return live
 
 
 @router.websocket("/streams/{stream_id}/ingest")
 async def ingest(stream_id: int, websocket: WebSocket):
-    if stream_id in active_streams:
+    try:
+        live = get_live(stream_id)
+    except Refused as exc:
         await websocket.accept()
-        await websocket.close(code=status.WS_1008_POLICY_VIOLATION, reason="Stream already live")
+        await websocket.close(code=status.WS_1008_POLICY_VIOLATION, reason=str(exc))
         return
 
-    pipeline = HlsPipeline(stream_id, settings.lives_dir)
-    await pipeline.start()
-    active_streams[stream_id] = pipeline
+    pipeline = await live.connect()
     try:
         await websocket.accept()
         while True:
-            await pipeline.write(await websocket.receive_bytes())
+            # a frozen streamer or a dead main keeps the connection open but sends nothing
+            chunk = await asyncio.wait_for(
+                websocket.receive_bytes(), settings.signal_timeout_seconds
+            )
+            await pipeline.write(chunk)
     except WebSocketDisconnect:
         pass
+    except TimeoutError:
+        await websocket.close(code=status.WS_1013_TRY_AGAIN_LATER, reason="No data received")
     except HlsError:
         await websocket.close(code=status.WS_1011_INTERNAL_ERROR, reason="Transcoding failed")
     finally:
-        try:
-            await pipeline.close()
-        finally:
-            # TODO(#15, Bilnaa, 2026-09-30): if the handler is cancelled (abrupt disconnect),
-            # the stream_id is freed here before ffmpeg has finished writing #EXT-X-ENDLIST.
-            # A quick reconnect could then start a second ffmpeg on the same lives/{id}/ folder.
-            active_streams.pop(stream_id, None)
+        await asyncio.shield(live.disconnect(settings.reconnect_seconds))
+
+
+# dev only: same live and same ffmpeg as the WebSocket, main never exposes it
+@router.post(
+    "/streams/{stream_id}/ingest",
+    status_code=status.HTTP_204_NO_CONTENT,
+    summary="Send a video over HTTP instead of the WebSocket (dev only)",
+    responses={409: {"description": "Stream already live or stream id already used"}},
+)
+async def ingest_http(stream_id: int, request: Request):
+    try:
+        live = get_live(stream_id)
+    except Refused as exc:
+        raise HTTPException(status.HTTP_409_CONFLICT, str(exc))
+
+    pipeline = await live.connect()
+    try:
+        async for chunk in request.stream():
+            if chunk:
+                await pipeline.write(chunk)
+    except ClientDisconnect:
+        pass
+    except HlsError:
+        raise HTTPException(status.HTTP_500_INTERNAL_SERVER_ERROR, "Transcoding failed")
+    finally:
+        await asyncio.shield(live.disconnect(settings.reconnect_seconds))

@@ -1,9 +1,184 @@
 # main
 
-## Run
+Point d'entrée unique du front. `main` gère les comptes utilisateurs et sert de passerelle vers les autres services (`stream`, `live-chat`, `replay`, ...), qui ne sont jamais exposés directement. Les données sont stockées dans PostgreSQL.
 
-    uv run fastapi dev
+```
+front ──HTTP──> main ──> PostgreSQL (users)
+                  └────> stream, live-chat, replay, ...
+```
 
-## Test
+## Lancer
 
+PostgreSQL doit tourner. Depuis la racine du repo :
+
+    docker compose up -d
+
+Puis, depuis la racine :
+
+    make main
+
+ou depuis `main/` :
+
+    uv run fastapi dev --port 8000
+
+| Variable       | Défaut | Rôle                                                                              |
+|----------------|--------|-----------------------------------------------------------------------------------|
+| `DATABASE_URL` | aucun  | URL SQLAlchemy de la base, ex. `postgresql+psycopg://postgres:postgres@localhost:5432/microservices`. Obligatoire |
+| `JWT_SECRET_KEY` | aucun | Clé qui signe les jetons d'accès. Obligatoire. À générer avec `openssl rand -hex 32` |
+| `JWT_ALGORITHM` | `HS256` | Algorithme de signature des jetons |
+| `ACCESS_TOKEN_EXPIRE_MINUTES` | `30` | Durée de validité d'un jeton, en minutes |
+
+Les variables se mettent dans `main/.env` (copier `.env.example`). Les valeurs de `.env.example` correspondent à celles par défaut du `docker-compose.yml`. Remplacer `JWT_SECRET_KEY=change-me` par une vraie clé : quiconque la connaît peut fabriquer un jeton valide pour n'importe quel compte.
+
+Les tables sont créées au démarrage (`Base.metadata.create_all`) si elles n'existent pas. Il n'y a pas encore de migrations : une table existante n'est jamais modifiée, il faut la supprimer à la main si son modèle change.
+
+## Endpoints
+
+| Chemin           | Protocole | Rôle                                  |
+|------------------|-----------|---------------------------------------|
+| `/`              | HTTP GET  | Renvoie `{"service": "main"}`         |
+| `/health`        | HTTP GET  | Renvoie `{"status": "ok"}`            |
+| `/auth/register` | HTTP POST | Crée un compte utilisateur            |
+| `/auth/login`    | HTTP POST | Connecte un utilisateur, renvoie un jeton JWT |
+| `/auth/me`       | HTTP GET  | Renvoie l'utilisateur du jeton (protégé) |
+
+La doc interactive est sur `http://localhost:8000/docs`.
+
+### `POST /auth/register`
+
+Corps JSON :
+
+```json
+{"username": "John_Doe", "password": "MyPassword123"}
+```
+
+| Champ      | Contraintes                                                 |
+|------------|-------------------------------------------------------------|
+| `username` | 3 à 30 caractères, lettres, chiffres et `_` uniquement. Unique sans tenir compte de la casse |
+| `password` | 8 caractères minimum                                        |
+
+Réponses :
+
+| Code  | Quand                                                                 |
+|-------|-----------------------------------------------------------------------|
+| `201` | Compte créé. Renvoie un `UserResponse` : `{"id": 1, "username": "john_doe", "display_name": "John_Doe", "role": "user"}` |
+| `409` | Le `username` est déjà pris, quelle que soit la casse (`Username already registered`) |
+| `422` | Corps invalide (champ manquant, trop court, caractère interdit, ...)  |
+
+Le mot de passe n'est jamais stocké en clair : il est haché avec Argon2id via [pwdlib](https://frankie567.github.io/pwdlib/) (`PasswordHash.recommended()`, comme dans le [tuto sécurité de FastAPI](https://fastapi.tiangolo.com/tutorial/security/oauth2-jwt/#hash-and-verify-the-passwords)). La chaîne stockée contient l'algorithme, les paramètres, le sel et le hash (ex. `$argon2id$v=19$m=65536,t=3,p=4$<sel>$<hash>`) : si on change les paramètres, les anciens mots de passe restent vérifiables. Tout nouveau compte a le rôle `user`.
+
+La réponse est filtrée par le schéma `UserResponse` (`response_model`) : seuls ses champs sont renvoyés, jamais `hashed_password`.
+
+Le `username` est l'identifiant : il est enregistré en minuscules, donc `alice` et `Alice` sont le même compte (le second reçoit `409`). L'orthographe saisie est gardée dans `display_name`, c'est elle qu'on affiche (chat, profil, ...).
+
+### `POST /auth/login`
+
+Suit le [tuto OAuth2 + JWT de FastAPI](https://fastapi.tiangolo.com/tutorial/security/oauth2-jwt/). Le corps est un **formulaire** (`application/x-www-form-urlencoded`), pas du JSON, comme l'impose le flux OAuth2 « password » :
+
+    username=john_doe&password=MyPassword123
+
+Le `username` n'est pas sensible à la casse (`John_Doe` et `john_doe` se connectent au même compte).
+
+Réponses :
+
+| Code  | Quand                                                                 |
+|-------|-----------------------------------------------------------------------|
+| `200` | Identifiants valides. Renvoie `{"access_token": "<jwt>", "token_type": "bearer"}` |
+| `401` | `username` inconnu ou mauvais mot de passe (`Incorrect username or password`), avec l'en-tête `WWW-Authenticate: Bearer` |
+| `422` | Champ manquant, ou corps envoyé en JSON au lieu d'un formulaire       |
+
+Un `username` qui ne respecte pas les règles de l'inscription (longueur, caractères autorisés) ne peut correspondre à aucun compte : il reçoit directement `401` sans que la base soit interrogée. Sans ça, un caractère que PostgreSQL refuse (octet NUL, `%00`) provoquerait une `500`.
+
+Le message d'erreur est le même que le compte existe ou non. Si le `username` est inconnu, on vérifie quand même le mot de passe contre un hash factice (`DUMMY_HASH`) pour que la réponse prenne le même temps : on ne peut pas deviner les pseudos existants en mesurant le temps de réponse.
+
+Le jeton est un JWT signé avec `JWT_SECRET_KEY` (PyJWT, `HS256` par défaut). Son contenu :
+
+| Claim | Valeur                                                          |
+|-------|-----------------------------------------------------------------|
+| `sub` | `username` du compte (en minuscules)                            |
+| `exp` | Date d'expiration, `ACCESS_TOKEN_EXPIRE_MINUTES` après la connexion |
+
+Les deux claims sont obligatoires : un jeton sans `exp` ou sans `sub` est refusé (`401`). Sans ça, PyJWT ne vérifie `exp` que s'il est présent, et un jeton sans `exp` n'expirerait jamais.
+
+Il n'est pas chiffré (n'importe qui peut lire son contenu), seulement signé : il ne contient donc rien de secret.
+
+### `GET /auth/me`
+
+Route protégée : il faut envoyer le jeton dans l'en-tête `Authorization: Bearer <access_token>`.
+
+| Code  | Quand                                                                 |
+|-------|-----------------------------------------------------------------------|
+| `200` | Renvoie le `UserResponse` du compte connecté                          |
+| `401` | Jeton absent (`Not authenticated`), invalide, expiré, signé avec une autre clé, ou dont le compte n'existe plus (`Could not validate credentials`) |
+
+### Protéger une route
+
+La dépendance `get_current_user` (`app/dependencies.py`) lit le jeton, le vérifie et renvoie le `User` correspondant, ou répond `401`. Pour protéger une route :
+
+```python
+from app.dependencies import get_current_user
+
+@router.get("/quelque-chose")
+def quelque_chose(current_user: Annotated[User, Depends(get_current_user)]):
+    ...
+```
+
+Dans la doc interactive (`/docs`), le bouton **Authorize** permet de se connecter avec un `username` / `password` : Swagger appelle `/auth/login` et envoie ensuite le jeton sur les routes protégées.
+
+## Base de données
+
+Table `users` :
+
+| Colonne           | Type          | Notes                                  |
+|-------------------|---------------|----------------------------------------|
+| `id`              | int           | Clé primaire                           |
+| `username`        | varchar(30)   | En minuscules. Unique, indexé          |
+| `display_name`    | varchar(30)   | Pseudo tel que saisi à l'inscription   |
+| `hashed_password` | varchar(255)  | Hash Argon2id (format PHC, via pwdlib) |
+| `role`            | varchar(20)   | `user` par défaut                      |
+| `created_at`      | timestamptz   | Rempli par la base                     |
+| `updated_at`      | timestamptz   | Mis à jour par SQLAlchemy à chaque modification |
+
+## Tester
+
+### Tests automatiques
+
+    cd main
     uv run pytest
+
+Les tests utilisent une base SQLite en mémoire, recréée pour chaque test : ils n'ont pas besoin de PostgreSQL ni de `.env`.
+
+### À la main
+
+Avec le service lancé :
+
+    # créer un compte : username "john_doe", display_name "John_Doe"
+    curl -i -X POST http://localhost:8000/auth/register \
+      -H 'Content-Type: application/json' \
+      -d '{"username": "John_Doe", "password": "MyPassword123"}'
+
+    # le même pseudo, même avec une autre casse, renvoie 409
+    curl -i -X POST http://localhost:8000/auth/register \
+      -H 'Content-Type: application/json' \
+      -d '{"username": "john_doe", "password": "MyPassword123"}'
+
+    # se connecter (formulaire, pas JSON) et garder le jeton
+    TOKEN=$(curl -s -X POST http://localhost:8000/auth/login \
+      -d 'username=john_doe&password=MyPassword123' | jq -r .access_token)
+
+    # route protégée : 200 avec le jeton, 401 sans
+    curl -i http://localhost:8000/auth/me -H "Authorization: Bearer $TOKEN"
+    curl -i http://localhost:8000/auth/me
+
+    # mauvais mot de passe : 401
+    curl -i -X POST http://localhost:8000/auth/login \
+      -d 'username=john_doe&password=wrong-password'
+
+## Limites
+
+- Pas de refresh token ni de déconnexion : un jeton reste valide jusqu'à son expiration, même après un « logout » côté front. Le front doit se reconnecter quand il reçoit un `401`.
+- Pas de limite sur le nombre de tentatives de connexion (pas de protection contre le brute force).
+- Le rôle n'est pas encore utilisé pour restreindre l'accès aux routes.
+- Pas de migrations : les tables sont créées au démarrage, un changement de modèle demande de recréer la table.
+- Si PostgreSQL n'est pas prêt quand l'API démarre, le `create_all` échoue et l'API plante : il faut la relancer.
+- Le relais vers les autres services n'est pas encore implémenté.
