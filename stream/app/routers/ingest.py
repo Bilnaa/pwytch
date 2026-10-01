@@ -1,28 +1,37 @@
+import asyncio
+
 from fastapi import APIRouter, WebSocket, WebSocketDisconnect, status
 
 from app.config import settings
-from app.hls import HlsError, HlsPipeline
+from app.hls import HlsError
+from app.live import Live, lives
 
 router = APIRouter(tags=["ingest"])
 
-active_streams: dict[int, HlsPipeline] = {}
+
+async def refuse(websocket: WebSocket, reason: str) -> None:
+    await websocket.accept()
+    await websocket.close(code=status.WS_1008_POLICY_VIOLATION, reason=reason)
 
 
 @router.websocket("/streams/{stream_id}/ingest")
 async def ingest(stream_id: int, websocket: WebSocket):
-    if stream_id in active_streams:
-        await websocket.accept()
-        await websocket.close(code=status.WS_1008_POLICY_VIOLATION, reason="Stream already live")
+    live = lives.get(stream_id)
+    if live is None:
+        try:
+            live = Live.create(stream_id, settings.lives_dir)
+        except FileExistsError:
+            await refuse(websocket, "Stream id already used")
+            return
+    elif live.ending:
+        await refuse(websocket, "Stream id already used")
+        return
+    elif live.connected:
+        await refuse(websocket, "Stream already live")
         return
 
-    pipeline = HlsPipeline(stream_id, settings.lives_dir)
-    try:
-        await pipeline.start()
-    except FileExistsError:
-        await websocket.accept()
-        await websocket.close(code=status.WS_1008_POLICY_VIOLATION, reason="Stream id already used")
-        return
-    active_streams[stream_id] = pipeline
+    # if the streamer comes back during the grace period, the live goes on in the same playlist
+    pipeline = await live.connect()
     try:
         await websocket.accept()
         while True:
@@ -32,8 +41,4 @@ async def ingest(stream_id: int, websocket: WebSocket):
     except HlsError:
         await websocket.close(code=status.WS_1011_INTERNAL_ERROR, reason="Transcoding failed")
     finally:
-        try:
-            await pipeline.close()
-        finally:
-            # may run before ffmpeg is done (abrupt disconnect), the folder still blocks a reconnect
-            active_streams.pop(stream_id, None)
+        await asyncio.shield(live.disconnect(settings.reconnect_seconds))

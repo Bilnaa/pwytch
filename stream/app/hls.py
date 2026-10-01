@@ -5,9 +5,12 @@ from pathlib import Path
 logger = logging.getLogger(__name__)
 
 SEGMENT_SECONDS = 4
-
-# pipelines whose ffmpeg is still running, closed by close_all() on shutdown
-running: set["HlsPipeline"] = set()
+SLATE = Path(__file__).parent.parent / "assets" / "slate.mp4"
+# same size for the streamer and the slate, so the replay can still be exported with -c copy
+VIDEO_FILTER = (
+    "scale=1280:720:force_original_aspect_ratio=decrease,"
+    "pad=1280:720:(ow-iw)/2:(oh-ih)/2,setsar=1,fps=30"
+)
 
 
 class HlsError(Exception):
@@ -15,31 +18,33 @@ class HlsError(Exception):
 
 
 class HlsPipeline:
-    def __init__(self, stream_id: int, lives_dir: Path):
+    input_args = ["-i", "pipe:0"]
+
+    def __init__(self, stream_id: int, output_dir: Path):
         self.stream_id = stream_id
-        self.output_dir = lives_dir / str(stream_id)
+        self.output_dir = output_dir
         self.proc: asyncio.subprocess.Process | None = None
         self.stderr_task: asyncio.Task | None = None
         self.stderr_lines: list[str] = []
         self.closing: asyncio.Task | None = None
 
     async def start(self) -> None:
-        # raises FileExistsError if this stream_id was already used: its files are a replay now
-        self.output_dir.mkdir(parents=True)
         self.proc = await asyncio.create_subprocess_exec(
-            "ffmpeg", "-hide_banner", "-loglevel", "error", "-n",
-            "-i", "pipe:0",
-            "-c:v", "libx264", "-preset", "veryfast",
-            "-c:a", "aac",
+            "ffmpeg", "-hide_banner", "-loglevel", "error", "-y",
+            *self.input_args,
+            "-c:v", "libx264", "-preset", "veryfast", "-vf", VIDEO_FILTER,
+            "-c:a", "aac", "-ar", "48000", "-ac", "2",
             "-force_key_frames", f"expr:gte(t,n_forced*{SEGMENT_SECONDS})",
             "-hls_time", str(SEGMENT_SECONDS),
             "-hls_playlist_type", "event",
+            # each ffmpeg adds its segments after the previous ones (with a discontinuity),
+            # #EXT-X-ENDLIST is written by Live.end() once the live is really over
+            "-hls_flags", "append_list+omit_endlist",
             str(self.output_dir / "index.m3u8"),
             stdin=asyncio.subprocess.PIPE,
             stdout=asyncio.subprocess.DEVNULL,
             stderr=asyncio.subprocess.PIPE,
         )
-        running.add(self)
         # ffmpeg hangs if nobody reads stderr
         self.stderr_task = asyncio.create_task(self._read_stderr())
 
@@ -57,19 +62,21 @@ class HlsPipeline:
             raise HlsError("ffmpeg stopped reading its input") from exc
 
     async def close(self) -> int:
-        # shielded so a cancelled caller can't leave the playlist without #EXT-X-ENDLIST
+        # shielded so a cancelled caller can't leave a half written segment
         if self.closing is None:
             self.closing = asyncio.create_task(self._finish())
         return await asyncio.shield(self.closing)
 
-    async def _finish(self) -> int:
-        # closing stdin makes ffmpeg write #EXT-X-ENDLIST
+    async def _stop_input(self) -> None:
         if not self.proc.stdin.is_closing():
             self.proc.stdin.close()
         try:
             await self.proc.stdin.wait_closed()
         except (BrokenPipeError, ConnectionResetError):
             pass
+
+    async def _finish(self) -> int:
+        await self._stop_input()
         code = await self.proc.wait()
         await self.stderr_task
         if code != 0:
@@ -77,9 +84,18 @@ class HlsPipeline:
                 "ffmpeg for stream %s exited with code %s:\n%s",
                 self.stream_id, code, "\n".join(self.stderr_lines),
             )
-        running.discard(self)
         return code
 
 
-async def close_all() -> None:
-    await asyncio.gather(*(pipeline.close() for pipeline in list(running)))
+class SlatePipeline(HlsPipeline):
+    """Loops the "signal lost" video while the streamer is away."""
+
+    input_args = [
+        "-re", "-stream_loop", "-1", "-i", str(SLATE),
+        "-f", "lavfi", "-i", "anullsrc=r=48000:cl=stereo",
+    ]
+
+    async def _stop_input(self) -> None:
+        # "q" makes ffmpeg finish the current segment and exit with code 0
+        self.proc.stdin.write(b"q")
+        await super()._stop_input()

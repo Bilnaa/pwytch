@@ -2,14 +2,14 @@ from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
 
-from app import hls
+from app import live
 from app.routers import health, ingest
 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     yield
-    await hls.close_all()
+    await live.close_all()
 
 
 app = FastAPI(title="stream", lifespan=lifespan)
