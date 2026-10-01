@@ -91,6 +91,19 @@ def test_same_stream_twice_is_refused(procs):
     assert len(procs) == 1
 
 
+def test_reconnect_on_a_finished_live_is_refused(procs):
+    with TestClient(app) as client:
+        with client.websocket_connect("/streams/3/ingest") as ws:
+            ws.close()
+        wait_until_finished(3)
+        with client.websocket_connect("/streams/3/ingest") as ws:
+            with pytest.raises(WebSocketDisconnect) as exc:
+                ws.receive_bytes()
+
+    assert exc.value.code == 1008
+    assert len(procs) == 1  # no second ffmpeg writing over the replay
+
+
 def test_shutdown_mid_stream_still_closes_ffmpeg(procs):
     with TestClient(app) as client:
         with client.websocket_connect("/streams/9/ingest") as ws:
