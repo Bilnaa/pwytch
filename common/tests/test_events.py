@@ -1,7 +1,7 @@
 from datetime import datetime
 
 import pytest
-from common.events import StreamEnded, StreamStarted
+from common.events import PlayerEvent, StreamEnded, StreamStarted
 from pydantic import ValidationError
 
 
@@ -80,3 +80,40 @@ def test_event_with_invalid_event_id_is_rejected():
         StreamStarted.model_validate(
             make_stream_started_payload(event_id="pas-un-uuid")
         )
+
+
+def test_event_id_is_generated_when_missing():
+    payload = make_stream_ended_payload()
+    del payload["event_id"]
+
+    first = StreamEnded.model_validate(payload)
+    second = StreamEnded.model_validate(payload)
+
+    assert first.event_id != second.event_id
+
+
+def make_player_event_payload(**overrides):
+    base = {
+        "stream_id": 42,
+        "event_type": "play",
+        "user_id": None,
+        "occurred_at": "2026-10-01T18:05:00Z",
+    }
+    return {**base, **overrides}
+
+
+def test_player_event_accepts_an_anonymous_viewer():
+    event = PlayerEvent.model_validate(make_player_event_payload())
+
+    assert event.user_id is None
+
+
+def test_player_event_round_trips_through_json():
+    event = PlayerEvent.model_validate(make_player_event_payload(user_id=3))
+
+    assert PlayerEvent.model_validate_json(event.model_dump_json()) == event
+
+
+def test_player_event_with_unknown_type_is_rejected():
+    with pytest.raises(ValidationError):
+        PlayerEvent.model_validate(make_player_event_payload(event_type="seek"))
