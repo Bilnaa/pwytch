@@ -33,6 +33,7 @@ Les variables se mettent dans `stream/.env` (copier `.env.example`).
 |---------------------------------|-----------|---------------------------------------|
 | `/health`                       | HTTP GET  | Renvoie `{"status": "ok"}`            |
 | `/streams/{stream_id}/ingest`   | WebSocket | Reçoit le flux WebM d'un live         |
+| `/lives/{stream_id}/{filename}` | HTTP GET  | Sert la playlist et les segments HLS  |
 
 ### `/streams/{stream_id}/ingest`
 
@@ -65,6 +66,12 @@ Chaque passage live / écran est séparé par un `#EXT-X-DISCONTINUITY` dans la 
 Un `stream_id` terminé ne sert plus jamais : toute connexion dessus est refusée (`1008`, raison `Stream id already used`), même après un redémarrage de `stream`, puisque son dossier `lives/{stream_id}/` existe. Les fichiers d'un live ne sont donc jamais écrasés.
 
 Pour `main` : un « Go live » après la fin d'un live doit créer une nouvelle session (nouveau `stream_id`, voir #37). Pendant les `RECONNECT_SECONDS` qui suivent une coupure, il faut au contraire se reconnecter sur le même `stream_id`.
+
+### `/lives/{stream_id}/{filename}`
+
+Le dossier `lives/` est monté en statique (`StaticFiles`) : `GET /lives/42/index.m3u8` renvoie la playlist, `GET /lives/42/index0.ts` un segment, 404 si le fichier n'existe pas. Appelé par `main` (relais vers les viewers) et `replay` (export mp4), jamais par le front.
+
+Les fichiers d'un live terminé restent servis, c'est ce qu'utilise le replay. On ne peut pas sortir du dossier (`/lives/../.env` renvoie 404) et il n'y a pas de listing des dossiers.
 
 ## Sortie
 
@@ -114,6 +121,10 @@ Dans un second terminal, depuis `stream/` :
 
     # la regarder
     ffplay lives/42/index.m3u8
+
+    # ou la récupérer en HTTP, comme le fera main
+    curl -i http://localhost:8001/lives/42/index.m3u8
+    ffplay http://localhost:8001/lives/42/index.m3u8
 
 `uv run python scripts/fake_streamer.py --help` liste les options (`--url`, `--delay`).
 
