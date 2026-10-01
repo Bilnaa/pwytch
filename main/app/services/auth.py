@@ -1,13 +1,11 @@
-import hashlib
-import secrets
-
+from pwdlib import PasswordHash
 from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from app.models import User
 
-SCRYPT_PARAMS = {"n": 2**14, "r": 8, "p": 1}
+password_hash = PasswordHash.recommended()
 
 
 class UserAlreadyExistsError(Exception):
@@ -15,17 +13,26 @@ class UserAlreadyExistsError(Exception):
 
 
 def hash_password(password: str) -> str:
-    salt = secrets.token_bytes(16)
-    digest = hashlib.scrypt(password.encode(), salt=salt, **SCRYPT_PARAMS)
-    return f"{salt.hex()}${digest.hex()}"
+    return password_hash.hash(password)
+
+
+def verify_password(password: str, hashed_password: str) -> bool:
+    return password_hash.verify(password, hashed_password)
 
 
 def register(db: Session, username: str, password: str) -> User:
+    display_name = username
+    username = username.lower()
+
     existing = db.scalar(select(User).where(User.username == username))
     if existing is not None:
         raise UserAlreadyExistsError("Username already registered")
 
-    user = User(username=username, hashed_password=hash_password(password))
+    user = User(
+        username=username,
+        display_name=display_name,
+        hashed_password=hash_password(password),
+    )
     db.add(user)
     try:
         db.commit()
