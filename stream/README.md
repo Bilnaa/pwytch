@@ -33,6 +33,7 @@ Les variables se mettent dans `stream/.env` (copier `.env.example`).
 |---------------------------------|-----------|---------------------------------------|
 | `/health`                       | HTTP GET  | Renvoie `{"status": "ok"}`            |
 | `/streams/{stream_id}/ingest`   | WebSocket | Reçoit le flux WebM d'un live         |
+| `/streams/{stream_id}/ingest`   | HTTP POST | Pareil en HTTP, pour tester sans webcam |
 | `/lives/{stream_id}/{filename}` | HTTP GET  | Sert la playlist et les segments HLS  |
 
 ### `/streams/{stream_id}/ingest`
@@ -50,6 +51,18 @@ Codes de fermeture envoyés par `stream` (à gérer côté `main`) :
 | `1012` | `stream` s'arrête ou redémarre. La playlist est quand même terminée     |
 
 Quand c'est le client qui ferme (fin normale du live, en général `1000`), `stream` n'envoie rien.
+
+### `POST /streams/{stream_id}/ingest`
+
+Outil de dev : permet de simuler un streamer sans webcam, sans front et sans `main`. `main` ne l'expose jamais.
+
+Le corps de la requête est lu au fur et à mesure et envoyé au même ffmpeg que la WebSocket : même sortie HLS, même écran « Signal lost » à la fin, mêmes refus. ffmpeg détecte le format tout seul, on peut donc envoyer du MPEG-TS comme du WebM (voir « À la main »).
+
+| Code  | Quand                                                              |
+|-------|--------------------------------------------------------------------|
+| `204` | Tout le corps a été envoyé à ffmpeg                                |
+| `409` | Même cas que le `1008` de la WebSocket (`Stream already live` ou `Stream id already used`) |
+| `500` | ffmpeg a planté. Le détail est dans les logs                       |
 
 ### Coupure et reconnexion
 
@@ -127,6 +140,14 @@ Dans un second terminal, depuis `stream/` :
     ffplay http://localhost:8001/lives/42/index.m3u8
 
 `uv run python scripts/fake_streamer.py --help` liste les options (`--url`, `--delay`).
+
+Sans le script, en HTTP (`-re` envoie la vidéo à sa vitesse réelle, comme un vrai live) :
+
+    # une mire de 20 s, sans fichier
+    ffmpeg -re -f lavfi -i testsrc=duration=20:size=640x360:rate=25 -f lavfi -i sine=frequency=440:duration=20 -c:v libx264 -c:a aac -f mpegts http://localhost:8001/streams/43/ingest
+
+    # ou une vraie vidéo
+    ffmpeg -re -i video.mp4 -c:v libx264 -c:a aac -f mpegts http://localhost:8001/streams/44/ingest
 
 Pour voir une coupure puis une reprise : lancer le service avec `RECONNECT_SECONDS=15`, envoyer la vidéo, attendre quelques secondes et la renvoyer sur le même live. La playlist contient alors live, écran, live, écran, puis `#EXT-X-ENDLIST`.
 
