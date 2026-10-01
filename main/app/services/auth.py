@@ -1,14 +1,27 @@
+from datetime import datetime, timedelta, timezone
+
+import jwt
+from jwt.exceptions import InvalidTokenError
 from pwdlib import PasswordHash
 from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
+from app.config import auth_settings
 from app.models import User
 
 password_hash = PasswordHash.recommended()
 
+# Verified against when the username is unknown, so that a login takes the same
+# time whether the account exists or not (avoids guessing usernames by timing)
+DUMMY_HASH = password_hash.hash("dummypassword")
+
 
 class UserAlreadyExistsError(Exception):
+    pass
+
+
+class InvalidCredentialsError(Exception):
     pass
 
 
@@ -40,4 +53,40 @@ def register(db: Session, username: str, password: str) -> User:
         db.rollback()
         raise UserAlreadyExistsError("Username already registered") from exc
     db.refresh(user)
+    return user
+
+
+def authenticate(db: Session, username: str, password: str) -> User:
+    user = db.scalar(select(User).where(User.username == username.lower()))
+    if user is None:
+        verify_password(password, DUMMY_HASH)
+        raise InvalidCredentialsError("Incorrect username or password")
+    if not verify_password(password, user.hashed_password):
+        raise InvalidCredentialsError("Incorrect username or password")
+    return user
+
+
+def create_access_token(user: User) -> str:
+    expire = datetime.now(timezone.utc) + timedelta(
+        minutes=auth_settings.access_token_expire_minutes
+    )
+    payload = {"sub": user.username, "exp": expire}
+    return jwt.encode(
+        payload, auth_settings.jwt_secret_key, algorithm=auth_settings.jwt_algorithm
+    )
+
+
+def get_user_from_token(db: Session, token: str) -> User:
+    try:
+        payload = jwt.decode(
+            token, auth_settings.jwt_secret_key, algorithms=[auth_settings.jwt_algorithm]
+        )
+    except InvalidTokenError as exc:
+        raise InvalidCredentialsError("Could not validate credentials") from exc
+    username = payload.get("sub")
+    if username is None:
+        raise InvalidCredentialsError("Could not validate credentials")
+    user = db.scalar(select(User).where(User.username == username))
+    if user is None:
+        raise InvalidCredentialsError("Could not validate credentials")
     return user

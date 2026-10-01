@@ -24,8 +24,11 @@ ou depuis `main/` :
 | Variable       | Défaut | Rôle                                                                              |
 |----------------|--------|-----------------------------------------------------------------------------------|
 | `DATABASE_URL` | aucun  | URL SQLAlchemy de la base, ex. `postgresql+psycopg://postgres:postgres@localhost:5432/microservices`. Obligatoire |
+| `JWT_SECRET_KEY` | aucun | Clé qui signe les jetons d'accès. Obligatoire. À générer avec `openssl rand -hex 32` |
+| `JWT_ALGORITHM` | `HS256` | Algorithme de signature des jetons |
+| `ACCESS_TOKEN_EXPIRE_MINUTES` | `30` | Durée de validité d'un jeton, en minutes |
 
-Les variables se mettent dans `main/.env` (copier `.env.example`). Les valeurs de `.env.example` correspondent à celles par défaut du `docker-compose.yml`.
+Les variables se mettent dans `main/.env` (copier `.env.example`). Les valeurs de `.env.example` correspondent à celles par défaut du `docker-compose.yml`. Remplacer `JWT_SECRET_KEY=change-me` par une vraie clé : quiconque la connaît peut fabriquer un jeton valide pour n'importe quel compte.
 
 Les tables sont créées au démarrage (`Base.metadata.create_all`) si elles n'existent pas. Il n'y a pas encore de migrations : une table existante n'est jamais modifiée, il faut la supprimer à la main si son modèle change.
 
@@ -36,6 +39,8 @@ Les tables sont créées au démarrage (`Base.metadata.create_all`) si elles n'e
 | `/`              | HTTP GET  | Renvoie `{"service": "main"}`         |
 | `/health`        | HTTP GET  | Renvoie `{"status": "ok"}`            |
 | `/auth/register` | HTTP POST | Crée un compte utilisateur            |
+| `/auth/login`    | HTTP POST | Connecte un utilisateur, renvoie un jeton JWT |
+| `/auth/me`       | HTTP GET  | Renvoie l'utilisateur du jeton (protégé) |
 
 La doc interactive est sur `http://localhost:8000/docs`.
 
@@ -65,6 +70,56 @@ Le mot de passe n'est jamais stocké en clair : il est haché avec Argon2id via 
 La réponse est filtrée par le schéma `UserResponse` (`response_model`) : seuls ses champs sont renvoyés, jamais `hashed_password`.
 
 Le `username` est l'identifiant : il est enregistré en minuscules, donc `alice` et `Alice` sont le même compte (le second reçoit `409`). L'orthographe saisie est gardée dans `display_name`, c'est elle qu'on affiche (chat, profil, ...).
+
+### `POST /auth/login`
+
+Suit le [tuto OAuth2 + JWT de FastAPI](https://fastapi.tiangolo.com/tutorial/security/oauth2-jwt/). Le corps est un **formulaire** (`application/x-www-form-urlencoded`), pas du JSON, comme l'impose le flux OAuth2 « password » :
+
+    username=john_doe&password=MyPassword123
+
+Le `username` n'est pas sensible à la casse (`John_Doe` et `john_doe` se connectent au même compte).
+
+Réponses :
+
+| Code  | Quand                                                                 |
+|-------|-----------------------------------------------------------------------|
+| `200` | Identifiants valides. Renvoie `{"access_token": "<jwt>", "token_type": "bearer"}` |
+| `401` | `username` inconnu ou mauvais mot de passe (`Incorrect username or password`), avec l'en-tête `WWW-Authenticate: Bearer` |
+| `422` | Champ manquant, ou corps envoyé en JSON au lieu d'un formulaire       |
+
+Le message d'erreur est le même que le compte existe ou non. Si le `username` est inconnu, on vérifie quand même le mot de passe contre un hash factice (`DUMMY_HASH`) pour que la réponse prenne le même temps : on ne peut pas deviner les pseudos existants en mesurant le temps de réponse.
+
+Le jeton est un JWT signé avec `JWT_SECRET_KEY` (PyJWT, `HS256` par défaut). Son contenu :
+
+| Claim | Valeur                                                          |
+|-------|-----------------------------------------------------------------|
+| `sub` | `username` du compte (en minuscules)                            |
+| `exp` | Date d'expiration, `ACCESS_TOKEN_EXPIRE_MINUTES` après la connexion |
+
+Il n'est pas chiffré (n'importe qui peut lire son contenu), seulement signé : il ne contient donc rien de secret.
+
+### `GET /auth/me`
+
+Route protégée : il faut envoyer le jeton dans l'en-tête `Authorization: Bearer <access_token>`.
+
+| Code  | Quand                                                                 |
+|-------|-----------------------------------------------------------------------|
+| `200` | Renvoie le `UserResponse` du compte connecté                          |
+| `401` | Jeton absent (`Not authenticated`), invalide, expiré, signé avec une autre clé, ou dont le compte n'existe plus (`Could not validate credentials`) |
+
+### Protéger une route
+
+La dépendance `get_current_user` (`app/dependencies.py`) lit le jeton, le vérifie et renvoie le `User` correspondant, ou répond `401`. Pour protéger une route :
+
+```python
+from app.dependencies import get_current_user
+
+@router.get("/quelque-chose")
+def quelque_chose(current_user: Annotated[User, Depends(get_current_user)]):
+    ...
+```
+
+Dans la doc interactive (`/docs`), le bouton **Authorize** permet de se connecter avec un `username` / `password` : Swagger appelle `/auth/login` et envoie ensuite le jeton sur les routes protégées.
 
 ## Base de données
 
@@ -103,9 +158,23 @@ Avec le service lancé :
       -H 'Content-Type: application/json' \
       -d '{"username": "john_doe", "password": "MyPassword123"}'
 
+    # se connecter (formulaire, pas JSON) et garder le jeton
+    TOKEN=$(curl -s -X POST http://localhost:8000/auth/login \
+      -d 'username=john_doe&password=MyPassword123' | jq -r .access_token)
+
+    # route protégée : 200 avec le jeton, 401 sans
+    curl -i http://localhost:8000/auth/me -H "Authorization: Bearer $TOKEN"
+    curl -i http://localhost:8000/auth/me
+
+    # mauvais mot de passe : 401
+    curl -i -X POST http://localhost:8000/auth/login \
+      -d 'username=john_doe&password=wrong-password'
+
 ## Limites
 
-- Pas encore de connexion ni de jeton : on peut créer un compte mais pas s'authentifier.
+- Pas de refresh token ni de déconnexion : un jeton reste valide jusqu'à son expiration, même après un « logout » côté front. Le front doit se reconnecter quand il reçoit un `401`.
+- Pas de limite sur le nombre de tentatives de connexion (pas de protection contre le brute force).
+- Le rôle n'est pas encore utilisé pour restreindre l'accès aux routes.
 - Pas de migrations : les tables sont créées au démarrage, un changement de modèle demande de recréer la table.
 - Si PostgreSQL n'est pas prêt quand l'API démarre, le `create_all` échoue et l'API plante : il faut la relancer.
 - Le relais vers les autres services n'est pas encore implémenté.

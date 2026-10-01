@@ -8,6 +8,11 @@ class RegisterRequest(BaseModel):
     password: str = Field(min_length=8, examples=["MyPassword123"])
 
 
+class Token(BaseModel):
+    access_token: str
+    token_type: str = Field(examples=["bearer"])
+
+
 class UserResponse(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 

@@ -68,3 +68,75 @@ def test_register_accepts_username_bounds_and_underscore(client):
             "/auth/register", json={"username": username, "password": "s3cret-pass"}
         )
         assert response.status_code == 201
+
+
+def login(client, username="alice", password="s3cret-pass"):
+    return client.post(
+        "/auth/login", data={"username": username, "password": password}
+    )
+
+
+def test_login_returns_bearer_token(client):
+    client.post("/auth/register", json={"username": "alice", "password": "s3cret-pass"})
+
+    response = login(client)
+
+    assert response.status_code == 200
+    body = response.json()
+    assert set(body) == {"access_token", "token_type"}
+    assert body["token_type"] == "bearer"
+
+
+def test_login_ignores_username_case(client):
+    client.post("/auth/register", json={"username": "Alice", "password": "s3cret-pass"})
+
+    response = login(client, username="ALICE")
+
+    assert response.status_code == 200
+
+
+@pytest.mark.parametrize(
+    ("username", "password"), [("alice", "wrong-pass"), ("bob", "s3cret-pass")]
+)
+def test_login_with_bad_credentials_returns_401(client, username, password):
+    client.post("/auth/register", json={"username": "alice", "password": "s3cret-pass"})
+
+    response = login(client, username, password)
+
+    assert response.status_code == 401
+    assert response.json() == {"detail": "Incorrect username or password"}
+    assert response.headers["WWW-Authenticate"] == "Bearer"
+
+
+def test_login_with_json_body_returns_422(client):
+    response = client.post(
+        "/auth/login", json={"username": "alice", "password": "s3cret-pass"}
+    )
+
+    assert response.status_code == 422
+
+
+def test_me_returns_current_user(client):
+    client.post("/auth/register", json={"username": "Alice", "password": "s3cret-pass"})
+    token = login(client).json()["access_token"]
+
+    response = client.get("/auth/me", headers={"Authorization": f"Bearer {token}"})
+
+    assert response.status_code == 200
+    body = response.json()
+    assert set(body) == {"id", "username", "display_name", "role"}
+    assert body["username"] == "alice"
+    assert body["display_name"] == "Alice"
+
+
+def test_me_without_token_returns_401(client):
+    response = client.get("/auth/me")
+
+    assert response.status_code == 401
+
+
+def test_me_with_invalid_token_returns_401(client):
+    response = client.get("/auth/me", headers={"Authorization": "Bearer not-a-jwt"})
+
+    assert response.status_code == 401
+    assert response.headers["WWW-Authenticate"] == "Bearer"
