@@ -403,6 +403,7 @@ version = "0.1.0"
 source = { virtual = "." }
 dependencies = [
     { name = "fastapi", extra = ["standard"] },
+    { name = "websockets" },
 ]
 
 [package.dev-dependencies]
@@ -412,7 +413,10 @@ dev = [
 ]
 
 [package.metadata]
-requires-dist = [{ name = "fastapi", extras = ["standard"], specifier = ">=0.142.2" }]
+requires-dist = [
+    { name = "fastapi", extras = ["standard"], specifier = ">=0.142.2" },
+    { name = "websockets", specifier = ">=17.1" },
+]
 
 [package.metadata.requires-dev]
 dev = [
