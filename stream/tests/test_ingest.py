@@ -156,6 +156,16 @@ def test_http_ingest_is_refused_while_the_websocket_is_live(procs):
     assert response.json() == {"detail": "Stream already live"}
 
 
+def test_http_ingest_ffmpeg_crash_returns_500(procs, monkeypatch):
+    monkeypatch.setattr(hls.HlsPipeline, "write", AsyncMock(side_effect=hls.HlsError))
+    with TestClient(app) as client:
+        response = client.post("/streams/10/ingest", content=b"garbage")
+        wait_until_finished(10)
+
+    assert response.status_code == 500
+    procs[0].stdin.close.assert_called_once()  # ffmpeg is still closed properly
+
+
 def test_shutdown_mid_stream_still_closes_ffmpeg(procs):
     with TestClient(app) as client:
         with client.websocket_connect("/streams/9/ingest") as ws:
