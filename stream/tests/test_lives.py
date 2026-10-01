@@ -1,7 +1,8 @@
 import pytest
 from fastapi.testclient import TestClient
 
-from app.main import app, lives_files
+from app.main import app
+from app.routers.lives import lives_files
 
 client = TestClient(app)
 
