@@ -24,9 +24,10 @@ class HlsPipeline:
         self.closing: asyncio.Task | None = None
 
     async def start(self) -> None:
-        self.output_dir.mkdir(parents=True, exist_ok=True)
+        # raises FileExistsError if this stream_id was already used: its files are a replay now
+        self.output_dir.mkdir(parents=True)
         self.proc = await asyncio.create_subprocess_exec(
-            "ffmpeg", "-hide_banner", "-loglevel", "error", "-y",
+            "ffmpeg", "-hide_banner", "-loglevel", "error", "-n",
             "-i", "pipe:0",
             "-c:v", "libx264", "-preset", "veryfast",
             "-c:a", "aac",

@@ -16,7 +16,12 @@ async def ingest(stream_id: int, websocket: WebSocket):
         return
 
     pipeline = HlsPipeline(stream_id, settings.lives_dir)
-    await pipeline.start()
+    try:
+        await pipeline.start()
+    except FileExistsError:
+        await websocket.accept()
+        await websocket.close(code=status.WS_1008_POLICY_VIOLATION, reason="Stream id already used")
+        return
     active_streams[stream_id] = pipeline
     try:
         await websocket.accept()
@@ -30,7 +35,5 @@ async def ingest(stream_id: int, websocket: WebSocket):
         try:
             await pipeline.close()
         finally:
-            # TODO(#15, Bilnaa, 2026-09-30): if the handler is cancelled (abrupt disconnect),
-            # the stream_id is freed here before ffmpeg has finished writing #EXT-X-ENDLIST.
-            # A quick reconnect could then start a second ffmpeg on the same lives/{id}/ folder.
+            # may run before ffmpeg is done (abrupt disconnect), the folder still blocks a reconnect
             active_streams.pop(stream_id, None)
