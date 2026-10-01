@@ -33,3 +33,6 @@ class Stream(Base):
     game: Mapped[str | None]
     started_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     ended_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+
+
+LATEST_STREAM_ORDER = (Stream.started_at.desc(), Stream.stream_id.desc())

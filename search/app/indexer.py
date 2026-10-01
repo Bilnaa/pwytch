@@ -3,7 +3,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.helpers.text import normalize
-from app.infra.models import Stream, Streamer
+from app.infra.models import LATEST_STREAM_ORDER, Stream, Streamer
 
 SEARCH_TEXT_SEPARATOR = " | "
 
@@ -18,7 +18,7 @@ async def on_stream_started(session: AsyncSession, event: StreamStarted) -> None
     latest_stream = await session.scalar(
         select(Stream)
         .where(Stream.streamer_id == event.streamer_id, Stream.started_at.is_not(None))
-        .order_by(Stream.started_at.desc())
+        .order_by(*LATEST_STREAM_ORDER)
         .limit(1)
     )
     # Jamais null mais c'est juste pour typer correctement.

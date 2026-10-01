@@ -1,5 +1,7 @@
 import pytest
-from app.infra.db import SCHEMA_NAME, init_db
+from app.infra.db import SCHEMA_NAME, get_session, init_db
+from app.main import app
+from httpx import ASGITransport, AsyncClient
 from sqlalchemy.ext.asyncio import AsyncSession, create_async_engine
 from sqlalchemy.pool import StaticPool
 
@@ -23,3 +25,18 @@ async def engine():
 async def session(engine):
     async with AsyncSession(engine, expire_on_commit=False) as test_session:
         yield test_session
+
+
+@pytest.fixture
+async def client(session):
+    # The route reads the same in-memory database the test fills through the handlers.
+    async def override_get_session():
+        yield session
+
+    app.dependency_overrides[get_session] = override_get_session
+    # ASGITransport does not run the lifespan: the MQTT consumer stays off in tests.
+    async with AsyncClient(
+        transport=ASGITransport(app=app), base_url="http://test"
+    ) as test_client:
+        yield test_client
+    app.dependency_overrides.clear()
