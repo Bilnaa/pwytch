@@ -43,11 +43,17 @@ Codes de fermeture envoyés par `stream` (à gérer côté `main`) :
 
 | Code   | Quand                                                                   |
 |--------|-------------------------------------------------------------------------|
-| `1008` | Un ingest est déjà en cours pour ce `stream_id`                         |
+| `1008` | Un ingest est déjà en cours pour ce `stream_id` (raison `Stream already live`) ou ce `stream_id` a déjà servi (raison `Stream id already used`) |
 | `1011` | ffmpeg a planté (flux invalide, etc.). Le détail est dans les logs      |
 | `1012` | `stream` s'arrête ou redémarre. La playlist est quand même terminée     |
 
 Quand c'est le client qui ferme (fin normale du live, en général `1000`), `stream` n'envoie rien.
+
+### Reconnexion
+
+Un `stream_id` ne sert qu'une seule fois. Dès qu'un live a démarré, son dossier `lives/{stream_id}/` existe et toute nouvelle connexion sur ce `stream_id` est refusée (`1008`), même après la fin du live ou un redémarrage de `stream`. Les fichiers d'un live ne sont donc jamais écrasés : ils servent au replay.
+
+Si le streamer est coupé, `main` doit créer une nouvelle session de live (donc un nouveau `stream_id`, voir #37). Le live coupé devient son propre replay.
 
 ## Sortie
 
