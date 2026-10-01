@@ -29,30 +29,6 @@ class StreamEnded(BaseEvent):
     reason: Literal["normal", "error"]
 
 
-class ChatMessage(BaseEvent):
-    message_id: str
-    stream_id: int
-    author_id: int
-    author_name: str
-    content: str
-    sent_at: datetime
-
-
-class SearchHit(BaseEvent):
-    item_type: Literal["streamer", "message"]
-    item_id: str
-    query: str
-    hit_at: datetime
-
-
-class BookmarkDeleted(BaseEvent):
-    bookmark_id: int
-    user_id: int
-    target_type: str
-    target_id: str
-    deleted_at: datetime
-
-
 class PlayerEvent(BaseEvent):
     stream_id: int
     event_type: Literal["play", "pause", "stop"]

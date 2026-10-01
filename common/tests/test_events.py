@@ -6,10 +6,7 @@ from pydantic import ValidationError
 
 from common.events import (
     BaseEvent,
-    BookmarkDeleted,
-    ChatMessage,
     PlayerEvent,
-    SearchHit,
     StreamEnded,
     StreamStarted,
 )
@@ -22,13 +19,6 @@ EVENTS = [
         started_at=NOW,
     ),
     StreamEnded(stream_id=1, streamer_id=2, ended_at=NOW, duration_s=12.5, reason="normal"),
-    ChatMessage(
-        message_id="1-0", stream_id=1, author_id=3, author_name="bob", content="gg", sent_at=NOW
-    ),
-    SearchHit(item_type="streamer", item_id="2", query="ali", hit_at=NOW),
-    BookmarkDeleted(
-        bookmark_id=4, user_id=3, target_type="replay", target_id="9", deleted_at=NOW
-    ),
     PlayerEvent(stream_id=1, event_type="play", user_id=None, occurred_at=NOW),
 ]
 

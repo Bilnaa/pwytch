@@ -10,7 +10,7 @@ Seul package importable directement par les microservices (`from common import .
 
 | Module          | Contenu |
 |-----------------|---------|
-| `common.topics` | Les constantes des topics MQTT (`STREAM_STARTED`, `STREAM_ENDED`, `CHAT_MESSAGE`, `SEARCH_HIT`, `BOOKMARK_DELETED`, `PLAYER_EVENT`) |
+| `common.topics` | Les constantes des topics MQTT (`STREAM_STARTED`, `STREAM_ENDED`, `PLAYER_EVENT`) |
 | `common.events` | Les modèles Pydantic des events. Tous héritent de `BaseEvent` (`event_id`, `version`) |
 | `common.mqtt`   | `MqttClient` : client asynchrone avec reconnexion, `publish` et `subscribe` |
 
@@ -18,15 +18,12 @@ Seul package importable directement par les microservices (`from common import .
 
 ## Events
 
-Les champs suivent la carte des topics de #11.
+Les champs suivent la carte des topics de #11. Seuls les events de `main` et `stream` y sont pour l'instant : les autres services ajoutent les leurs quand ils en ont besoin.
 
 | Topic | Modèle | Champs |
 |---|---|---|
 | `stream/started` | `StreamStarted` | `stream_id`, `streamer_id`, `streamer_name`, `title`, `game`, `started_at` |
 | `stream/ended` | `StreamEnded` | `stream_id`, `streamer_id`, `ended_at`, `duration_s`, `reason` (`normal` ou `error`) |
-| `chat/message` | `ChatMessage` | `message_id`, `stream_id`, `author_id`, `author_name`, `content`, `sent_at` |
-| `search/hit` | `SearchHit` | `item_type` (`streamer` ou `message`), `item_id`, `query`, `hit_at` |
-| `bookmarks/deleted` | `BookmarkDeleted` | `bookmark_id`, `user_id`, `target_type`, `target_id`, `deleted_at` |
 | `player/event` | `PlayerEvent` | `stream_id`, `event_type` (`play`, `pause` ou `stop`), `user_id` (peut être `null`), `occurred_at` |
 
 `event_id` (UUID) est généré à la création de l'event. Il sert à dédupliquer : avec la QoS 1, un message peut arriver deux fois.
