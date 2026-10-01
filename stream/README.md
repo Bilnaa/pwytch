@@ -111,4 +111,3 @@ Dans un second terminal, depuis `stream/` :
 - L'état est en mémoire : si `stream` redémarre, les lives en cours s'arrêtent (leur playlist est terminée proprement, mais le streamer doit se reconnecter).
 - Un processus ffmpeg par live : le nombre de lives simultanés est limité par le CPU de la machine.
 - Latence de 15 à 20 s entre le streamer et les viewers, normale pour du HLS avec des segments de 4 s.
-- Reconnecter un streamer sur un `stream_id` déjà terminé relance un ffmpeg qui réécrit la playlist.
