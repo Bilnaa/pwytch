@@ -134,6 +134,38 @@ def test_live_ends_after_grace_period(procs, tmp_path):
     assert len(streamer(procs)) == 1
 
 
+def test_http_ingest_goes_through_the_same_live(procs):
+    with TestClient(app) as client:
+        assert client.post("/streams/6/ingest", content=b"video").status_code == 204
+        wait_until_finished(6)
+        again = client.post("/streams/6/ingest", content=b"video")
+
+    assert again.status_code == 409
+    assert [written(p) for p in streamer(procs)] == [[b"video"]]
+    assert written(slate(procs)[0]) == [b"q"]
+
+
+def test_http_ingest_is_refused_while_the_websocket_is_live(procs):
+    with TestClient(app) as client:
+        with client.websocket_connect("/streams/8/ingest") as ws:
+            response = client.post("/streams/8/ingest", content=b"video")
+            ws.close()
+            wait_until_finished(8)
+
+    assert response.status_code == 409
+    assert response.json() == {"detail": "Stream already live"}
+
+
+def test_http_ingest_ffmpeg_crash_returns_500(procs, monkeypatch):
+    monkeypatch.setattr(hls.HlsPipeline, "write", AsyncMock(side_effect=hls.HlsError))
+    with TestClient(app) as client:
+        response = client.post("/streams/10/ingest", content=b"garbage")
+        wait_until_finished(10)
+
+    assert response.status_code == 500
+    procs[0].stdin.close.assert_called_once()  # ffmpeg is still closed properly
+
+
 def test_shutdown_mid_stream_still_closes_ffmpeg(procs):
     with TestClient(app) as client:
         with client.websocket_connect("/streams/9/ingest") as ws:
