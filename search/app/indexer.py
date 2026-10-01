@@ -40,7 +40,6 @@ async def on_stream_ended(session: AsyncSession, event: StreamEnded) -> None:
     stream = await _get_or_create_stream(session, event.stream_id)
     stream.streamer_id = event.streamer_id
     stream.ended_at = event.ended_at
-    # No Streamer is created here: it appears with its stream/started.
 
     await session.commit()
 
@@ -54,6 +53,6 @@ async def _get_or_create_stream(session: AsyncSession, stream_id: str) -> Stream
 
 
 def _build_search_text(streamer_name: str, latest_stream: Stream) -> str:
-    # The separator stops a query from matching across two fields.
+    # Le séparateur empêche une requête de correspondre à cheval sur deux champs.
     fields = [streamer_name, latest_stream.title or "", latest_stream.game or ""]
     return normalize(SEARCH_TEXT_SEPARATOR.join(fields))

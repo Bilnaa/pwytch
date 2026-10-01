@@ -7,7 +7,6 @@ from app.schemas import StreamerResult
 
 
 def _latest_stream_field(column):
-    # Last live (spec 6.4): the stream with the greatest non-null started_at.
     return (
         select(column)
         .where(
@@ -20,7 +19,6 @@ def _latest_stream_field(column):
 
 
 def _live_stream_id():
-    # Live (spec 6.4): started and not ended; the latest one if an ended was lost.
     return (
         select(Stream.stream_id)
         .where(

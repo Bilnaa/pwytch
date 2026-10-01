@@ -1,12 +1,14 @@
 import pytest
 from app.indexer import on_stream_ended, on_stream_started
+
 from tests.factories import FIRST_START, SECOND_START, make_ended, make_started
 
 SEARCH_URL = "/search/streamers"
 
 
 async def start_live(session, streamer_number: int, **overrides) -> None:
-    # Own ids per streamer, and empty title and game so the defaults never match a query.
+    # Ids propres à chaque streamer, titre et jeu vides : les valeurs par défaut
+    # des fabriques ne correspondent jamais à une requête.
     event_fields = {
         "streamer_id": f"u{streamer_number}",
         "stream_id": f"s{streamer_number}",
@@ -78,7 +80,7 @@ async def test_query_of_100_characters_is_accepted(client):
     assert response.status_code == 200
 
 
-# Matching
+# Correspondance
 
 
 @pytest.mark.anyio
@@ -135,7 +137,7 @@ async def test_percent_is_matched_literally(client, session):
     assert await matching_names(client, "100%") == ["First"]
 
 
-# Result content and live status
+# Contenu des résultats et statut live
 
 
 @pytest.mark.anyio
@@ -196,12 +198,12 @@ async def test_two_open_lives_report_the_latest(client, session):
     assert result["live_stream_id"] == "s2"
 
 
-# Sorting and pagination
+# Tri et pagination
 
 
 @pytest.mark.anyio
 async def test_live_streamers_come_first_then_by_name(client, session):
-    # Same capitalisation everywhere: name order must not depend on collation.
+    # Même casse partout : l'ordre des noms ne dépend pas de la collation.
     await start_live(session, 1, streamer_name="Carl", title="xx")
     await end_live(session, 1)
     await start_live(session, 2, streamer_name="Bob", title="xx")
@@ -222,7 +224,7 @@ async def test_name_order_ignores_case(client, session):
 
 @pytest.mark.anyio
 async def test_same_start_time_result_matches_indexed_stream(client, session):
-    # Same tie-break as the indexer: last_title must be what search_text indexes.
+    # Même départage que l'indexeur : last_title doit être ce que search_text indexe.
     await start_live(session, 1, stream_id="s1", streamer_name="Celeste", title="Alpha")
     await start_live(session, 1, stream_id="s2", streamer_name="Celeste", title="Beta")
 
@@ -233,7 +235,7 @@ async def test_same_start_time_result_matches_indexed_stream(client, session):
 
 
 async def start_25_streamers(session) -> None:
-    # Zero-padded names: text order matches numeric order ("Match 02" < "Match 10").
+    # Noms avec zéros devant : ordre texte = ordre numérique ("Match 02" < "Match 10").
     for streamer_number in range(1, 26):
         await start_live(
             session, streamer_number, streamer_name=f"Match {streamer_number:02d}"

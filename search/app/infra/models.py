@@ -9,7 +9,6 @@ from app.infra.db import Base
 class Streamer(Base):
     __tablename__ = "streamers"
     __table_args__ = (
-        # Postgres-only options: SQLite creates a plain index and ignores them.
         Index(
             "ix_streamers_search_text_trgm",
             "search_text",
@@ -28,7 +27,6 @@ class Stream(Base):
 
     stream_id: Mapped[str] = mapped_column(primary_key=True)
     streamer_id: Mapped[str] = mapped_column(index=True)
-    # Nullable: a stream/ended event can arrive before its stream/started.
     title: Mapped[str | None]
     game: Mapped[str | None]
     started_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))

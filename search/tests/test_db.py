@@ -44,7 +44,7 @@ async def test_stream_accepts_ended_before_started(session):
     assert stored_stream.title is None
     assert stored_stream.game is None
     assert stored_stream.started_at is None
-    # SQLite drops the timezone on read; Postgres (timestamptz) keeps it.
+    # SQLite perd le fuseau à la relecture ; Postgres (timestamptz) le garde.
     assert stored_stream.ended_at.replace(tzinfo=UTC) == ended_at
 
 

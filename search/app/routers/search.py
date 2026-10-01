@@ -11,7 +11,7 @@ from app.schemas import StreamerResult
 
 router = APIRouter(prefix="/search", tags=["search"])
 
-# Strip runs before the length checks, so "   " and " a " are rejected (422).
+# Le strip passe avant les contrôles de longueur : "   " et " a " donnent 422.
 SearchQuery = Annotated[
     str, StringConstraints(strip_whitespace=True, min_length=2, max_length=100)
 ]

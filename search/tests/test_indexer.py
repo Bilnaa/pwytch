@@ -1,20 +1,17 @@
 import pytest
 from app.indexer import on_stream_ended, on_stream_started
 from app.infra.models import Stream, Streamer
-from sqlalchemy import func, select
+
 from tests.factories import (
     FIRST_START,
     SECOND_START,
     STREAMER_ID,
     as_utc,
+    count_rows,
     make_ended,
     make_started,
     reload,
 )
-
-
-async def count_rows(session, model) -> int:
-    return await session.scalar(select(func.count()).select_from(model))
 
 
 @pytest.mark.anyio

@@ -23,13 +23,10 @@ def create_engine_from_settings(app_settings: Settings) -> AsyncEngine:
 
 
 async def init_db(engine: AsyncEngine) -> None:
-    # Import registers the models on Base.metadata before create_all.
-    from app.infra import models  # noqa: F401
 
     async with engine.begin() as connection:
         if engine.dialect.name == "postgresql":
             await connection.execute(text(f"CREATE SCHEMA IF NOT EXISTS {SCHEMA_NAME}"))
-            # The trigram index on streamers.search_text needs the extension first.
             await connection.execute(text("CREATE EXTENSION IF NOT EXISTS pg_trgm"))
         await connection.run_sync(Base.metadata.create_all)
 
