@@ -23,6 +23,7 @@ ou depuis `stream/` :
 | Variable    | Défaut  | Rôle                                                          |
 |-------------|---------|---------------------------------------------------------------|
 | `LIVES_DIR` | `lives` | Dossier de sortie HLS, relatif à `stream/`. Ignoré par Git.   |
+| `RECONNECT_SECONDS` | `30` | Temps laissé au streamer pour revenir après une coupure      |
 
 Les variables se mettent dans `stream/.env` (copier `.env.example`).
 
@@ -37,7 +38,7 @@ Les variables se mettent dans `stream/.env` (copier `.env.example`).
 
 Chaque message binaire reçu est écrit tel quel dans l'entrée de ffmpeg. Le premier morceau doit contenir l'en-tête WebM (c'est le cas du premier morceau produit par `MediaRecorder`).
 
-Pour terminer un live, le client ferme simplement la connexion : ffmpeg termine la playlist et le live est fini.
+Quand le client ferme la connexion, le live n'est pas fini tout de suite : les viewers voient l'écran « Signal lost » pendant `RECONNECT_SECONDS`, puis le live se termine (voir « Coupure et reconnexion »).
 
 Codes de fermeture envoyés par `stream` (à gérer côté `main`) :
 
@@ -49,11 +50,21 @@ Codes de fermeture envoyés par `stream` (à gérer côté `main`) :
 
 Quand c'est le client qui ferme (fin normale du live, en général `1000`), `stream` n'envoie rien.
 
-### Reconnexion
+### Coupure et reconnexion
 
-Un `stream_id` ne sert qu'une seule fois. Dès qu'un live a démarré, son dossier `lives/{stream_id}/` existe et toute nouvelle connexion sur ce `stream_id` est refusée (`1008`), même après la fin du live ou un redémarrage de `stream`. Les fichiers d'un live ne sont donc jamais écrasés : ils servent au replay.
+Comme sur Twitch, une coupure du streamer ne termine pas le live :
 
-Si le streamer est coupé, `main` doit créer une nouvelle session de live (donc un nouveau `stream_id`, voir #37). Le live coupé devient son propre replay.
+1. Le streamer se déconnecte (fin du live ou coupure réseau) : ffmpeg termine son segment, puis un second ffmpeg prend le relais et diffuse en boucle la vidéo « Signal lost » (`assets/slate.mp4`) dans la même playlist.
+2. Si le streamer se reconnecte sur le même `stream_id` avant `RECONNECT_SECONDS`, l'écran s'arrête et le live reprend, toujours dans la même playlist.
+3. Sinon, le live se termine : la playlist reçoit `#EXT-X-ENDLIST` et devient le replay.
+
+La vidéo est une boucle de 6 s en 1280x720. Pour la changer, il suffit de remplacer `assets/slate.mp4` (elle est lue en boucle, sa durée n'a pas d'importance).
+
+Chaque passage live / écran est séparé par un `#EXT-X-DISCONTINUITY` dans la playlist, ce qui permet au lecteur (hls.js) d'enchaîner sans couper. Tout est encodé en 1280x720 à 30 i/s, quelle que soit la webcam, pour que le replay s'exporte toujours avec `-c copy`.
+
+Un `stream_id` terminé ne sert plus jamais : toute connexion dessus est refusée (`1008`, raison `Stream id already used`), même après un redémarrage de `stream`, puisque son dossier `lives/{stream_id}/` existe. Les fichiers d'un live ne sont donc jamais écrasés.
+
+Pour `main` : un « Go live » après la fin d'un live doit créer une nouvelle session (nouveau `stream_id`, voir #37). Pendant les `RECONNECT_SECONDS` qui suivent une coupure, il faut au contraire se reconnecter sur le même `stream_id`.
 
 ## Sortie
 
@@ -73,7 +84,7 @@ index0.ts
 index1.ts
 ```
 
-À la fin du live (déconnexion du streamer ou arrêt du service), ffmpeg ajoute `#EXT-X-ENDLIST` en dernière ligne. Un lecteur qui voit cette ligne sait que le live est terminé. Si ffmpeg plante, cette ligne peut manquer.
+À la fin du live (délai de reconnexion écoulé ou arrêt du service), `stream` ajoute `#EXT-X-ENDLIST` en dernière ligne. Un lecteur qui voit cette ligne sait que le live est terminé.
 
 ## Tester
 
@@ -98,7 +109,7 @@ Dans un second terminal, depuis `stream/` :
     # l'envoyer comme le ferait un streamer, sur le live 42
     uv run python scripts/fake_streamer.py sample.webm 42
 
-    # la playlist doit finir par #EXT-X-ENDLIST
+    # pendant 30 s la playlist reçoit l'écran « Signal lost », puis finit par #EXT-X-ENDLIST
     cat lives/42/index.m3u8
 
     # la regarder
@@ -106,8 +117,10 @@ Dans un second terminal, depuis `stream/` :
 
 `uv run python scripts/fake_streamer.py --help` liste les options (`--url`, `--delay`).
 
+Pour voir une coupure puis une reprise : lancer le service avec `RECONNECT_SECONDS=15`, envoyer la vidéo, attendre quelques secondes et la renvoyer sur le même live. La playlist contient alors live, écran, live, écran, puis `#EXT-X-ENDLIST`.
+
 ## Limites
 
-- L'état est en mémoire : si `stream` redémarre, les lives en cours s'arrêtent (leur playlist est terminée proprement, mais le streamer doit se reconnecter).
+- L'état est en mémoire : si `stream` redémarre, les lives en cours (et ceux sur l'écran « Signal lost ») s'arrêtent. Leur playlist est terminée proprement, mais le streamer doit relancer un live avec un nouveau `stream_id`.
 - Un processus ffmpeg par live : le nombre de lives simultanés est limité par le CPU de la machine.
 - Latence de 15 à 20 s entre le streamer et les viewers, normale pour du HLS avec des segments de 4 s.
