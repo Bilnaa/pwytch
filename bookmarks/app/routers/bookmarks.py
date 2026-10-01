@@ -2,7 +2,7 @@ from typing import Annotated
 
 from fastapi import Depends
 from bookmarks.app import verify_auth
-from bookmarks.app.models import BookmarkCreate, BookmarkUpdate
+from bookmarks.app.schemas import BookmarkCreate, BookmarkUpdate
 
 from fastapi import APIRouter
 
