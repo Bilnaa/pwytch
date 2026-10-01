@@ -11,8 +11,8 @@ class BaseEvent(BaseModel):
 
 
 class StreamStarted(BaseEvent):
-    stream_id: str
-    streamer_id: str
+    stream_id: int
+    streamer_id: int
     streamer_name: str
     title: str
     game: str
@@ -20,8 +20,8 @@ class StreamStarted(BaseEvent):
 
 
 class StreamEnded(BaseEvent):
-    stream_id: str
-    streamer_id: str
+    stream_id: int
+    streamer_id: int
     ended_at: datetime
-    duration_s: int
+    duration_s: float
     reason: Literal["normal", "error"]

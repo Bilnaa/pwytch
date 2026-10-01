@@ -4,7 +4,7 @@ from uuid import uuid4
 from common.events import StreamEnded, StreamStarted
 from sqlalchemy import func, select
 
-STREAMER_ID = "u1"
+STREAMER_ID = 1
 FIRST_START = datetime(2026, 10, 1, 20, 0, tzinfo=UTC)
 SECOND_START = FIRST_START + timedelta(hours=1)
 
@@ -12,7 +12,7 @@ SECOND_START = FIRST_START + timedelta(hours=1)
 def make_started(**overrides) -> StreamStarted:
     defaults = {
         "event_id": uuid4(),
-        "stream_id": "s1",
+        "stream_id": 1,
         "streamer_id": STREAMER_ID,
         "streamer_name": "Célèste",
         "title": "Speedrun Any%",
@@ -25,7 +25,7 @@ def make_started(**overrides) -> StreamStarted:
 def make_ended(**overrides) -> StreamEnded:
     defaults = {
         "event_id": uuid4(),
-        "stream_id": "s1",
+        "stream_id": 1,
         "streamer_id": STREAMER_ID,
         "ended_at": FIRST_START + timedelta(minutes=30),
         "duration_s": 1800,

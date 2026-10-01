@@ -19,12 +19,12 @@ async def test_init_db_creates_tables(engine):
 @pytest.mark.anyio
 async def test_streamer_round_trip(session):
     session.add(
-        Streamer(streamer_id="42", streamer_name="Célèste", search_text="celeste")
+        Streamer(streamer_id=42, streamer_name="Célèste", search_text="celeste")
     )
     await session.commit()
     session.expunge_all()
 
-    stored_streamer = await session.get(Streamer, "42")
+    stored_streamer = await session.get(Streamer, 42)
 
     assert stored_streamer is not None
     assert stored_streamer.streamer_name == "Célèste"
@@ -34,11 +34,11 @@ async def test_streamer_round_trip(session):
 @pytest.mark.anyio
 async def test_stream_accepts_ended_before_started(session):
     ended_at = datetime(2026, 10, 1, 20, 0, tzinfo=UTC)
-    session.add(Stream(stream_id="s1", streamer_id="42", ended_at=ended_at))
+    session.add(Stream(stream_id=1, streamer_id=42, ended_at=ended_at))
     await session.commit()
     session.expunge_all()
 
-    stored_stream = await session.get(Stream, "s1")
+    stored_stream = await session.get(Stream, 1)
 
     assert stored_stream is not None
     assert stored_stream.title is None

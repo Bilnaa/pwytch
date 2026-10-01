@@ -19,6 +19,10 @@ ou depuis `search/` :
 
     uv run fastapi dev --port 8004
 
+En image Docker, le build se lance depuis la racine du repo, car l'image embarque `common` :
+
+    docker build -f search/Dockerfile -t search .
+
 Au démarrage, le service crée son schéma, ses tables et l'extension `pg_trgm` s'ils n'existent pas, puis se connecte au broker. Aucune action manuelle sur la base.
 
 ## Configuration
@@ -62,12 +66,12 @@ Tri : streamers en live d'abord, puis nom sans tenir compte de la casse, puis `s
 {
   "items": [
     {
-      "streamer_id": "u-42",
+      "streamer_id": 42,
       "streamer_name": "Célèste",
       "last_title": "Speedrun any%",
       "last_game": "Celeste",
       "is_live": true,
-      "live_stream_id": "live-1"
+      "live_stream_id": 7
     }
   ],
   "total": 1,
@@ -116,6 +120,8 @@ EXPLAIN SELECT * FROM search.streamers WHERE search_text LIKE '%cel%';
 Le plan doit contenir `Bitmap Index Scan on ix_streamers_search_text_trgm`. Une requête de 2 caractères n'utilise pas l'index (un trigramme fait 3 caractères) : c'est attendu.
 
 ## Dettes connues
+
+- **Pas de migration** : `create_all` crée les tables absentes mais ne modifie pas les tables existantes. Après un changement de colonne (ids passés de texte à entier par exemple), supprimer le schéma en local : `DROP SCHEMA search CASCADE;`. Alembic sera nécessaire au premier changement de schéma sur une base qui a des données à garder.
 
 - **Event perdu si le handler échoue** (base indisponible par exemple) : le message est logué en `ERROR` puis abandonné. À traiter avec #11.
 - **Messages perdus pendant une coupure du broker** : le client MQTT démarre avec une session propre. Pour les récupérer, il faudra un `identifier` fixe et `clean_session=False`.

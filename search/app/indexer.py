@@ -37,14 +37,18 @@ async def on_stream_started(session: AsyncSession, event: StreamStarted) -> None
 
 
 async def on_stream_ended(session: AsyncSession, event: StreamEnded) -> None:
-    stream = await _get_or_create_stream(session, event.stream_id)
-    stream.streamer_id = event.streamer_id
+    stream = await session.get(Stream, event.stream_id)
+    if stream is None:
+        stream = Stream(stream_id=event.stream_id, streamer_id=event.streamer_id)
+        session.add(stream)
+    # Un stream existant garde son streamer : changer de propriétaire sans recalculer
+    # search_text laisserait l'index incohérent.
     stream.ended_at = event.ended_at
 
     await session.commit()
 
 
-async def _get_or_create_stream(session: AsyncSession, stream_id: str) -> Stream:
+async def _get_or_create_stream(session: AsyncSession, stream_id: int) -> Stream:
     stream = await session.get(Stream, stream_id)
     if stream is None:
         stream = Stream(stream_id=stream_id)

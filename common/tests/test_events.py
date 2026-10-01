@@ -8,8 +8,8 @@ from pydantic import ValidationError
 def make_stream_started_payload(**overrides):
     base = {
         "event_id": "0b6f8c1e-4a52-4f0e-9d3b-2f1a7c9e5d10",
-        "stream_id": "stream-1",
-        "streamer_id": "streamer-1",
+        "stream_id": 42,
+        "streamer_id": 3,
         "streamer_name": "Zerator",
         "title": "Speedrun any%",
         "game": "Celeste",
@@ -21,8 +21,8 @@ def make_stream_started_payload(**overrides):
 def make_stream_ended_payload(**overrides):
     base = {
         "event_id": "5c2d9a7e-1b3f-4e8a-a6c4-8d0e2f4b6a19",
-        "stream_id": "stream-1",
-        "streamer_id": "streamer-1",
+        "stream_id": 42,
+        "streamer_id": 3,
         "ended_at": "2026-10-01T20:00:00Z",
         "duration_s": 7200,
         "reason": "normal",
@@ -62,6 +62,12 @@ def test_stream_ended_is_built_from_valid_payload():
 
     assert event.duration_s == 7200
     assert event.reason == "normal"
+
+
+def test_stream_ended_accepts_fractional_duration():
+    event = StreamEnded.model_validate(make_stream_ended_payload(duration_s=12.5))
+
+    assert event.duration_s == 12.5
 
 
 def test_stream_ended_with_unknown_reason_is_rejected():

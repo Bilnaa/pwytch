@@ -17,7 +17,7 @@ class Streamer(Base):
         ),
     )
 
-    streamer_id: Mapped[str] = mapped_column(primary_key=True)
+    streamer_id: Mapped[int] = mapped_column(primary_key=True, autoincrement=False)
     streamer_name: Mapped[str]
     search_text: Mapped[str]
 
@@ -25,8 +25,8 @@ class Streamer(Base):
 class Stream(Base):
     __tablename__ = "streams"
 
-    stream_id: Mapped[str] = mapped_column(primary_key=True)
-    streamer_id: Mapped[str] = mapped_column(index=True)
+    stream_id: Mapped[int] = mapped_column(primary_key=True, autoincrement=False)
+    streamer_id: Mapped[int] = mapped_column(index=True)
     title: Mapped[str | None]
     game: Mapped[str | None]
     started_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))

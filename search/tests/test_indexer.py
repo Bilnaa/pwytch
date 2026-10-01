@@ -45,7 +45,7 @@ async def test_ended_sets_ended_at(session):
     await on_stream_started(session, make_started())
     await on_stream_ended(session, ended)
 
-    stream = await reload(session, Stream, "s1")
+    stream = await reload(session, Stream, 1)
     assert as_utc(stream.ended_at) == ended.ended_at
     assert stream.title == "Speedrun Any%"
     assert stream.game == "Celeste"
@@ -61,7 +61,7 @@ async def test_duplicate_ended_is_idempotent(session):
     await on_stream_ended(session, ended)
 
     assert await count_rows(session, Stream) == 1
-    stream = await reload(session, Stream, "s1")
+    stream = await reload(session, Stream, 1)
     assert as_utc(stream.ended_at) == ended.ended_at
 
 
@@ -72,7 +72,7 @@ async def test_ended_before_started_keeps_both(session):
     await on_stream_ended(session, ended)
     await on_stream_started(session, make_started())
 
-    stream = await reload(session, Stream, "s1")
+    stream = await reload(session, Stream, 1)
     assert as_utc(stream.ended_at) == ended.ended_at
     assert stream.title == "Speedrun Any%"
     assert stream.game == "Celeste"
@@ -80,6 +80,15 @@ async def test_ended_before_started_keeps_both(session):
     streamer = await session.get(Streamer, STREAMER_ID)
     assert streamer is not None
     assert streamer.search_text == "celeste | speedrun any% | celeste"
+
+
+@pytest.mark.anyio
+async def test_ended_does_not_change_stream_owner(session):
+    await on_stream_started(session, make_started())
+    await on_stream_ended(session, make_ended(streamer_id=STREAMER_ID + 1))
+
+    stream = await reload(session, Stream, 1)
+    assert stream.streamer_id == STREAMER_ID
 
 
 @pytest.mark.anyio
@@ -95,7 +104,7 @@ async def test_older_started_does_not_override_latest(session):
     await on_stream_started(
         session,
         make_started(
-            stream_id="s2",
+            stream_id=2,
             streamer_name="NewName",
             title="Nouveau",
             started_at=SECOND_START,
@@ -104,7 +113,7 @@ async def test_older_started_does_not_override_latest(session):
     await on_stream_started(
         session,
         make_started(
-            stream_id="s1",
+            stream_id=1,
             streamer_name="OldName",
             title="Ancien",
             started_at=FIRST_START,
@@ -121,11 +130,11 @@ async def test_older_started_does_not_override_latest(session):
 @pytest.mark.anyio
 async def test_new_live_replaces_search_text(session):
     await on_stream_started(
-        session, make_started(stream_id="s1", title="Premier", started_at=FIRST_START)
+        session, make_started(stream_id=1, title="Premier", started_at=FIRST_START)
     )
-    await on_stream_ended(session, make_ended(stream_id="s1"))
+    await on_stream_ended(session, make_ended(stream_id=1))
     await on_stream_started(
-        session, make_started(stream_id="s2", title="Second", started_at=SECOND_START)
+        session, make_started(stream_id=2, title="Second", started_at=SECOND_START)
     )
 
     streamer = await reload(session, Streamer, STREAMER_ID)
@@ -136,12 +145,12 @@ async def test_new_live_replaces_search_text(session):
 @pytest.mark.anyio
 async def test_late_ended_of_previous_live_keeps_search_text(session):
     await on_stream_started(
-        session, make_started(stream_id="s1", title="Premier", started_at=FIRST_START)
+        session, make_started(stream_id=1, title="Premier", started_at=FIRST_START)
     )
     await on_stream_started(
-        session, make_started(stream_id="s2", title="Second", started_at=SECOND_START)
+        session, make_started(stream_id=2, title="Second", started_at=SECOND_START)
     )
-    await on_stream_ended(session, make_ended(stream_id="s1"))
+    await on_stream_ended(session, make_ended(stream_id=1))
 
     streamer = await reload(session, Streamer, STREAMER_ID)
     assert streamer.search_text == "celeste | second | celeste"
@@ -156,9 +165,9 @@ async def test_empty_game_still_builds_search_text(session):
 
 
 @pytest.mark.anyio
-@pytest.mark.parametrize("arrival_order", [["s1", "s2"], ["s2", "s1"]])
+@pytest.mark.parametrize("arrival_order", [[1, 2], [2, 1]])
 async def test_same_start_time_breaks_tie_on_stream_id(session, arrival_order):
-    titles = {"s1": "Alpha", "s2": "Beta"}
+    titles = {1: "Alpha", 2: "Beta"}
     for stream_id in arrival_order:
         await on_stream_started(
             session,

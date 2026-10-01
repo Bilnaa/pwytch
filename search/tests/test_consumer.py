@@ -48,7 +48,7 @@ async def test_valid_ended_sets_ended_at(session_factory):
     await dispatch(session_factory, STREAM_ENDED, to_payload(ended))
 
     async with session_factory() as session:
-        stream = await session.get(Stream, "s1")
+        stream = await session.get(Stream, 1)
     assert stream is not None
     assert as_utc(stream.ended_at) == ended.ended_at
 

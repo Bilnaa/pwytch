@@ -10,8 +10,8 @@ async def start_live(session, streamer_number: int, **overrides) -> None:
     # Ids propres à chaque streamer, titre et jeu vides : les valeurs par défaut
     # des fabriques ne correspondent jamais à une requête.
     event_fields = {
-        "streamer_id": f"u{streamer_number}",
-        "stream_id": f"s{streamer_number}",
+        "streamer_id": streamer_number,
+        "stream_id": streamer_number,
         "streamer_name": f"Streamer {streamer_number}",
         "title": "",
         "game": "",
@@ -21,8 +21,8 @@ async def start_live(session, streamer_number: int, **overrides) -> None:
 
 async def end_live(session, streamer_number: int, **overrides) -> None:
     event_fields = {
-        "streamer_id": f"u{streamer_number}",
-        "stream_id": f"s{streamer_number}",
+        "streamer_id": streamer_number,
+        "stream_id": streamer_number,
     }
     await on_stream_ended(session, make_ended(**(event_fields | overrides)))
 
@@ -111,7 +111,7 @@ async def test_query_matches_one_streamer(client, session, event_fields, search_
     body = await search(client, q=search_query)
 
     assert body["total"] == 1
-    assert [item["streamer_id"] for item in body["items"]] == ["u1"]
+    assert [item["streamer_id"] for item in body["items"]] == [1]
 
 
 @pytest.mark.anyio
@@ -150,12 +150,12 @@ async def test_live_result_contains_every_field(client, session):
 
     assert body["items"] == [
         {
-            "streamer_id": "u1",
+            "streamer_id": 1,
             "streamer_name": "Celeste",
             "last_title": "Speedrun any%",
             "last_game": "Celeste",
             "is_live": True,
-            "live_stream_id": "s1",
+            "live_stream_id": 1,
         }
     ]
 
@@ -186,16 +186,16 @@ async def test_ended_before_started_is_not_live(client, session):
 @pytest.mark.anyio
 async def test_two_open_lives_report_the_latest(client, session):
     await start_live(
-        session, 1, stream_id="s1", streamer_name="Celeste", started_at=FIRST_START
+        session, 1, stream_id=1, streamer_name="Celeste", started_at=FIRST_START
     )
     await start_live(
-        session, 1, stream_id="s2", streamer_name="Celeste", started_at=SECOND_START
+        session, 1, stream_id=2, streamer_name="Celeste", started_at=SECOND_START
     )
 
     [result] = (await search(client, q="cel"))["items"]
 
     assert result["is_live"] is True
-    assert result["live_stream_id"] == "s2"
+    assert result["live_stream_id"] == 2
 
 
 # Tri et pagination
@@ -225,13 +225,13 @@ async def test_name_order_ignores_case(client, session):
 @pytest.mark.anyio
 async def test_same_start_time_result_matches_indexed_stream(client, session):
     # Même départage que l'indexeur : last_title doit être ce que search_text indexe.
-    await start_live(session, 1, stream_id="s1", streamer_name="Celeste", title="Alpha")
-    await start_live(session, 1, stream_id="s2", streamer_name="Celeste", title="Beta")
+    await start_live(session, 1, stream_id=1, streamer_name="Celeste", title="Alpha")
+    await start_live(session, 1, stream_id=2, streamer_name="Celeste", title="Beta")
 
     [result] = (await search(client, q="beta"))["items"]
 
     assert result["last_title"] == "Beta"
-    assert result["live_stream_id"] == "s2"
+    assert result["live_stream_id"] == 2
 
 
 async def start_25_streamers(session) -> None:
