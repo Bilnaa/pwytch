@@ -21,6 +21,9 @@ def require_searchable_text(search_query: str) -> str:
     # normalisés : la requête correspondrait alors à tout. Le repository normalise déjà.
     if not normalize(search_query):
         raise ValueError("query is empty after normalization")
+    # Postgres refuse le caractère nul dans un texte : sans ce contrôle, 500 au lieu de 422.
+    if "\x00" in search_query:
+        raise ValueError("query contains a null character")
     return search_query
 
 

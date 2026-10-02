@@ -14,6 +14,7 @@ from app.helpers.text import normalize
         ("FIFA 26 | any%", "fifa 26 | any%"),
         ("İ", "i"),
         ("Straße", "strasse"),
+        ("\u0301 \u0301", ""),
     ],
 )
 def test_normalize(input_text, expected_output):

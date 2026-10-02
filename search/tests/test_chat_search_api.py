@@ -50,8 +50,18 @@ async def matching_ids(client, search_query: str, stream_id=STREAM_ID) -> list[s
         {"q": "x" * 101},
         # Diacritique combinant seul : 1 caractère, mais vide après normalize().
         {"q": "\u0301"},
+        {"q": "\u0301 \u0301"},
+        {"q": "\x00"},
     ],
-    ids=["missing", "empty", "spaces-only", "too-long", "combining-mark-only"],
+    ids=[
+        "missing",
+        "empty",
+        "spaces-only",
+        "too-long",
+        "combining-mark-only",
+        "combining-marks-around-space",
+        "null-character",
+    ],
 )
 async def test_invalid_query_returns_422(client, params):
     response = await client.get(chat_search_url(), params=params)
