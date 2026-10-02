@@ -10,8 +10,8 @@ SEGMENT_SECONDS = 4
 SLATE = Path(__file__).parent.parent / "assets" / "slate.mp4"
 
 
-def video_filter(height: int | None) -> str:
-    if height is None:
+def video_filter(size: tuple[int, int] | None) -> str:
+    if size is None:
         # first connection: the 16:9 frame that holds the source, never above VIDEO_HEIGHT
         box = f"trunc(min({settings.video_height},max(ih,iw*9/16))/2)*2"
         scale = f"scale=w='trunc(oh*16/9/2)*2':h='{box}'"
@@ -19,24 +19,26 @@ def video_filter(height: int | None) -> str:
     else:
         # the size of the live is known: the slate and the reconnections keep it,
         # so the replay can still be exported with -c copy
-        size = f"{height * 16 // 9 // 2 * 2}:{height}"
-        scale, pad = f"scale={size}", f"pad={size}"
+        box = f"{size[0]}:{size[1]}"
+        scale, pad = f"scale={box}", f"pad={box}"
     return (
         f"{scale}:force_original_aspect_ratio=decrease:force_divisible_by=2,"
         f"{pad}:x=(ow-iw)/2:y=(oh-ih)/2,setsar=1,fps=30"
     )
 
 
-async def probe_height(segment: Path) -> int | None:
+async def probe_size(segment: Path) -> tuple[int, int] | None:
     try:
         proc = await asyncio.create_subprocess_exec(
             "ffprobe", "-v", "error", "-select_streams", "v:0",
-            "-show_entries", "stream=height", "-of", "csv=p=0", str(segment),
+            "-show_entries", "stream=width,height", "-of", "csv=p=0", str(segment),
             stdout=asyncio.subprocess.PIPE,
             stderr=asyncio.subprocess.DEVNULL,
         )
         out, _ = await proc.communicate()
-        return int(out.split()[0])
+        # the width too: for a source that is not exactly 16:9, it can't be found from the height
+        width, height = out.split()[0].split(b",")
+        return int(width), int(height)
     except (OSError, ValueError, IndexError):
         # no segment yet, or ffprobe is missing: the size stays unknown
         return None
@@ -57,12 +59,12 @@ class HlsPipeline:
         self.stderr_lines: list[str] = []
         self.closing: asyncio.Task | None = None
 
-    async def start(self, height: int | None = None) -> None:
+    async def start(self, size: tuple[int, int] | None = None) -> None:
         self.proc = await asyncio.create_subprocess_exec(
             "ffmpeg", "-hide_banner", "-loglevel", "error", "-y",
             *self.input_args,
             "-c:v", "libx264", "-preset", "veryfast", "-crf", str(settings.video_crf),
-            "-vf", video_filter(height),
+            "-vf", video_filter(size),
             "-c:a", "aac", "-ar", "48000", "-ac", "2",
             "-force_key_frames", f"expr:gte(t,n_forced*{SEGMENT_SECONDS})",
             "-hls_time", str(SEGMENT_SECONDS),

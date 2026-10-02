@@ -7,5 +7,6 @@ def test_first_connection_is_capped_and_never_upscaled(monkeypatch):
 
 
 def test_known_size_is_kept():
-    assert hls.video_filter(720).startswith("scale=1280:720:")
-    assert "pad=1280:720:" in hls.video_filter(720)
+    # 854x480 comes out in 852x478: the width must not be worked out again from the height
+    assert hls.video_filter((852, 478)).startswith("scale=852:478:")
+    assert "pad=852:478:" in hls.video_filter((852, 478))

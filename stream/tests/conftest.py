@@ -37,5 +37,5 @@ def procs(tmp_path, monkeypatch):
         return proc
 
     monkeypatch.setattr(hls.asyncio, "create_subprocess_exec", spawn)
-    monkeypatch.setattr(live, "probe_height", AsyncMock(return_value=None))
+    monkeypatch.setattr(live, "probe_size", AsyncMock(return_value=None))
     return created

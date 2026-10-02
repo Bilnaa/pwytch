@@ -8,7 +8,7 @@ from common import topics
 from common.events import StreamEnded, StreamStarted
 
 from app import events
-from app.hls import HlsPipeline, SlatePipeline, probe_height
+from app.hls import HlsPipeline, SlatePipeline, probe_size
 
 logger = logging.getLogger(__name__)
 
@@ -39,7 +39,7 @@ class Live:
         self.disconnecting: asyncio.Task | None = None
         self.ending: asyncio.Task | None = None
         self.started_at: datetime | None = None
-        self.height: int | None = None
+        self.size: tuple[int, int] | None = None
         self.failed = False
 
     @classmethod
@@ -64,7 +64,7 @@ class Live:
         if self.slate:
             await self.slate.close()
             self.slate = None
-        await self.pipeline.start(self.height)
+        await self.pipeline.start(self.size)
         if self.started_at is None:
             # only the first ffmpeg starts the live, a reconnection doesn't
             self.started_at = datetime.now(timezone.utc)
@@ -90,11 +90,11 @@ class Live:
         self.pipeline = None
         if self.ending:
             return
-        if self.height is None:
+        if self.size is None:
             # the first connection chose the size, everything after it follows
-            self.height = await probe_height(self.output_dir / "index0.ts")
+            self.size = await probe_size(self.output_dir / "index0.ts")
         self.slate = SlatePipeline(self.stream_id, self.output_dir)
-        await self.slate.start(self.height)
+        await self.slate.start(self.size)
         self.grace = asyncio.get_running_loop().call_later(reconnect_seconds, self.end)
 
     def end(self) -> asyncio.Task:
