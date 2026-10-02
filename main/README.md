@@ -151,13 +151,14 @@ Statuts : `created` (session créée, rien reçu), `live`, `ended`, `cancelled` 
 | 409  | Le streamer a déjà une session `created` ou `live` |
 | 422  | Titre ou jeu invalide |
 
-Une session `created` depuis plus de 10 minutes sans ingestion est passée en `cancelled` au moment où son streamer en crée une nouvelle, ce qui libère la place.
+Une session `created` depuis plus de 10 minutes sans ingestion est passée en `cancelled` au moment où son streamer en crée une nouvelle, ce qui libère la place. Le même nettoyage est fait à chaque `GET /streams`, pour ne pas lister de sessions abandonnées. Un index unique partiel en base garantit une seule session `created` ou `live` par streamer, même avec deux requêtes simultanées.
 
 `GET /streams?status=live&page=1&size=20` renvoie `{"items": [...], "total", "page", "size"}`, les plus récentes d'abord. `status` est optionnel (`created`, `live`, `ended`, `cancelled`), `size` va de 1 à 100. Pas besoin d'être connecté.
 
 `GET /streams/{id}` renvoie la session, ou 404.
 
-Le passage en `live` et en `ended` est prêt dans `app/services/streams.py` (`mark_started`, `mark_ended`) mais rien ne l'appelle encore : il faudra les brancher sur `stream/started` et `stream/ended` quand #11 (MQTT) sera faite.
+Le passage en `live` et en `ended` est prêt dans `app/services/streams.py` (`mark_started`, `mark_ended`) mais rien ne l'appelle encore (`mark_started` n'agit que sur une session `created`, `mark_ended` que sur une session `live`, tout autre événement est ignoré) : il faudra les brancher sur `stream/started` et `stream/ended` quand #11 (MQTT) sera faite.
+
 ### `WS /streams/{stream_id}/ingest?token=<jwt>`
 
 Le navigateur du streamer envoie des morceaux WebM en binaire. `main` vérifie le jeton et que le streamer est bien le propriétaire de la session, puis ouvre une WebSocket vers `stream` (`/streams/{stream_id}/ingest`, avec `streamer_id`, `streamer_name`, `title` et `game` en query) et recopie chaque morceau sans le modifier.

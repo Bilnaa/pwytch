@@ -29,11 +29,11 @@ def create_stream(
 @router.get("", response_model=StreamPage)
 def list_streams(
     db: Annotated[Session, Depends(get_db)],
-    status: StreamStatus | None = None,
+    status_filter: Annotated[StreamStatus | None, Query(alias="status")] = None,
     page: Annotated[int, Query(ge=1)] = 1,
     size: Annotated[int, Query(ge=1, le=100)] = 20,
 ):
-    items, total = streams_service.list_streams(db, status, page, size)
+    items, total = streams_service.list_streams(db, status_filter, page, size)
     return StreamPage(items=items, total=total, page=page, size=size)
 
 

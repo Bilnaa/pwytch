@@ -1,0 +1,25 @@
+[project]
+name = "common"
+version = "0.1.0"
+readme = "README.md"
+authors = [
+    { name = "ArKZbeb", email = "turgytristan@gmail.com" }
+]
+requires-python = ">=3.12"
+dependencies = [
+    "aiomqtt>=2.4.0",
+    "pydantic>=2.13.5",
+]
+
+[build-system]
+requires = ["uv_build>=0.12.19,<0.13.0"]
+build-backend = "uv_build"
+
+[dependency-groups]
+dev = [
+    "pytest>=9.1.1",
+    "pytest-asyncio>=1.2.0",
+]
+
+[tool.pytest.ini_options]
+asyncio_mode = "auto"

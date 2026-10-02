@@ -3,14 +3,23 @@ name = "search"
 version = "0.1.0"
 requires-python = ">=3.14"
 dependencies = [
+    "aiomqtt>=2.5.1",
+    "asyncpg>=0.31.0",
+    "common",
     "fastapi[standard]>=0.142.2",
+    "pydantic-settings>=2.15.0",
+    "sqlalchemy[asyncio]>=2.1.1",
 ]
 
 [dependency-groups]
 dev = [
+    "aiosqlite>=0.22.1",
     "httpx>=0.28.1",
     "pytest>=9.1.1",
 ]
 
 [tool.fastapi]
 entrypoint = "app.main:app"
+
+[tool.uv.sources]
+common = { path = "../common", editable = true }

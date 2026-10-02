@@ -1,14 +1,15 @@
 from datetime import datetime, timedelta
 
 from sqlalchemy import func, select
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session, joinedload
 
 from app.models import Stream, User
-from app.models.stream import utcnow
+from app.models.stream import Status, utcnow
 
 # A session that nobody started streaming into after this long is abandoned
 CREATED_TIMEOUT = timedelta(minutes=10)
-ACTIVE_STATUSES = ("created", "live")
+ACTIVE_STATUSES = (Status.CREATED, Status.LIVE)
 
 
 class ActiveStreamExistsError(Exception):
@@ -19,16 +20,15 @@ class StreamNotFoundError(Exception):
     pass
 
 
-def cancel_stale_sessions(db: Session, streamer_id: int) -> None:
-    stale = db.scalars(
-        select(Stream).where(
-            Stream.streamer_id == streamer_id,
-            Stream.status == "created",
-            Stream.created_at < utcnow() - CREATED_TIMEOUT,
-        )
+def cancel_stale_sessions(db: Session, streamer_id: int | None = None) -> None:
+    query = select(Stream).where(
+        Stream.status == Status.CREATED,
+        Stream.created_at < utcnow() - CREATED_TIMEOUT,
     )
-    for stream in stale:
-        stream.status = "cancelled"
+    if streamer_id is not None:
+        query = query.where(Stream.streamer_id == streamer_id)
+    for stream in db.scalars(query):
+        stream.status = Status.CANCELLED
     db.commit()
 
 
@@ -45,13 +45,20 @@ def create_stream(db: Session, streamer: User, title: str, game: str) -> Stream:
 
     stream = Stream(streamer_id=streamer.id, title=title, game=game)
     db.add(stream)
-    db.commit()
+    try:
+        db.commit()
+    except IntegrityError as exc:
+        # a concurrent request created an active session first
+        db.rollback()
+        raise ActiveStreamExistsError("You already have a stream in progress") from exc
     db.refresh(stream)
     return stream
 
 
 def get_stream(db: Session, stream_id: int) -> Stream:
-    stream = db.get(Stream, stream_id)
+    stream = db.scalar(
+        select(Stream).options(joinedload(Stream.streamer)).where(Stream.id == stream_id)
+    )
     if stream is None:
         raise StreamNotFoundError("Stream not found")
     return stream
@@ -60,11 +67,15 @@ def get_stream(db: Session, stream_id: int) -> Stream:
 def list_streams(
     db: Session, status: str | None, page: int, size: int
 ) -> tuple[list[Stream], int]:
+    cancel_stale_sessions(db)
+
     query = select(Stream)
+    count = select(func.count(Stream.id))
     if status is not None:
         query = query.where(Stream.status == status)
+        count = count.where(Stream.status == status)
 
-    total = db.scalar(select(func.count()).select_from(query.subquery()))
+    total = db.scalar(count)
     items = db.scalars(
         query.options(joinedload(Stream.streamer))
         .order_by(Stream.created_at.desc(), Stream.id.desc())
@@ -76,7 +87,10 @@ def list_streams(
 
 def mark_started(db: Session, stream_id: int, started_at: datetime) -> Stream:
     stream = get_stream(db, stream_id)
-    stream.status = "live"
+    if stream.status != Status.CREATED:
+        # duplicated or late event, or the session was cancelled
+        return stream
+    stream.status = Status.LIVE
     stream.started_at = started_at
     db.commit()
     return stream
@@ -84,7 +98,9 @@ def mark_started(db: Session, stream_id: int, started_at: datetime) -> Stream:
 
 def mark_ended(db: Session, stream_id: int, ended_at: datetime) -> Stream:
     stream = get_stream(db, stream_id)
-    stream.status = "ended"
+    if stream.status != Status.LIVE:
+        return stream
+    stream.status = Status.ENDED
     stream.ended_at = ended_at
     db.commit()
     return stream
