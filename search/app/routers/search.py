@@ -1,16 +1,19 @@
 from typing import Annotated
 
 from common.pagination import Page
-from fastapi import APIRouter, Depends, Query
+from fastapi import APIRouter, Depends, Path, Query
 from pydantic import AfterValidator, StringConstraints
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.helpers.text import normalize
 from app.infra.db import get_session
-from app.infra.repository import search_streamers
-from app.schemas import StreamerResult
+from app.infra.repository import search_chat_messages, search_streamers
+from app.schemas import MessageResult, StreamerResult
 
 router = APIRouter(prefix="/search", tags=["search"])
+
+# Plus grand INTEGER de Postgres : au-delà, la requête lèverait une erreur (500).
+MAX_POSTGRES_INTEGER = 2_147_483_647
 
 
 def require_searchable_text(search_query: str) -> str:
@@ -28,6 +31,13 @@ SearchQuery = Annotated[
     AfterValidator(require_searchable_text),
 ]
 
+# Un seul caractère suffit dans le chat : "g", "?" ou un emoji sont des recherches utiles.
+ChatSearchQuery = Annotated[
+    str,
+    StringConstraints(strip_whitespace=True, min_length=1, max_length=100),
+    AfterValidator(require_searchable_text),
+]
+
 
 @router.get("/streamers")
 async def search_streamers_route(
@@ -38,3 +48,16 @@ async def search_streamers_route(
 ) -> Page[StreamerResult]:
     results, total = await search_streamers(session, search_query, page, size)
     return Page[StreamerResult](items=results, total=total, page=page, size=size)
+
+
+@router.get(
+    "/streams/{stream_id}/messages",
+    summary="Search the 10 most recent chat messages of a live that contain q",
+    responses={422: {"description": "Invalid stream_id or q"}},
+)
+async def search_chat_messages_route(
+    session: Annotated[AsyncSession, Depends(get_session)],
+    stream_id: Annotated[int, Path(ge=1, le=MAX_POSTGRES_INTEGER)],
+    search_query: Annotated[ChatSearchQuery, Query(alias="q")],
+) -> list[MessageResult]:
+    return await search_chat_messages(session, stream_id, search_query)
