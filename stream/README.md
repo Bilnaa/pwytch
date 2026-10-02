@@ -141,7 +141,7 @@ Au démarrage, `stream` parcourt donc `LIVES_DIR` (`app/recovery.py`). Pour chaq
 
 L'état en mémoire étant perdu, le `streamer_id` et l'heure de début sont relus dans `lives/{stream_id}/started.json`, une copie de l'event `stream/started` écrite au début du live. `ended_at` est la date de dernière modification de la playlist (le dernier segment écrit par ffmpeg), pas l'heure du redémarrage, et `duration_s` est calculé à partir de là.
 
-Une playlist sans `started.json` (live créé avant cette fonctionnalité) est terminée aussi, mais sans event : un avertissement est journalisé.
+Une playlist sans `started.json` lisible (live créé avant cette fonctionnalité, fichier coupé pendant son écriture) est terminée aussi, mais sans event : un avertissement est journalisé. Si `started.json` ne peut pas être écrit au début d'un live, une erreur est journalisée et le live continue.
 
 Le live ne reprend pas : son `stream_id` est terminé, le streamer doit en relancer un nouveau.
 
@@ -231,6 +231,8 @@ Pour voir un live coupé par un redémarrage : lancer le service avec `fastapi r
 
 - L'état est en mémoire : si `stream` redémarre, les lives en cours (et ceux sur l'écran « Signal lost ») s'arrêtent. Leur playlist est terminée, à l'arrêt ou au démarrage suivant, mais le streamer doit relancer un live avec un nouveau `stream_id`.
 - Hors Docker, un `kill -9` pendant l'écran « Signal lost » laisse son ffmpeg tourner tout seul : il continue d'écrire dans la playlist et efface le `#EXT-X-ENDLIST` ajouté au redémarrage. Il faut le tuer à la main (`pkill -f stream_loop`) puis relancer le service. Dans un conteneur le problème n'existe pas, ffmpeg meurt avec lui.
+- Au redémarrage, `#EXT-X-ENDLIST` est écrit avant que `stream/ended` soit publié, et c'est lui qui marque le live comme traité. Si le broker met plus de 30 s à revenir, ou si le service est arrêté pendant l'attente, l'event n'est pas renvoyé au démarrage suivant.
+- Une seule instance de `stream` par dossier `LIVES_DIR` : une seconde instance (ou `--workers 2`) terminerait au démarrage les lives encore en cours de l'autre.
 - Un live coupé net avant son premier segment (moins de 4 s) n'a pas de playlist : il n'est pas détecté au redémarrage et son `stream/ended` ne part jamais.
 - Un event qui n'a pas pu être publié (broker injoignable) est perdu : `main` ne saura pas que le live a commencé ou fini.
 - Un processus ffmpeg par live : le nombre de lives simultanés est limité par le CPU de la machine.
