@@ -1,13 +1,20 @@
+from contextlib import asynccontextmanager
+from typing import AsyncIterator
 from fastapi import FastAPI
-from fastapi import APIRouter
 
-from app.routers import health
+from app.routers import health, bookmarks
+from app.database import engine
+from app.models import Base
 
 
-app = FastAPI(title="bookmarks")
+@asynccontextmanager
+async def lifespan(app: FastAPI) -> AsyncIterator[None]:
+    Base.metadata.create_all(engine)
 
+    yield
+    engine.dispose()
+
+app = FastAPI(title="bookmarks", lifespan=lifespan)
 
 app.include_router(health.router)
-
-
-router = APIRouter(tags=["health"])
+app.include_router(bookmarks.router)

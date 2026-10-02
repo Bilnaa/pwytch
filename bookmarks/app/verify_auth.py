@@ -1,8 +1,12 @@
 from typing import Annotated
 from fastapi import HTTPException, Header
+from fastapi import Depends
 
 
-def verify_auth(x_user_id: Annotated[int | None, Header()] = None) -> int:
-    if x_user_id is None:
+def verify_auth(user_id: Annotated[int | None, Header()] = None) -> int:
+    if user_id is None:
         raise HTTPException(status_code=401, detail="Unauthorized")
-    return x_user_id
+    return user_id
+
+
+CurrentUserId = Annotated[int, Depends(verify_auth)]
