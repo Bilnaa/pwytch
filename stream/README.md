@@ -24,6 +24,7 @@ ou depuis `stream/` :
 |-------------|---------|---------------------------------------------------------------|
 | `LIVES_DIR` | `lives` | Dossier de sortie HLS, relatif à `stream/`. Ignoré par Git.   |
 | `RECONNECT_SECONDS` | `30` | Temps laissé au streamer pour revenir après une coupure      |
+| `SIGNAL_TIMEOUT_SECONDS` | `10` | Sans aucune donnée pendant ce temps, le streamer est considéré comme coupé |
 
 Les variables se mettent dans `stream/.env` (copier `.env.example`).
 
@@ -33,6 +34,7 @@ Les variables se mettent dans `stream/.env` (copier `.env.example`).
 |---------------------------------|-----------|---------------------------------------|
 | `/health`                       | HTTP GET  | Renvoie `{"status": "ok"}`            |
 | `/streams/{stream_id}/ingest`   | WebSocket | Reçoit le flux WebM d'un live         |
+| `/streams/{stream_id}/ingest`   | HTTP POST | Pareil en HTTP, pour tester sans webcam |
 | `/lives/{stream_id}/{filename}` | HTTP GET  | Sert la playlist et les segments HLS  |
 
 ### `/streams/{stream_id}/ingest`
@@ -48,14 +50,29 @@ Codes de fermeture envoyés par `stream` (à gérer côté `main`) :
 | `1008` | Un ingest est déjà en cours pour ce `stream_id` (raison `Stream already live`) ou ce `stream_id` a déjà servi (raison `Stream id already used`) |
 | `1011` | ffmpeg a planté (flux invalide, etc.). Le détail est dans les logs      |
 | `1012` | `stream` s'arrête ou redémarre. La playlist est quand même terminée     |
+| `1013` | Aucune donnée reçue depuis `SIGNAL_TIMEOUT_SECONDS` (raison `No data received`). Traité comme une coupure : il faut se reconnecter sur le même `stream_id` |
 
 Quand c'est le client qui ferme (fin normale du live, en général `1000`), `stream` n'envoie rien.
+
+### `POST /streams/{stream_id}/ingest`
+
+Outil de dev : permet de simuler un streamer sans webcam, sans front et sans `main`. `main` ne l'expose jamais.
+
+Le corps de la requête est lu au fur et à mesure et envoyé au même ffmpeg que la WebSocket : même sortie HLS, même écran « Signal lost » à la fin, mêmes refus. ffmpeg détecte le format tout seul, on peut donc envoyer du MPEG-TS comme du WebM (voir « À la main »).
+
+| Code  | Quand                                                              |
+|-------|--------------------------------------------------------------------|
+| `204` | Tout le corps a été envoyé à ffmpeg                                |
+| `409` | Même cas que le `1008` de la WebSocket (`Stream already live` ou `Stream id already used`) |
+| `500` | ffmpeg a planté pendant l'envoi. Le détail est dans les logs       |
+
+Un fichier que ffmpeg ne sait pas lire renvoie quand même `204` : ffmpeg attend la fin du corps pour abandonner, l'erreur n'apparaît que dans les logs. Si la playlist ne contient que l'écran « Signal lost », c'est ça.
 
 ### Coupure et reconnexion
 
 Comme sur Twitch, une coupure du streamer ne termine pas le live :
 
-1. Le streamer se déconnecte (fin du live ou coupure réseau) : ffmpeg termine son segment, puis un second ffmpeg prend le relais et diffuse en boucle la vidéo « Signal lost » (`assets/slate.mp4`) dans la même playlist.
+1. Le streamer se déconnecte (fin du live ou coupure réseau), ou n'envoie plus rien pendant `SIGNAL_TIMEOUT_SECONDS` (streamer figé, `main` bloqué ou tombé sans fermer la connexion) : ffmpeg termine son segment, puis un second ffmpeg prend le relais et diffuse en boucle la vidéo « Signal lost » (`assets/slate.mp4`) dans la même playlist.
 2. Si le streamer se reconnecte sur le même `stream_id` avant `RECONNECT_SECONDS`, l'écran s'arrête et le live reprend, toujours dans la même playlist.
 3. Sinon, le live se termine : la playlist reçoit `#EXT-X-ENDLIST` et devient le replay.
 
@@ -127,6 +144,16 @@ Dans un second terminal, depuis `stream/` :
     ffplay http://localhost:8001/lives/42/index.m3u8
 
 `uv run python scripts/fake_streamer.py --help` liste les options (`--url`, `--delay`).
+
+Sans le script, en HTTP (`-re` envoie la vidéo à sa vitesse réelle, comme un vrai live) :
+
+    # une mire de 20 s, sans fichier
+    ffmpeg -re -f lavfi -i testsrc=duration=20:size=640x360:rate=25 -f lavfi -i sine=frequency=440:duration=20 -c:v libx264 -c:a aac -f mpegts http://localhost:8001/streams/43/ingest
+
+    # ou une vraie vidéo
+    ffmpeg -re -i video.mp4 -c:v libx264 -c:a aac -f mpegts http://localhost:8001/streams/44/ingest
+
+Pour voir une connexion qui reste ouverte sans rien envoyer : lancer le service avec `SIGNAL_TIMEOUT_SECONDS=5` et envoyer la vidéo avec `--delay 8`. Le script affiche `connection closed by the server (1013)` et la playlist passe sur l'écran « Signal lost ».
 
 Pour voir une coupure puis une reprise : lancer le service avec `RECONNECT_SECONDS=15`, envoyer la vidéo, attendre quelques secondes et la renvoyer sur le même live. La playlist contient alors live, écran, live, écran, puis `#EXT-X-ENDLIST`.
 
