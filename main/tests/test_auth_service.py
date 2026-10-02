@@ -12,10 +12,12 @@ from app.models import User
 from app.services.auth import (
     InvalidCredentialsError,
     UserAlreadyExistsError,
+    UserNotFoundError,
     authenticate,
     create_access_token,
     get_user_from_token,
     hash_password,
+    make_admin,
     register,
     verify_password,
 )
@@ -207,3 +209,17 @@ def test_get_user_from_token_rejects_deleted_user(db_session):
 
     with pytest.raises(InvalidCredentialsError):
         get_user_from_token(db_session, token)
+
+
+def test_make_admin_gives_admin_role(db_session):
+    register(db_session, "alice", "s3cret-pass")
+
+    user = make_admin(db_session, "Alice")
+
+    assert user.role == "admin"
+    assert db_session.get(User, user.id).role == "admin"
+
+
+def test_make_admin_unknown_user_raises(db_session):
+    with pytest.raises(UserNotFoundError):
+        make_admin(db_session, "ghost")
