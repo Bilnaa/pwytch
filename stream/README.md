@@ -245,13 +245,17 @@ channels/
 ```
 
 - un fichier vidéo (`.mp4`, `.mkv`, `.mov`, `.webm`) est diffusé tel quel : c'est le clip du morceau
-- un fichier audio (`.mp3`, `.m4a`, `.flac`, `.wav`, `.ogg`, `.opus`) est diffusé avec `cover.*` en fond (un fond uni s'il n'y en a pas) et la forme d'onde du morceau en bas de l'image
+- un fichier audio (`.mp3`, `.m4a`, `.flac`, `.wav`, `.ogg`, `.opus`) n'est jamais diffusé tel quel : le script en fait d'abord une vidéo qui prend sa place (`track1.mp3` devient `track1.mp4`, le fichier audio est supprimé une fois la vidéo entière). On y voit le spectre du morceau en anneau autour de la pochette, avec la pochette floutée en fond
+
+Seules les vidéos sont diffusées. Fabriquer celle d'un morceau prend à peu près un tiers de sa durée, en tâche de fond et en basse priorité (`nice`) : le morceau entre dans la rotation quand sa vidéo est prête, et une chaîne qui n'a que des fichiers audio démarre à la première. Garder une copie des fichiers audio ailleurs : la suppression est définitive. Un fichier audio qui a déjà une vidéo du même nom n'est ni refait ni supprimé.
+
+La pochette est, dans l'ordre : l'image contenue dans le fichier (tag ID3 d'un mp3 ou d'un wav, m4a, flac), une image du même nom que le morceau (`track1.jpg`), `cover.*`. Seul son centre carré est utilisé. Sans pochette, l'anneau est seul sur un fond uni.
 
 `channels/` est ignoré par Git : chacun y met ses propres fichiers.
 
 Le nom d'un dossier fait 24 caractères au plus (il sert de nom de compte sur `main`, avec `_radio` à la fin) : un dossier au nom plus long est ignoré.
 
-Le dossier d'une chaîne est relu à chaque passage : un fichier ajouté pendant que le script tourne est diffusé au passage suivant, sans rien relancer (y déposer un fichier complet, pas un téléchargement en cours). Un passage ne commence jamais par le morceau qui a fini le précédent.
+Le dossier d'une chaîne est relu à chaque passage : un fichier ajouté pendant que le script tourne est pris en compte sans rien relancer (y déposer un fichier complet, pas un téléchargement en cours). Un passage ne commence jamais par le morceau qui a fini le précédent.
 
 `main` et `stream` doivent tourner (avec postgres et le broker). Depuis `stream/` :
 
