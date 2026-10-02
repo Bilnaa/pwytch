@@ -220,7 +220,29 @@ def quelque_chose(current_user: Annotated[User, Depends(get_current_user)]):
     ...
 ```
 
+Pour une route réservée aux admins (les futures routes `/stats`, par exemple), utiliser `require_admin` à la place. Elle fait la même vérification, puis répond `403` (`Admin role required`) si le rôle du compte n'est pas `admin` :
+
+```python
+from app.dependencies import require_admin
+
+@router.get("/stats")
+def stats(admin: Annotated[User, Depends(require_admin)]):
+    ...
+```
+
 Dans la doc interactive (`/docs`), le bouton **Authorize** permet de se connecter avec un `username` / `password` : Swagger appelle `/auth/login` et envoie ensuite le jeton sur les routes protégées.
+
+### Créer un admin
+
+Tout compte créé par `/auth/register` a le rôle `user`. Pour donner le rôle `admin` à un compte existant, depuis `main/` (avec le même `DATABASE_URL` que l'API) :
+
+    uv run python -m app.scripts.make_admin john_doe
+
+Dans l'image Docker, ajouter `--no-dev` (les dépendances de dev n'y sont pas installées) :
+
+    uv run --no-dev python -m app.scripts.make_admin john_doe
+
+Le `username` n'est pas sensible à la casse. Le script affiche `john_doe is now admin`, ou `User 'john_doe' not found` (code de sortie `1`) si le compte n'existe pas. Le rôle est lu en base à chaque requête : le jeton déjà obtenu par le compte devient admin tout de suite, sans reconnexion. `GET /auth/me` renvoie le rôle dans le champ `role`.
 
 ## Events MQTT
 
@@ -245,7 +267,7 @@ Table `users` :
 | `username`        | varchar(30)   | En minuscules. Unique, indexé          |
 | `display_name`    | varchar(30)   | Pseudo tel que saisi à l'inscription   |
 | `hashed_password` | varchar(255)  | Hash Argon2id (format PHC, via pwdlib) |
-| `role`            | varchar(20)   | `user` par défaut                      |
+| `role`            | varchar(20)   | `user` (par défaut) ou `admin`         |
 | `created_at`      | timestamptz   | Rempli par la base                     |
 | `updated_at`      | timestamptz   | Mis à jour par SQLAlchemy à chaque modification |
 
@@ -288,7 +310,8 @@ Avec le service lancé :
 
 - Pas de refresh token ni de déconnexion : un jeton reste valide jusqu'à son expiration, même après un « logout » côté front. Le front doit se reconnecter quand il reçoit un `401`.
 - Pas de limite sur le nombre de tentatives de connexion (pas de protection contre le brute force).
-- Le rôle n'est pas encore utilisé pour restreindre l'accès aux routes.
+- `require_admin` n'est branché sur aucune route : les routes `/stats` n'existent pas encore.
+- Pas de route pour retirer le rôle `admin` : il faut modifier la colonne `role` en base.
 - Pas de migrations : les tables sont créées au démarrage, un changement de modèle demande de recréer la table.
 - Si PostgreSQL n'est pas prêt quand l'API démarre, le `create_all` échoue et l'API plante : il faut la relancer.
 - Le relais vers les autres services n'est pas encore implémenté.
