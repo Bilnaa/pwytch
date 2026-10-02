@@ -18,6 +18,11 @@ class StreamSettings(BaseSettings):
     stream_url: str = "http://localhost:8001"
     stream_timeout_seconds: float = 5
 
+    @property
+    def stream_ws_url(self) -> str:
+        # http -> ws, https -> wss
+        return self.stream_url.replace("http", "ws", 1).rstrip("/")
+
 db_settings = DbSettings.model_validate({})
 auth_settings = AuthSettings.model_validate({})
 stream_settings = StreamSettings()

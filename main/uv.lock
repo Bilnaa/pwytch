@@ -471,6 +471,7 @@ dependencies = [
     { name = "pydantic-settings" },
     { name = "pyjwt" },
     { name = "sqlalchemy" },
+    { name = "websockets" },
 ]
 
 [package.dev-dependencies]
@@ -487,6 +488,7 @@ requires-dist = [
     { name = "pydantic-settings", specifier = ">=2.15.0" },
     { name = "pyjwt", specifier = ">=2.15.1" },
     { name = "sqlalchemy", specifier = ">=2.1.1" },
+    { name = "websockets", specifier = ">=17.1" },
 ]
 
 [package.metadata.requires-dev]
