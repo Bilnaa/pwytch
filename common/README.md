@@ -10,6 +10,7 @@ Bibliothèque partagée entre les services : les contrats que plusieurs services
 | `common.events`      | Modèles Pydantic des events : `BaseEvent`, `StreamStarted`, `StreamEnded`, `PlayerEvent` |
 | `common.mqtt`        | `MqttClient` : client asynchrone avec reconnexion, `publish` et `subscribe` |
 | `common.pagination`  | `Page[T]` : réponse paginée (`items`, `total`, `page`, `size`)              |
+| `common.identity`    | `UserIdentity`, `to_headers` et la dépendance FastAPI `CurrentUser`         |
 
 Exemple :
 
@@ -49,6 +50,25 @@ await mqtt.stop()    # à l'arrêt
 - `publish` lève `NotConnectedError` si le broker est injoignable : à l'appelant de décider (journaliser et continuer, par exemple)
 - Un message invalide est ignoré et journalisé, une erreur dans un handler aussi : le consommateur ne plante pas
 - Un event dont l'`event_id` a déjà été traité avec succès est ignoré (les 1000 derniers sont gardés en mémoire). Un event dont le handler a échoué n'est pas marqué : s'il est renvoyé, il est traité de nouveau
+
+## Identité de l'utilisateur
+
+Les satellites ne gèrent pas l'authentification : `main` authentifie l'utilisateur et le transmet dans les headers `X-User-Id`, `X-User-Name` et `X-User-Role`.
+
+```python
+from common.identity import CurrentUser, UserIdentity, to_headers
+
+# côté main : ajouter l'utilisateur aux requêtes vers un satellite
+headers = to_headers(UserIdentity(id=user.id, name=user.username, role=user.role))
+
+# côté satellite : lire l'utilisateur dans les headers
+@router.get("/me")
+def read_me(user: CurrentUser) -> UserIdentity:
+    return user
+```
+
+- Si un header manque ou si `X-User-Id` n'est pas un entier, la dépendance renvoie 401
+- Un satellite fait confiance à ces headers : il ne doit être joignable qu'à travers `main`, sinon n'importe qui peut se faire passer pour un autre utilisateur
 
 ## Règles d'équipe
 
