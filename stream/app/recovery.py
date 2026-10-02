@@ -5,6 +5,7 @@ from pathlib import Path
 
 from common import topics
 from common.events import StreamEnded, StreamStarted
+from pydantic import ValidationError
 
 from app import events
 from app.live import STARTED_FILE
@@ -25,11 +26,17 @@ def end_interrupted_lives(lives_dir: Path) -> list[StreamEnded]:
         ended_at = datetime.fromtimestamp(playlist.stat().st_mtime, timezone.utc)
         with playlist.open("a") as f:
             f.write("#EXT-X-ENDLIST\n")
-        started_file = playlist.with_name(STARTED_FILE)
-        if not started_file.exists():
-            logger.warning("Live %s ended without event: no %s", playlist.parent.name, STARTED_FILE)
+        try:
+            started = StreamStarted.model_validate_json(
+                playlist.with_name(STARTED_FILE).read_text()
+            )
+        except (OSError, ValidationError) as exc:
+            # missing or half written: one bad live must not stop the service from starting
+            logger.warning(
+                "Live %s ended without event, no usable %s: %s",
+                playlist.parent.name, STARTED_FILE, exc,
+            )
             continue
-        started = StreamStarted.model_validate_json(started_file.read_text())
         ended.append(
             StreamEnded(
                 stream_id=started.stream_id,

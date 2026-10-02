@@ -1,4 +1,5 @@
 import asyncio
+import logging
 from dataclasses import asdict, dataclass
 from datetime import datetime, timezone
 from pathlib import Path
@@ -8,6 +9,8 @@ from common.events import StreamEnded, StreamStarted
 
 from app import events
 from app.hls import HlsPipeline, SlatePipeline
+
+logger = logging.getLogger(__name__)
 
 # lives that are not over yet, connected or waiting for the streamer
 lives: dict[int, "Live"] = {}
@@ -68,7 +71,10 @@ class Live:
                 stream_id=self.stream_id, started_at=self.started_at, **asdict(self.info)
             )
             # kept on disk: after a restart it is all we have left to publish stream/ended
-            (self.output_dir / STARTED_FILE).write_text(started.model_dump_json())
+            try:
+                (self.output_dir / STARTED_FILE).write_text(started.model_dump_json())
+            except OSError as exc:
+                logger.error("Live %s: %s not written: %s", self.stream_id, STARTED_FILE, exc)
             await events.publish(topics.STREAM_STARTED, started)
         return self.pipeline
 
