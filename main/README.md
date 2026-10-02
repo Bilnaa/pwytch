@@ -9,9 +9,9 @@ front ──HTTP──> main ──> PostgreSQL (users)
 
 ## Lancer
 
-PostgreSQL doit tourner. Depuis la racine du repo :
+PostgreSQL et le broker MQTT doivent tourner. Depuis la racine du repo :
 
-    docker compose up -d
+    docker compose up -d postgres mqtt
 
 Puis, depuis la racine :
 
@@ -29,8 +29,14 @@ ou depuis `main/` :
 | `ACCESS_TOKEN_EXPIRE_MINUTES` | `30` | Durée de validité d'un jeton, en minutes |
 | `STREAM_URL` | `http://localhost:8001` | URL du service `stream`, utilisée pour relayer le HLS |
 | `STREAM_TIMEOUT_SECONDS` | `5` | Délai maximum d'attente d'une réponse de `stream`, en secondes |
+| `MQTT_HOST` | `localhost` | Hôte du broker MQTT (`mqtt` dans le docker-compose) |
+| `MQTT_PORT` | `1883` | Port du broker MQTT |
 
 Les variables se mettent dans `main/.env` (copier `.env.example`). Les valeurs de `.env.example` correspondent à celles par défaut du `docker-compose.yml`. Remplacer `JWT_SECRET_KEY=change-me` par une vraie clé : quiconque la connaît peut fabriquer un jeton valide pour n'importe quel compte.
+
+En image Docker, le build se lance depuis la racine du repo, car l'image embarque `common` :
+
+    docker build -f main/Dockerfile -t main .
 
 Les tables sont créées au démarrage (`Base.metadata.create_all`) si elles n'existent pas. Il n'y a pas encore de migrations : une table existante n'est jamais modifiée, il faut la supprimer à la main si son modèle change.
 
@@ -46,6 +52,7 @@ Les tables sont créées au démarrage (`Base.metadata.create_all`) si elles n'e
 | `/streams`       | HTTP POST | Crée une session de live (protégé)    |
 | `/streams`       | HTTP GET  | Liste les sessions, filtrable par statut |
 | `/streams/{id}`  | HTTP GET  | Renvoie le détail d'une session       |
+| `/streams/{stream_id}/ingest` | WebSocket | Reçoit le flux vidéo du streamer et le relaie à `stream` (jeton en query) |
 | `/lives/{stream_id}/{filename}` | HTTP GET | Relaie la playlist ou un segment HLS d'un live depuis `stream` |
 
 La doc interactive est sur `http://localhost:8000/docs`.
@@ -158,6 +165,29 @@ Une session `created` depuis plus de 10 minutes sans ingestion est passée en `c
 
 Le passage en `live` et en `ended` est prêt dans `app/services/streams.py` (`mark_started`, `mark_ended`) mais rien ne l'appelle encore (`mark_started` n'agit que sur une session `created`, `mark_ended` que sur une session `live`, tout autre événement est ignoré) : il faudra les brancher sur `stream/started` et `stream/ended` quand #11 (MQTT) sera faite.
 
+### `WS /streams/{stream_id}/ingest?token=<jwt>`
+
+Le navigateur du streamer envoie des morceaux WebM en binaire. `main` vérifie le jeton et que le streamer est bien le propriétaire de la session, puis ouvre une WebSocket vers `stream` (`/streams/{stream_id}/ingest`, avec `streamer_id`, `streamer_name`, `title` et `game` en query) et recopie chaque morceau sans le modifier.
+
+```
+streamer --WebSocket--> main (auth) --WebSocket--> stream --stdin--> ffmpeg
+```
+
+Les refus sont envoyés après l'ouverture de la connexion : avant, le navigateur ne recevrait qu'un 403 HTTP et perdrait le code.
+
+| Code de fermeture | Cas |
+|-------------------|-----|
+| 4401 | Jeton absent ou invalide (un jeton absent de l'URL est refusé par un 403 HTTP) |
+| 4403 | La session appartient à un autre streamer |
+| 4404 | La session n'existe pas |
+| 4409 | La session est `ended` ou `cancelled` |
+| 1003 | Le streamer a envoyé un message texte au lieu de binaire |
+| 1011 | `stream` est injoignable, a coupé la connexion ou l'a refusée (ex. `Stream already live`). La raison est reprise dans le message de fermeture |
+
+Quand le streamer se déconnecte, la connexion vers `stream` est fermée proprement. Une session `live` peut être rouverte : c'est la reconnexion du streamer pendant la période de grâce de `stream`.
+
+Dès le premier morceau relayé à `stream`, la session passe de `created` à `live` : une session qui diffuse n'est donc pas annulée par le nettoyage des 10 minutes. Les messages texte sont refusés (`1003`). Après un `1013` envoyé par `stream` (rien reçu pendant `SIGNAL_TIMEOUT_SECONDS`), le streamer reçoit un `1011` et doit rouvrir la connexion.
+
 ### `GET /lives/{stream_id}/{filename}`
 
 `main` appelle `stream` et renvoie sa réponse telle quelle, pour que le player hls.js du front ne contacte jamais `stream` directement. Pas besoin d'être connecté pour regarder.
@@ -192,6 +222,19 @@ def quelque_chose(current_user: Annotated[User, Depends(get_current_user)]):
 
 Dans la doc interactive (`/docs`), le bouton **Authorize** permet de se connecter avec un `username` / `password` : Swagger appelle `/auth/login` et envoie ensuite le jeton sur les routes protégées.
 
+## Events MQTT
+
+Au démarrage, `main` se connecte au broker avec le `MqttClient` de `common` (`app/mqtt.py`). La connexion se fait en tâche de fond : si le broker est absent, l'API démarre quand même et réessaie toutes les 5 s.
+
+| Topic            | Event           | Effet                                                      |
+|------------------|-----------------|------------------------------------------------------------|
+| `stream/started` | `StreamStarted` | `mark_started` : le stream passe de `created` à `live`, `started_at` est rempli |
+| `stream/ended`   | `StreamEnded`   | `mark_ended` : le stream passe de `live` à `ended`, `ended_at` est rempli |
+
+Les handlers sont dans `app/services/streams.py`. Chaque event ouvre sa propre session et tourne dans un thread (`asyncio.to_thread`), car la base est synchrone et ne doit pas bloquer la boucle. Un event pour un stream inconnu est ignoré et journalisé. Un event en retard ou en double ne change rien : `stream/started` n'agit que sur un stream `created`, `stream/ended` que sur un stream `live`.
+
+Le client est aussi dans `app.state.mqtt` pour publier depuis une route.
+
 ## Base de données
 
 Table `users` :
@@ -213,7 +256,7 @@ Table `users` :
     cd main
     uv run pytest
 
-Les tests utilisent une base SQLite en mémoire, recréée pour chaque test : ils n'ont pas besoin de PostgreSQL ni de `.env`.
+Les tests utilisent une base SQLite en mémoire, recréée pour chaque test : ils n'ont pas besoin de PostgreSQL, ni de broker MQTT, ni de `.env`.
 
 ### À la main
 

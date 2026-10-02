@@ -31,12 +31,17 @@ if __name__ == "__main__":
     parser.add_argument("file", type=Path, help="video file to send (WebM)")
     parser.add_argument("stream_id", type=int, help="live id")
     parser.add_argument(
-        "--url", help="WebSocket URL (default: ws://localhost:8001/streams/{stream_id}/ingest)"
+        "--url",
+        help="WebSocket URL with the live info in the query string "
+        "(default: ws://localhost:8001/streams/{stream_id}/ingest?streamer_id=1&...)",
     )
     parser.add_argument(
         "--delay", type=float, default=0.1, help="pause in seconds between chunks (default: 0.1)"
     )
     args = parser.parse_args()
 
-    url = args.url or f"ws://localhost:8001/streams/{args.stream_id}/ingest"
+    url = args.url or (
+        f"ws://localhost:8001/streams/{args.stream_id}/ingest"
+        "?streamer_id=1&streamer_name=fake&title=Test&game=Test"
+    )
     asyncio.run(main(args.file, url, args.delay))

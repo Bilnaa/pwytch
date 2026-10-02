@@ -1,11 +1,15 @@
+import logging
 from datetime import datetime, timedelta
 
+from common.events import StreamEnded, StreamStarted
 from sqlalchemy import func, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session, joinedload
 
 from app.models import Stream, User
 from app.models.stream import Status, utcnow
+
+logger = logging.getLogger(__name__)
 
 # A session that nobody started streaming into after this long is abandoned
 CREATED_TIMEOUT = timedelta(minutes=10)
@@ -104,3 +108,21 @@ def mark_ended(db: Session, stream_id: int, ended_at: datetime) -> Stream:
     stream.ended_at = ended_at
     db.commit()
     return stream
+
+
+def on_stream_started(db: Session, event: StreamStarted) -> None:
+    try:
+        stream = mark_started(db, event.stream_id, event.started_at)
+    except StreamNotFoundError:
+        logger.warning("Ignored stream/started for the unknown stream %s", event.stream_id)
+        return
+    logger.info("Stream %s is %s", stream.id, stream.status)
+
+
+def on_stream_ended(db: Session, event: StreamEnded) -> None:
+    try:
+        stream = mark_ended(db, event.stream_id, event.ended_at)
+    except StreamNotFoundError:
+        logger.warning("Ignored stream/ended for the unknown stream %s", event.stream_id)
+        return
+    logger.info("Stream %s is %s (%s)", stream.id, stream.status, event.reason)

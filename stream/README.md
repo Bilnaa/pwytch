@@ -18,15 +18,21 @@ ou depuis `stream/` :
 
     uv run fastapi dev --port 8001
 
-`ffmpeg` doit être installé et dans le `PATH`.
+`ffmpeg` doit être installé et dans le `PATH`. Pour que les events partent, le broker MQTT doit tourner (`docker compose up -d mqtt` depuis la racine) ; sans lui le service démarre et les lives fonctionnent quand même.
 
 | Variable    | Défaut  | Rôle                                                          |
 |-------------|---------|---------------------------------------------------------------|
 | `LIVES_DIR` | `lives` | Dossier de sortie HLS, relatif à `stream/`. Ignoré par Git.   |
 | `RECONNECT_SECONDS` | `30` | Temps laissé au streamer pour revenir après une coupure      |
 | `SIGNAL_TIMEOUT_SECONDS` | `10` | Sans aucune donnée pendant ce temps, le streamer est considéré comme coupé |
+| `MQTT_HOST` | `localhost` | Hôte du broker MQTT (`mqtt` dans le docker-compose) |
+| `MQTT_PORT` | `1883` | Port du broker MQTT |
 
 Les variables se mettent dans `stream/.env` (copier `.env.example`).
+
+En image Docker, le build se lance depuis la racine du repo, car l'image embarque `common` :
+
+    docker build -f stream/Dockerfile -t stream .
 
 ## Endpoints
 
@@ -39,6 +45,17 @@ Les variables se mettent dans `stream/.env` (copier `.env.example`).
 
 ### `/streams/{stream_id}/ingest`
 
+`main` ouvre la WebSocket avec les infos du live en query params, tous obligatoires :
+
+| Param           | Type | Rôle                    |
+|-----------------|------|-------------------------|
+| `streamer_id`   | int  | Id du streamer          |
+| `streamer_name` | str  | Nom affiché du streamer |
+| `title`         | str  | Titre du live           |
+| `game`          | str  | Jeu                     |
+
+Exemple : `/streams/42/ingest?streamer_id=1&streamer_name=alice&title=Speedrun&game=Celeste`. `stream` les garde en mémoire sur le live. Ce sont ceux de la première connexion qui comptent : une reconnexion pendant `RECONNECT_SECONDS` doit les renvoyer, mais ne les change pas.
+
 Chaque message binaire reçu est écrit tel quel dans l'entrée de ffmpeg. Le premier morceau doit contenir l'en-tête WebM (c'est le cas du premier morceau produit par `MediaRecorder`).
 
 Quand le client ferme la connexion, le live n'est pas fini tout de suite : les viewers voient l'écran « Signal lost » pendant `RECONNECT_SECONDS`, puis le live se termine (voir « Coupure et reconnexion »).
@@ -47,7 +64,7 @@ Codes de fermeture envoyés par `stream` (à gérer côté `main`) :
 
 | Code   | Quand                                                                   |
 |--------|-------------------------------------------------------------------------|
-| `1008` | Un ingest est déjà en cours pour ce `stream_id` (raison `Stream already live`) ou ce `stream_id` a déjà servi (raison `Stream id already used`) |
+| `1008` | Un ingest est déjà en cours pour ce `stream_id` (raison `Stream already live`), ce `stream_id` a déjà servi (raison `Stream id already used`) ou il manque un query param (sans raison) |
 | `1011` | ffmpeg a planté (flux invalide, etc.). Le détail est dans les logs      |
 | `1012` | `stream` s'arrête ou redémarre. La playlist est quand même terminée     |
 | `1013` | Aucune donnée reçue depuis `SIGNAL_TIMEOUT_SECONDS` (raison `No data received`). Traité comme une coupure : il faut se reconnecter sur le même `stream_id` |
@@ -59,6 +76,8 @@ Quand c'est le client qui ferme (fin normale du live, en général `1000`), `str
 Outil de dev : permet de simuler un streamer sans webcam, sans front et sans `main`. `main` ne l'expose jamais.
 
 Le corps de la requête est lu au fur et à mesure et envoyé au même ffmpeg que la WebSocket : même sortie HLS, même écran « Signal lost » à la fin, mêmes refus. ffmpeg détecte le format tout seul, on peut donc envoyer du MPEG-TS comme du WebM (voir « À la main »).
+
+Les query params sont les mêmes que ceux de la WebSocket, mais facultatifs : `streamer_id=0`, `streamer_name=dev`, `title=Dev live` et `game=Dev` par défaut.
 
 | Code  | Quand                                                              |
 |-------|--------------------------------------------------------------------|
@@ -90,6 +109,27 @@ Le dossier `lives/` est monté en statique (`StaticFiles`) : `GET /lives/42/inde
 
 Les fichiers d'un live terminé restent servis, c'est ce qu'utilise le replay. On ne peut pas sortir du dossier (`/lives/../.env` renvoie 404) et il n'y a pas de listing des dossiers.
 
+## Events MQTT
+
+`stream` publie le début et la fin de chaque live avec le `MqttClient` de `common` (`app/events.py`), en QoS 1. Les modèles sont dans `common.events`.
+
+| Topic            | Modèle          | Quand                                                              |
+|------------------|-----------------|--------------------------------------------------------------------|
+| `stream/started` | `StreamStarted` | Le premier ffmpeg du live a démarré. Une reconnexion ne le republie pas |
+| `stream/ended`   | `StreamEnded`   | La playlist a reçu `#EXT-X-ENDLIST` : délai de reconnexion écoulé, ou arrêt du service |
+
+```json
+{"event_id": "4070bf93-...", "version": 1, "stream_id": 42, "streamer_id": 1, "streamer_name": "alice", "title": "Speedrun", "game": "Celeste", "started_at": "2026-10-02T12:23:22.099239Z"}
+{"event_id": "268c466d-...", "version": 1, "stream_id": 42, "streamer_id": 1, "ended_at": "2026-10-02T12:53:29.962198Z", "duration_s": 1807.86, "reason": "normal"}
+```
+
+- `streamer_id`, `streamer_name`, `title` et `game` sont ceux reçus à la première connexion de l'ingest
+- `duration_s` va de `started_at` à `ended_at` : il compte les écrans « Signal lost », y compris le dernier (`RECONNECT_SECONDS`)
+- `reason` vaut `error` si le dernier ffmpeg du streamer a planté (code de sortie différent de 0), `normal` sinon. Un plantage ne termine pas le live plus vite : l'event part après le délai de reconnexion, comme pour une coupure. Si le streamer revient entre-temps et finit normalement, c'est `normal`
+- Un live dont le premier ffmpeg n'a jamais démarré ne publie rien
+
+La connexion au broker se fait en tâche de fond au démarrage et se rétablit toute seule. Si le broker est injoignable au moment de publier, l'erreur est journalisée (`Event stream/started not published`) et le live continue. L'event est alors perdu : il n'est pas renvoyé plus tard.
+
 ## Sortie
 
 Chaque live écrit dans `lives/{stream_id}/` : `index.m3u8` et des segments `.ts` de 4 s. La playlist est de type `EVENT` : les segments ne sont jamais supprimés, ce qui permet de la réutiliser pour le replay.
@@ -117,7 +157,7 @@ index1.ts
     cd stream
     uv run pytest
 
-Ce sont des tests unitaires : ffmpeg est remplacé par un faux processus, ils ne lancent rien et n'ont pas besoin de ffmpeg. Ils vérifient ce que le service envoie à ffmpeg et comment il ferme les connexions. La vraie conversion se teste à la main (ci-dessous).
+Ce sont des tests unitaires : ffmpeg est remplacé par un faux processus et le client MQTT par un faux client, ils ne lancent rien et n'ont besoin ni de ffmpeg ni d'un broker. Ils vérifient ce que le service envoie à ffmpeg et comment il ferme les connexions. La vraie conversion se teste à la main (ci-dessous).
 
 ### À la main
 
@@ -143,7 +183,7 @@ Dans un second terminal, depuis `stream/` :
     curl -i http://localhost:8001/lives/42/index.m3u8
     ffplay http://localhost:8001/lives/42/index.m3u8
 
-`uv run python scripts/fake_streamer.py --help` liste les options (`--url`, `--delay`).
+`uv run python scripts/fake_streamer.py --help` liste les options (`--url`, `--delay`). Le script envoie des infos de live fixes (`streamer_id=1`, `streamer_name=fake`, ...) ; pour en envoyer d'autres, passer l'URL complète avec `--url`.
 
 Sans le script, en HTTP (`-re` envoie la vidéo à sa vitesse réelle, comme un vrai live) :
 
@@ -153,6 +193,13 @@ Sans le script, en HTTP (`-re` envoie la vidéo à sa vitesse réelle, comme un 
     # ou une vraie vidéo
     ffmpeg -re -i video.mp4 -c:v libx264 -c:a aac -f mpegts http://localhost:8001/streams/44/ingest
 
+Pour voir les events : lancer le broker, écouter les topics dans un troisième terminal, puis envoyer une vidéo. `stream/started` arrive tout de suite, `stream/ended` après `RECONNECT_SECONDS`.
+
+    docker compose up -d mqtt
+    docker compose exec mqtt mosquitto_sub -t 'stream/#' -v
+
+Avec `docker compose stop mqtt`, le live se déroule pareil et les logs de `stream` affichent `Event stream/started not published`.
+
 Pour voir une connexion qui reste ouverte sans rien envoyer : lancer le service avec `SIGNAL_TIMEOUT_SECONDS=5` et envoyer la vidéo avec `--delay 8`. Le script affiche `connection closed by the server (1013)` et la playlist passe sur l'écran « Signal lost ».
 
 Pour voir une coupure puis une reprise : lancer le service avec `RECONNECT_SECONDS=15`, envoyer la vidéo, attendre quelques secondes et la renvoyer sur le même live. La playlist contient alors live, écran, live, écran, puis `#EXT-X-ENDLIST`.
@@ -160,5 +207,6 @@ Pour voir une coupure puis une reprise : lancer le service avec `RECONNECT_SECON
 ## Limites
 
 - L'état est en mémoire : si `stream` redémarre, les lives en cours (et ceux sur l'écran « Signal lost ») s'arrêtent. Leur playlist est terminée proprement, mais le streamer doit relancer un live avec un nouveau `stream_id`.
+- Un event qui n'a pas pu être publié (broker injoignable) est perdu : `main` ne saura pas que le live a commencé ou fini.
 - Un processus ffmpeg par live : le nombre de lives simultanés est limité par le CPU de la machine.
 - Latence de 15 à 20 s entre le streamer et les viewers, normale pour du HLS avec des segments de 4 s.

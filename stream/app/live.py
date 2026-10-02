@@ -1,27 +1,44 @@
 import asyncio
+from dataclasses import asdict, dataclass
+from datetime import datetime, timezone
 from pathlib import Path
 
+from common import topics
+from common.events import StreamEnded, StreamStarted
+
+from app import events
 from app.hls import HlsPipeline, SlatePipeline
 
 # lives that are not over yet, connected or waiting for the streamer
 lives: dict[int, "Live"] = {}
 
 
+@dataclass
+class LiveInfo:
+    streamer_id: int
+    streamer_name: str
+    title: str
+    game: str
+
+
 class Live:
     """A live can span several connections of the streamer, the slate fills the gaps."""
 
-    def __init__(self, stream_id: int, lives_dir: Path):
+    def __init__(self, stream_id: int, lives_dir: Path, info: LiveInfo):
         self.stream_id = stream_id
+        self.info = info
         self.output_dir = lives_dir / str(stream_id)
         self.pipeline: HlsPipeline | None = None
         self.slate: SlatePipeline | None = None
         self.grace: asyncio.TimerHandle | None = None
         self.disconnecting: asyncio.Task | None = None
         self.ending: asyncio.Task | None = None
+        self.started_at: datetime | None = None
+        self.failed = False
 
     @classmethod
-    def create(cls, stream_id: int, lives_dir: Path) -> "Live":
-        live = cls(stream_id, lives_dir)
+    def create(cls, stream_id: int, lives_dir: Path, info: LiveInfo) -> "Live":
+        live = cls(stream_id, lives_dir, info)
         # raises FileExistsError if this stream_id was already used: its files are a replay now
         live.output_dir.mkdir(parents=True)
         lives[stream_id] = live
@@ -42,6 +59,15 @@ class Live:
             await self.slate.close()
             self.slate = None
         await self.pipeline.start()
+        if self.started_at is None:
+            # only the first ffmpeg starts the live, a reconnection doesn't
+            self.started_at = datetime.now(timezone.utc)
+            await events.publish(
+                topics.STREAM_STARTED,
+                StreamStarted(
+                    stream_id=self.stream_id, started_at=self.started_at, **asdict(self.info)
+                ),
+            )
         return self.pipeline
 
     def disconnect(self, reconnect_seconds: float) -> asyncio.Task:
@@ -50,7 +76,8 @@ class Live:
         return self.disconnecting
 
     async def _disconnect(self, reconnect_seconds: float) -> None:
-        await self.pipeline.close()
+        # only the last connection counts: a live that came back after a crash ends normally
+        self.failed = await self.pipeline.close() != 0
         self.pipeline = None
         if self.ending:
             return
@@ -76,6 +103,18 @@ class Live:
         if playlist.exists():
             with playlist.open("a") as f:
                 f.write("#EXT-X-ENDLIST\n")
+        if self.started_at:
+            ended_at = datetime.now(timezone.utc)
+            await events.publish(
+                topics.STREAM_ENDED,
+                StreamEnded(
+                    stream_id=self.stream_id,
+                    streamer_id=self.info.streamer_id,
+                    ended_at=ended_at,
+                    duration_s=(ended_at - self.started_at).total_seconds(),
+                    reason="error" if self.failed else "normal",
+                ),
+            )
         lives.pop(self.stream_id, None)
 
 

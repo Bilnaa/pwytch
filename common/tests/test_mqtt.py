@@ -109,6 +109,24 @@ async def test_failing_handler_does_not_stop_the_consumer(client):
     assert len(calls) == 2
 
 
+async def test_failed_event_is_handled_again_when_sent_again(client):
+    calls = []
+
+    async def handler(event):
+        calls.append(event)
+        if len(calls) == 1:
+            raise RuntimeError("database down")
+
+    client.subscribe(topics.STREAM_ENDED, StreamEnded, handler)
+    payload = ended().model_dump_json()
+
+    await client.handle(topics.STREAM_ENDED, payload)
+    await client.handle(topics.STREAM_ENDED, payload)
+    await client.handle(topics.STREAM_ENDED, payload)
+
+    assert len(calls) == 2
+
+
 async def test_publish_without_connection_raises(client):
     with pytest.raises(NotConnectedError):
         await client.publish(topics.STREAM_ENDED, ended())
@@ -124,9 +142,11 @@ class FakeBroker:
         self.subscribed = []
         self.published = []
         self.connected = asyncio.Event()
+        self.clean_session = None
 
-    def __call__(self, host, port, identifier=None):
+    def __call__(self, host, port, identifier=None, clean_session=None):
         broker = self
+        broker.clean_session = clean_session
 
         class FakeClient:
             async def __aenter__(self):
@@ -172,6 +192,29 @@ async def test_client_retries_until_the_broker_answers(monkeypatch, client):
     await client.stop()
 
     assert broker.connections == 3
+
+
+async def test_session_is_persistent_with_a_client_id(monkeypatch):
+    broker = FakeBroker()
+    monkeypatch.setattr(mqtt.aiomqtt, "Client", broker)
+    client = MqttClient(client_id="main", reconnect_seconds=0)
+
+    await client.start()
+    await asyncio.wait_for(broker.connected.wait(), timeout=2)
+    await client.stop()
+
+    assert broker.clean_session is False
+
+
+async def test_session_is_clean_without_a_client_id(monkeypatch, client):
+    broker = FakeBroker()
+    monkeypatch.setattr(mqtt.aiomqtt, "Client", broker)
+
+    await client.start()
+    await asyncio.wait_for(broker.connected.wait(), timeout=2)
+    await client.stop()
+
+    assert broker.clean_session is True
 
 
 async def test_subscriptions_are_sent_with_qos_1(monkeypatch, client):
