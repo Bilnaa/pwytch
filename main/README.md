@@ -43,6 +43,9 @@ Les tables sont créées au démarrage (`Base.metadata.create_all`) si elles n'e
 | `/auth/register` | HTTP POST | Crée un compte utilisateur            |
 | `/auth/login`    | HTTP POST | Connecte un utilisateur, renvoie un jeton JWT |
 | `/auth/me`       | HTTP GET  | Renvoie l'utilisateur du jeton (protégé) |
+| `/streams`       | HTTP POST | Crée une session de live (protégé)    |
+| `/streams`       | HTTP GET  | Liste les sessions, filtrable par statut |
+| `/streams/{id}`  | HTTP GET  | Renvoie le détail d'une session       |
 | `/lives/{stream_id}/{filename}` | HTTP GET | Relaie la playlist ou un segment HLS d'un live depuis `stream` |
 
 La doc interactive est sur `http://localhost:8000/docs`.
@@ -113,6 +116,47 @@ Route protégée : il faut envoyer le jeton dans l'en-tête `Authorization: Bear
 |-------|-----------------------------------------------------------------------|
 | `200` | Renvoie le `UserResponse` du compte connecté                          |
 | `401` | Jeton absent (`Not authenticated`), invalide, expiré, signé avec une autre clé, ou dont le compte n'existe plus (`Could not validate credentials`) |
+
+### Sessions de live
+
+Chaque clic sur « Go live » crée une session avec un identifiant unique, utilisé ensuite dans l'URL d'ingestion. Un `Stream` ressemble à :
+
+```json
+{
+  "id": 1,
+  "streamer": {"id": 3, "username": "john_doe"},
+  "title": "Speedrun any%",
+  "game": "Celeste",
+  "status": "created",
+  "created_at": "2026-10-01T18:00:00Z",
+  "started_at": null,
+  "ended_at": null
+}
+```
+
+Statuts : `created` (session créée, rien reçu), `live`, `ended`, `cancelled` (restée `created` plus de 10 minutes).
+
+`POST /streams` (protégé) :
+
+| Champ   | Contraintes       |
+|---------|-------------------|
+| `title` | 1 à 100 caractères |
+| `game`  | 1 à 50 caractères  |
+
+| Code | Cas |
+|------|-----|
+| 201  | Session créée, statut `created` |
+| 401  | Jeton absent ou invalide |
+| 409  | Le streamer a déjà une session `created` ou `live` |
+| 422  | Titre ou jeu invalide |
+
+Une session `created` depuis plus de 10 minutes sans ingestion est passée en `cancelled` au moment où son streamer en crée une nouvelle, ce qui libère la place. Le même nettoyage est fait à chaque `GET /streams`, pour ne pas lister de sessions abandonnées. Un index unique partiel en base garantit une seule session `created` ou `live` par streamer, même avec deux requêtes simultanées.
+
+`GET /streams?status=live&page=1&size=20` renvoie `{"items": [...], "total", "page", "size"}`, les plus récentes d'abord. `status` est optionnel (`created`, `live`, `ended`, `cancelled`), `size` va de 1 à 100. Pas besoin d'être connecté.
+
+`GET /streams/{id}` renvoie la session, ou 404.
+
+Le passage en `live` et en `ended` est prêt dans `app/services/streams.py` (`mark_started`, `mark_ended`) mais rien ne l'appelle encore (`mark_started` n'agit que sur une session `created`, `mark_ended` que sur une session `live`, tout autre événement est ignoré) : il faudra les brancher sur `stream/started` et `stream/ended` quand #11 (MQTT) sera faite.
 
 ### `GET /lives/{stream_id}/{filename}`
 
