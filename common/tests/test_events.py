@@ -123,7 +123,7 @@ def test_player_event_with_unknown_type_is_rejected():
 def make_chat_message_payload(**overrides):
     base = {
         "event_id": "9e4a1c7b-3d5f-4b2a-8c6e-1f0d2b4a6c83",
-        "message_id": 1203,
+        "message_id": "3f2b8d6a-7c1e-4a95-b0d4-6e8f1a2c5b97",
         "stream_id": 42,
         "author_id": 7,
         "author_name": "Célèste",
@@ -137,7 +137,7 @@ def test_chat_message_is_built_from_valid_payload():
     event = ChatMessage.model_validate(make_chat_message_payload())
 
     assert event.event_id == UUID("9e4a1c7b-3d5f-4b2a-8c6e-1f0d2b4a6c83")
-    assert event.message_id == 1203
+    assert event.message_id == UUID("3f2b8d6a-7c1e-4a95-b0d4-6e8f1a2c5b97")
     assert event.author_name == "Célèste"
     assert isinstance(event.sent_at, datetime)
     assert event.sent_at.tzinfo is not None
@@ -176,8 +176,8 @@ def test_chat_message_without_content_is_rejected():
         {"content": "   "},
         {"content": "x" * 501},
         {"author_name": ""},
-        {"message_id": "abc"},
-        {"message_id": 12.5},
+        {"message_id": "pas-un-uuid"},
+        {"message_id": 1203},
         {"sent_at": "2026-10-02T20:14:03"},
     ],
     ids=[
@@ -185,8 +185,8 @@ def test_chat_message_without_content_is_rejected():
         "blank-content",
         "content-too-long",
         "empty-author-name",
-        "message-id-not-a-number",
-        "message-id-fractional",
+        "message-id-not-a-uuid",
+        "message-id-integer",
         "sent-at-without-timezone",
     ],
 )
