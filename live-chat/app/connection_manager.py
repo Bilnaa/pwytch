@@ -12,7 +12,11 @@ class ConnectionManager():
         self.rooms[stream_id].add(websocket)
         print(self.rooms)
 
-    async def disconnect(self, stream_id: int, websocket: WebSocket): pass
+    def disconnect(self, stream_id: int, websocket: WebSocket):
+        room = self.rooms.get(stream_id, set())
+        room.discard(websocket)
+        if stream_id in self.rooms and len(self.rooms[stream_id]) == 0:
+            del self.rooms[stream_id]
 
     async def broadcast(self, stream_id: int, message: str):
         for ws in list(self.rooms.get(stream_id, set())):
