@@ -110,9 +110,19 @@ def mark_ended(db: Session, stream_id: int, ended_at: datetime) -> Stream:
     return stream
 
 
-async def on_stream_started(event: StreamStarted) -> None:
-    logger.info("Stream %s started by streamer %s", event.stream_id, event.streamer_id)
+def on_stream_started(db: Session, event: StreamStarted) -> None:
+    try:
+        stream = mark_started(db, event.stream_id, event.started_at)
+    except StreamNotFoundError:
+        logger.warning("Ignored stream/started for the unknown stream %s", event.stream_id)
+        return
+    logger.info("Stream %s is %s", stream.id, stream.status)
 
 
-async def on_stream_ended(event: StreamEnded) -> None:
-    logger.info("Stream %s ended (%s)", event.stream_id, event.reason)
+def on_stream_ended(db: Session, event: StreamEnded) -> None:
+    try:
+        stream = mark_ended(db, event.stream_id, event.ended_at)
+    except StreamNotFoundError:
+        logger.warning("Ignored stream/ended for the unknown stream %s", event.stream_id)
+        return
+    logger.info("Stream %s is %s (%s)", stream.id, stream.status, event.reason)

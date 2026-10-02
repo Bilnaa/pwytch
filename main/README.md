@@ -202,12 +202,14 @@ Dans la doc interactive (`/docs`), le bouton **Authorize** permet de se connecte
 
 Au démarrage, `main` se connecte au broker avec le `MqttClient` de `common` (`app/mqtt.py`). La connexion se fait en tâche de fond : si le broker est absent, l'API démarre quand même et réessaie toutes les 5 s.
 
-| Topic            | Event           | Handler (`app/services/streams.py`) |
-|------------------|-----------------|-------------------------------------|
-| `stream/started` | `StreamStarted` | `on_stream_started`                 |
-| `stream/ended`   | `StreamEnded`   | `on_stream_ended`                   |
+| Topic            | Event           | Effet                                                      |
+|------------------|-----------------|------------------------------------------------------------|
+| `stream/started` | `StreamStarted` | `mark_started` : le stream passe de `created` à `live`, `started_at` est rempli |
+| `stream/ended`   | `StreamEnded`   | `mark_ended` : le stream passe de `live` à `ended`, `ended_at` est rempli |
 
-Pour l'instant, les handlers ne font que journaliser l'event. Le client est aussi dans `app.state.mqtt` pour publier depuis une route.
+Les handlers sont dans `app/services/streams.py`. Chaque event ouvre sa propre session et tourne dans un thread (`asyncio.to_thread`), car la base est synchrone et ne doit pas bloquer la boucle. Un event pour un stream inconnu est ignoré et journalisé. Un event en retard ou en double ne change rien : `stream/started` n'agit que sur un stream `created`, `stream/ended` que sur un stream `live`.
+
+Le client est aussi dans `app.state.mqtt` pour publier depuis une route.
 
 ## Base de données
 
