@@ -2,7 +2,7 @@ import re
 from typing import Annotated
 
 from fastapi import Depends, HTTPException, Request, status
-from pydantic import BaseModel, Field, ValidationError
+from pydantic import BaseModel, Field
 
 USER_ID_HEADER = "X-User-Id"
 USER_NAME_HEADER = "X-User-Name"
