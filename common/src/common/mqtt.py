@@ -83,8 +83,13 @@ class MqttClient:
     async def _run(self) -> None:
         while True:
             try:
+                # with a client_id the session is persistent: the broker keeps the QoS 1
+                # messages received while we are disconnected (a restart for example)
                 async with aiomqtt.Client(
-                    self.host, self.port, identifier=self.client_id
+                    self.host,
+                    self.port,
+                    identifier=self.client_id,
+                    clean_session=self.client_id is None,
                 ) as client:
                     self._client = client
                     for topic in self._subscriptions:
@@ -115,12 +120,14 @@ class MqttClient:
         except Exception:
             # one bad message must not stop the consumer
             logger.exception("Handler failed for the event %s on %s", event.event_id, topic)
+            return
+        # only once the handler worked: a failed event can still be handled if sent again
+        self._mark_seen(event)
 
     def _already_seen(self, event: BaseEvent) -> bool:
-        key = str(event.event_id)
-        if key in self._seen:
-            return True
-        self._seen[key] = None
+        return str(event.event_id) in self._seen
+
+    def _mark_seen(self, event: BaseEvent) -> None:
+        self._seen[str(event.event_id)] = None
         if len(self._seen) > self.dedup_size:
             self._seen.popitem(last=False)
-        return False

@@ -43,9 +43,12 @@ await mqtt.stop()    # à l'arrêt
 
 - Tout passe en QoS 1
 - La connexion est rétablie toute seule (`reconnect_seconds`, 5 s par défaut) et les abonnements sont renvoyés au broker
+- Avec un `client_id`, la session est persistante (`clean_session=False`) : le broker garde les messages reçus pendant que le service est déconnecté ou redémarre, et les envoie à la reconnexion. Le `client_id` doit donc être unique par service
+  - La session ne survit pas à un redémarrage du broker : Mosquitto tourne sans `persistence true`, les sessions et les messages en attente sont en mémoire
+  - Le message est acquitté (PUBACK) dès sa réception, avant que le handler ne tourne : si le service plante pendant le traitement, ce message est perdu
 - `publish` lève `NotConnectedError` si le broker est injoignable : à l'appelant de décider (journaliser et continuer, par exemple)
 - Un message invalide est ignoré et journalisé, une erreur dans un handler aussi : le consommateur ne plante pas
-- Un event dont l'`event_id` a déjà été vu est ignoré (les 1000 derniers sont gardés en mémoire)
+- Un event dont l'`event_id` a déjà été traité avec succès est ignoré (les 1000 derniers sont gardés en mémoire). Un event dont le handler a échoué n'est pas marqué : s'il est renvoyé, il est traité de nouveau
 
 ## Règles d'équipe
 
