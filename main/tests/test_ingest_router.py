@@ -177,3 +177,33 @@ def test_send_failure_closes_with_1011(client, monkeypatch):
             ws.receive_bytes()
 
     assert exc.value.code == 1011
+
+
+def test_first_chunk_marks_the_session_live(client, db_session, upstream):
+    stream_id, token = create_stream(client)
+
+    with client.websocket_connect(f"/streams/{stream_id}/ingest?token={token}") as ws:
+        ws.send_bytes(b"x")
+
+    assert db_session.get(Stream, stream_id).status == "live"
+    assert db_session.get(Stream, stream_id).started_at is not None
+
+
+def test_session_stays_created_without_a_chunk(client, db_session, upstream):
+    stream_id, token = create_stream(client)
+
+    with client.websocket_connect(f"/streams/{stream_id}/ingest?token={token}"):
+        pass
+
+    assert db_session.get(Stream, stream_id).status == "created"
+
+
+def test_text_frame_closes_with_1003(client, upstream):
+    stream_id, token = create_stream(client)
+
+    with client.websocket_connect(f"/streams/{stream_id}/ingest?token={token}") as ws:
+        ws.send_text("hello")
+        with pytest.raises(WebSocketDisconnect) as exc:
+            ws.receive_bytes()
+
+    assert exc.value.code == 1003

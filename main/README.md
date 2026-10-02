@@ -175,11 +175,12 @@ Les refus sont envoyés après l'ouverture de la connexion : avant, le navigateu
 | 4403 | La session appartient à un autre streamer |
 | 4404 | La session n'existe pas |
 | 4409 | La session est `ended` ou `cancelled` |
+| 1003 | Le streamer a envoyé un message texte au lieu de binaire |
 | 1011 | `stream` est injoignable, a coupé la connexion ou l'a refusée (ex. `Stream already live`). La raison est reprise dans le message de fermeture |
 
 Quand le streamer se déconnecte, la connexion vers `stream` est fermée proprement. Une session `live` peut être rouverte : c'est la reconnexion du streamer pendant la période de grâce de `stream`.
 
-`main` n'écrit pas encore le statut `live` : tant que #11 (MQTT) n'est pas faite, rien ne passe la session de `created` à `live`. Après un `1013` envoyé par `stream` (rien reçu pendant `SIGNAL_TIMEOUT_SECONDS`), le streamer reçoit un `1011` et doit rouvrir la connexion.
+Dès le premier morceau relayé à `stream`, la session passe de `created` à `live` : une session qui diffuse n'est donc pas annulée par le nettoyage des 10 minutes. Les messages texte sont refusés (`1003`). Après un `1013` envoyé par `stream` (rien reçu pendant `SIGNAL_TIMEOUT_SECONDS`), le streamer reçoit un `1011` et doit rouvrir la connexion.
 
 ### `GET /lives/{stream_id}/{filename}`
 
