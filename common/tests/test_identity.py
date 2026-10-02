@@ -40,7 +40,15 @@ def test_missing_header_returns_401(missing):
     assert response.status_code == 401
 
 
-def test_non_integer_id_returns_401():
-    response = client.get("/me", headers={**to_headers(user), "X-User-Id": "abc"})
+@pytest.mark.parametrize("user_id", ["abc", "42.0", "+42", "4_2", "-1", "0"])
+def test_invalid_id_returns_401(user_id):
+    response = client.get("/me", headers={**to_headers(user), "X-User-Id": user_id})
+
+    assert response.status_code == 401
+
+
+@pytest.mark.parametrize("empty", ["X-User-Name", "X-User-Role"])
+def test_empty_name_or_role_returns_401(empty):
+    response = client.get("/me", headers={**to_headers(user), empty: ""})
 
     assert response.status_code == 401

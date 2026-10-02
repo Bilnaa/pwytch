@@ -67,7 +67,7 @@ def read_me(user: CurrentUser) -> UserIdentity:
     return user
 ```
 
-- Si un header manque ou si `X-User-Id` n'est pas un entier, la dépendance renvoie 401
+- Si un header manque, si `X-User-Id` n'est pas un entier strictement positif (`42.0`, `+42`, `0` ou `-1` sont refusés) ou si `X-User-Name` ou `X-User-Role` est vide, la dépendance renvoie 401
 - Un satellite fait confiance à ces headers : il ne doit être joignable qu'à travers `main`, sinon n'importe qui peut se faire passer pour un autre utilisateur
 
 ## Règles d'équipe
