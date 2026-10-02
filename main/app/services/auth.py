@@ -10,6 +10,7 @@ from sqlalchemy.orm import Session
 
 from app.config import auth_settings
 from app.models import User
+from app.models.user import ADMIN_ROLE
 from app.schemas.auth import USERNAME_PATTERN
 
 password_hash = PasswordHash.recommended()
@@ -24,6 +25,10 @@ class UserAlreadyExistsError(Exception):
 
 
 class InvalidCredentialsError(Exception):
+    pass
+
+
+class UserNotFoundError(Exception):
     pass
 
 
@@ -94,4 +99,13 @@ def get_user_from_token(db: Session, token: str) -> User:
     user = db.scalar(select(User).where(User.username == payload["sub"]))
     if user is None:
         raise InvalidCredentialsError("Could not validate credentials")
+    return user
+
+
+def make_admin(db: Session, username: str) -> User:
+    user = db.scalar(select(User).where(User.username == username.lower()))
+    if user is None:
+        raise UserNotFoundError(f"User {username!r} not found")
+    user.role = ADMIN_ROLE
+    db.commit()
     return user
