@@ -25,27 +25,27 @@ async def live_chat(websocket: WebSocket, stream_id: int, user_id: int | None = 
                 continue
 
             # If data's type is not a dict
-            if isinstance(data, dict):
+            if not isinstance(data, dict):
                 await websocket.send_json({"type": "error", "code": "INVALID_DATA_TYPE", "detail": "Les données envoyées ne sont pas un dict"})
                 continue
 
             message = data.get("content", "")
 
             # If the message content is not a string
-            if not isinstance(type(message), str):
+            if not isinstance(message, str):
                 await websocket.send_json({"type": "error", "code": "INVALID_MESSAGE_TYPE", "detail": "Le message n'est pas une chaine de charactere"})
                 continue
 
             message = message.strip()
 
             # Checking if json is empty
-            if message == "" or len(message) > 500:
-                await websocket.send_json({"type": "error", "code": "EMPTY_JSON", "detail": "Le JSON est vide"})
+            if message == "":
+                await websocket.send_json({"type": "error", "code": "EMPTY_MESSAGE", "detail": "Le message est vide"})
                 continue
 
             # Checking if json is too long
             if len(message) > 500:
-                await websocket.send_json({"type": "error", "code": "TOO_LONG_JSON", "detail": "Le JSON est trop long"})
+                await websocket.send_json({"type": "error", "code": "CONTENT_TOO_LONG", "detail": "Le message est trop long"})
                 continue
 
             await connectionManager.broadcast(stream_id, message)
