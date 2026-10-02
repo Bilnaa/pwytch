@@ -8,7 +8,7 @@ from app import models  # noqa: F401  (registers tables on Base.metadata)
 from app.config import stream_settings
 from app.db import Base, engine
 from app.mqtt import create_mqtt_client
-from app.routers import auth, health, lives, streams
+from app.routers import auth, health, ingest, lives, streams
 
 logging.basicConfig(level=logging.INFO)
 
@@ -32,6 +32,7 @@ app = FastAPI(title="main", lifespan=lifespan)
 
 app.include_router(auth.router)
 app.include_router(health.router)
+app.include_router(ingest.router)
 app.include_router(streams.router)
 app.include_router(lives.router)
 
