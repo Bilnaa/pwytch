@@ -1,5 +1,7 @@
 from fastapi import WebSocket
 
+from app.message import Message
+
 
 class ConnectionManager():
     def __init__(self):
@@ -17,10 +19,8 @@ class ConnectionManager():
         if stream_id in self.rooms and len(self.rooms[stream_id]) == 0:
             del self.rooms[stream_id]
 
-    async def broadcast(self, stream_id: int, message: str):
+    async def broadcast(self, stream_id: int, message: Message):
         for ws in list(self.rooms.get(stream_id, set())):
-            await ws.send_text(f'{ws} : {message}')
-
-
+            await ws.send_text(message.model_dump_json())
 
 connectionManager = ConnectionManager()

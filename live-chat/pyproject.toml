@@ -3,7 +3,10 @@ name = "live-chat"
 version = "0.1.0"
 requires-python = ">=3.12"
 dependencies = [
-    "fastapi[standard]>=0.142.2"
+    "fastapi[standard]>=0.142.2",
+    "mapped>=20.4.2",
+    "psycopg[binary]>=3.3.6",
+    "sqlalchemy>=2.1.2",
 ]
 
 [dependency-groups]

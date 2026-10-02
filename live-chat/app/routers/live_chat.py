@@ -1,6 +1,9 @@
 import json
 
 from fastapi import APIRouter, WebSocket
+from starlette.websockets import WebSocketDisconnect
+
+from app.message import Message, Author
 from app.connection_manager import connectionManager
 
 router = APIRouter(tags=["liveChat"])
@@ -48,6 +51,12 @@ async def live_chat(websocket: WebSocket, stream_id: int, user_id: int | None = 
                 await websocket.send_json({"type": "error", "code": "CONTENT_TOO_LONG", "detail": "Le message est trop long"})
                 continue
 
-            await connectionManager.broadcast(stream_id, message)
+            final_message = Message(stream_id=stream_id, author=Author(id=user_id, username=username if username else "Utilisateur Anonyme"), content=message)
+
+            await connectionManager.broadcast(stream_id, final_message)
+
+    except WebSocketDisconnect:
+        pass
+
     finally:
         connectionManager.disconnect(stream_id, websocket)
