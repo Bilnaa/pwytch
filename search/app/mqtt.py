@@ -1,11 +1,11 @@
 from collections.abc import Awaitable, Callable
 
-from common.events import BaseEvent, StreamEnded, StreamStarted
+from common.events import BaseEvent, ChatMessage, StreamEnded, StreamStarted
 from common.mqtt import MqttClient
-from common.topics import STREAM_ENDED, STREAM_STARTED
+from common.topics import CHAT_MESSAGE, STREAM_ENDED, STREAM_STARTED
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
-from app.indexer import on_stream_ended, on_stream_started
+from app.indexer import on_chat_message, on_stream_ended, on_stream_started
 from app.infra.config import Settings
 
 # Avec un client_id, le broker garde les messages QoS 1 reçus pendant un redémarrage.
@@ -37,5 +37,8 @@ def create_mqtt_client(
     )
     mqtt.subscribe(
         STREAM_ENDED, StreamEnded, with_session(session_factory, on_stream_ended)
+    )
+    mqtt.subscribe(
+        CHAT_MESSAGE, ChatMessage, with_session(session_factory, on_chat_message)
     )
     return mqtt

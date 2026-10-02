@@ -1,9 +1,13 @@
-from common.events import StreamEnded, StreamStarted
+import logging
+
+from common.events import ChatMessage, StreamEnded, StreamStarted
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.helpers.text import normalize
-from app.infra.models import LATEST_STREAM_ORDER, Stream, Streamer
+from app.infra.models import LATEST_STREAM_ORDER, IndexedChatMessage, Stream, Streamer
+
+logger = logging.getLogger(__name__)
 
 SEARCH_TEXT_SEPARATOR = " | "
 
@@ -45,6 +49,34 @@ async def on_stream_ended(session: AsyncSession, event: StreamEnded) -> None:
     # search_text laisserait l'index incohérent.
     stream.ended_at = event.ended_at
 
+    await session.commit()
+
+
+async def on_chat_message(session: AsyncSession, event: ChatMessage) -> None:
+    stored_message = await session.get(IndexedChatMessage, event.message_id)
+    if stored_message is not None:
+        # Premier event gagne. sent_at n'est pas comparé : SQLite le relit sans fuseau.
+        if (
+            stored_message.stream_id != event.stream_id
+            or stored_message.author_id != event.author_id
+            or stored_message.content != event.content
+        ):
+            logger.warning(
+                "Ignoring divergent duplicate of chat message %s", event.message_id
+            )
+        return
+
+    session.add(
+        IndexedChatMessage(
+            message_id=event.message_id,
+            stream_id=event.stream_id,
+            author_id=event.author_id,
+            author_name=event.author_name,
+            content=event.content,
+            search_text=normalize(event.content),
+            sent_at=event.sent_at,
+        )
+    )
     await session.commit()
 
 

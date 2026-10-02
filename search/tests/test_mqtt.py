@@ -1,11 +1,19 @@
 import pytest
 from app import mqtt as mqtt_module
 from app.infra.config import Settings
-from app.infra.models import Stream, Streamer
+from app.infra.models import IndexedChatMessage, Stream, Streamer
 from app.mqtt import MQTT_CLIENT_ID, create_mqtt_client
-from common.topics import STREAM_ENDED, STREAM_STARTED
+from common.topics import CHAT_MESSAGE, STREAM_ENDED, STREAM_STARTED
 
-from tests.factories import STREAMER_ID, as_utc, count_rows, make_ended, make_started
+from tests.factories import (
+    MESSAGE_ID,
+    STREAMER_ID,
+    as_utc,
+    count_rows,
+    make_chat_message,
+    make_ended,
+    make_started,
+)
 
 
 @pytest.fixture
@@ -34,6 +42,16 @@ async def test_valid_ended_sets_ended_at(mqtt, session_factory):
         stream = await session.get(Stream, ended.stream_id)
     assert stream is not None
     assert as_utc(stream.ended_at) == ended.ended_at
+
+
+@pytest.mark.anyio
+async def test_valid_chat_message_is_indexed(mqtt, session_factory):
+    await mqtt.handle(CHAT_MESSAGE, make_chat_message().model_dump_json())
+
+    async with session_factory() as session:
+        message = await session.get(IndexedChatMessage, MESSAGE_ID)
+    assert message is not None
+    assert message.content == "GG WP !"
 
 
 @pytest.mark.anyio
