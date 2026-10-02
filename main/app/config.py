@@ -18,6 +18,13 @@ class StreamSettings(BaseSettings):
     stream_url: str = "http://localhost:8001"
     stream_timeout_seconds: float = 5
 
+class MqttSettings(BaseSettings):
+    model_config = SettingsConfigDict(env_file=".env", extra="ignore")
+
+    mqtt_host: str = "localhost"
+    mqtt_port: int = 1883
+
 db_settings = DbSettings.model_validate({})
 auth_settings = AuthSettings.model_validate({})
 stream_settings = StreamSettings()
+mqtt_settings = MqttSettings()

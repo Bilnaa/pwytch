@@ -9,9 +9,9 @@ front ──HTTP──> main ──> PostgreSQL (users)
 
 ## Lancer
 
-PostgreSQL doit tourner. Depuis la racine du repo :
+PostgreSQL et le broker MQTT doivent tourner. Depuis la racine du repo :
 
-    docker compose up -d
+    docker compose up -d postgres mqtt
 
 Puis, depuis la racine :
 
@@ -29,8 +29,14 @@ ou depuis `main/` :
 | `ACCESS_TOKEN_EXPIRE_MINUTES` | `30` | Durée de validité d'un jeton, en minutes |
 | `STREAM_URL` | `http://localhost:8001` | URL du service `stream`, utilisée pour relayer le HLS |
 | `STREAM_TIMEOUT_SECONDS` | `5` | Délai maximum d'attente d'une réponse de `stream`, en secondes |
+| `MQTT_HOST` | `localhost` | Hôte du broker MQTT (`mqtt` dans le docker-compose) |
+| `MQTT_PORT` | `1883` | Port du broker MQTT |
 
 Les variables se mettent dans `main/.env` (copier `.env.example`). Les valeurs de `.env.example` correspondent à celles par défaut du `docker-compose.yml`. Remplacer `JWT_SECRET_KEY=change-me` par une vraie clé : quiconque la connaît peut fabriquer un jeton valide pour n'importe quel compte.
+
+En image Docker, le build se lance depuis la racine du repo, car l'image embarque `common` :
+
+    docker build -f main/Dockerfile -t main .
 
 Les tables sont créées au démarrage (`Base.metadata.create_all`) si elles n'existent pas. Il n'y a pas encore de migrations : une table existante n'est jamais modifiée, il faut la supprimer à la main si son modèle change.
 
@@ -192,6 +198,17 @@ def quelque_chose(current_user: Annotated[User, Depends(get_current_user)]):
 
 Dans la doc interactive (`/docs`), le bouton **Authorize** permet de se connecter avec un `username` / `password` : Swagger appelle `/auth/login` et envoie ensuite le jeton sur les routes protégées.
 
+## Events MQTT
+
+Au démarrage, `main` se connecte au broker avec le `MqttClient` de `common` (`app/mqtt.py`). La connexion se fait en tâche de fond : si le broker est absent, l'API démarre quand même et réessaie toutes les 5 s.
+
+| Topic            | Event           | Handler (`app/services/streams.py`) |
+|------------------|-----------------|-------------------------------------|
+| `stream/started` | `StreamStarted` | `on_stream_started`                 |
+| `stream/ended`   | `StreamEnded`   | `on_stream_ended`                   |
+
+Pour l'instant, les handlers ne font que journaliser l'event. Le client est aussi dans `app.state.mqtt` pour publier depuis une route.
+
 ## Base de données
 
 Table `users` :
@@ -213,7 +230,7 @@ Table `users` :
     cd main
     uv run pytest
 
-Les tests utilisent une base SQLite en mémoire, recréée pour chaque test : ils n'ont pas besoin de PostgreSQL ni de `.env`.
+Les tests utilisent une base SQLite en mémoire, recréée pour chaque test : ils n'ont pas besoin de PostgreSQL, ni de broker MQTT, ni de `.env`.
 
 ### À la main
 
