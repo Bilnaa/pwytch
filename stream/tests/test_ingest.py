@@ -1,6 +1,4 @@
-import asyncio
-import time
-from unittest.mock import AsyncMock, MagicMock
+from unittest.mock import AsyncMock
 
 import pytest
 from fastapi.testclient import TestClient
@@ -9,59 +7,13 @@ from starlette.websockets import WebSocketDisconnect
 from app import hls, live
 from app.config import settings
 from app.main import app
-
-
-@pytest.fixture
-def procs(tmp_path, monkeypatch):
-    """Fake ffmpeg: one mock process per run, nothing is launched."""
-    monkeypatch.setattr(settings, "lives_dir", tmp_path)
-    monkeypatch.setattr(settings, "reconnect_seconds", 0.1)
-    created = []
-
-    async def spawn(*args, **kwargs):
-        async def wait():
-            await asyncio.sleep(0.05)  # takes time, like the real one
-            return proc.returncode or 0
-
-        proc = MagicMock(returncode=None, wait=AsyncMock(side_effect=wait))
-        proc.is_slate = str(hls.SLATE) in args
-        proc.stdin.drain = AsyncMock()
-        proc.stdin.wait_closed = AsyncMock()
-        proc.stdin.is_closing.return_value = False
-        proc.stderr.__aiter__.return_value = [b"Invalid data found\n"]
-        created.append(proc)
-        return proc
-
-    monkeypatch.setattr(hls.asyncio, "create_subprocess_exec", spawn)
-    return created
-
-
-def streamer(procs):
-    return [p for p in procs if not p.is_slate]
-
-
-def slate(procs):
-    return [p for p in procs if p.is_slate]
-
-
-def written(proc):
-    return [c.args[0] for c in proc.stdin.write.call_args_list]
-
-
-def wait_until(condition):
-    deadline = time.monotonic() + 5
-    while not condition() and time.monotonic() < deadline:
-        time.sleep(0.01)
-
-
-def wait_until_finished(stream_id):
-    wait_until(lambda: stream_id not in live.lives)
+from tests.helpers import ingest_url, slate, streamer, wait_until, wait_until_finished, written
 
 
 def test_each_live_gets_its_own_ffmpeg(procs):
     with TestClient(app) as client:
-        with client.websocket_connect("/streams/1/ingest") as live1, \
-             client.websocket_connect("/streams/2/ingest") as live2:
+        with client.websocket_connect(ingest_url(1)) as live1, \
+             client.websocket_connect(ingest_url(2)) as live2:
             live1.send_bytes(b"a1")
             live2.send_bytes(b"b1")
             live1.send_bytes(b"a2")
@@ -77,7 +29,7 @@ def test_each_live_gets_its_own_ffmpeg(procs):
 
 def test_ffmpeg_crash_closes_websocket_and_frees_the_stream(procs, caplog):
     with TestClient(app) as client:
-        with client.websocket_connect("/streams/7/ingest") as ws:
+        with client.websocket_connect(ingest_url(7)) as ws:
             procs[0].returncode = 1  # ffmpeg died
             ws.send_bytes(b"garbage")
             with pytest.raises(WebSocketDisconnect) as exc:
@@ -92,8 +44,8 @@ def test_ffmpeg_crash_closes_websocket_and_frees_the_stream(procs, caplog):
 
 def test_same_stream_twice_is_refused(procs):
     with TestClient(app) as client:
-        with client.websocket_connect("/streams/5/ingest") as ws:
-            with client.websocket_connect("/streams/5/ingest") as other:
+        with client.websocket_connect(ingest_url(5)) as ws:
+            with client.websocket_connect(ingest_url(5)) as other:
                 with pytest.raises(WebSocketDisconnect) as exc:
                     other.receive_bytes()
             ws.close()
@@ -106,11 +58,11 @@ def test_same_stream_twice_is_refused(procs):
 def test_reconnect_during_grace_period_goes_on(procs, monkeypatch, tmp_path):
     monkeypatch.setattr(settings, "reconnect_seconds", 5)
     with TestClient(app) as client:
-        with client.websocket_connect("/streams/4/ingest") as ws:
+        with client.websocket_connect(ingest_url(4)) as ws:
             ws.send_bytes(b"part1")
             ws.close()
         wait_until(lambda: slate(procs))  # viewers see "signal lost"
-        with client.websocket_connect("/streams/4/ingest") as ws:
+        with client.websocket_connect(ingest_url(4)) as ws:
             ws.send_bytes(b"part2")
             ws.close()
 
@@ -121,7 +73,7 @@ def test_reconnect_during_grace_period_goes_on(procs, monkeypatch, tmp_path):
 def test_silent_streamer_is_treated_as_a_cut(procs, monkeypatch):
     monkeypatch.setattr(settings, "signal_timeout_seconds", 0.1)
     with TestClient(app) as client:
-        with client.websocket_connect("/streams/11/ingest") as ws:
+        with client.websocket_connect(ingest_url(11)) as ws:
             ws.send_bytes(b"chunk")
             with pytest.raises(WebSocketDisconnect) as exc:
                 ws.receive_bytes()
@@ -134,11 +86,11 @@ def test_silent_streamer_is_treated_as_a_cut(procs, monkeypatch):
 
 def test_live_ends_after_grace_period(procs, tmp_path):
     with TestClient(app) as client:
-        with client.websocket_connect("/streams/3/ingest") as ws:
+        with client.websocket_connect(ingest_url(3)) as ws:
             (tmp_path / "3" / "index.m3u8").write_text("#EXTM3U\n")  # written by ffmpeg for real
             ws.close()
         wait_until_finished(3)
-        with client.websocket_connect("/streams/3/ingest") as ws:
+        with client.websocket_connect(ingest_url(3)) as ws:
             with pytest.raises(WebSocketDisconnect) as exc:
                 ws.receive_bytes()
 
@@ -161,7 +113,7 @@ def test_http_ingest_goes_through_the_same_live(procs):
 
 def test_http_ingest_is_refused_while_the_websocket_is_live(procs):
     with TestClient(app) as client:
-        with client.websocket_connect("/streams/8/ingest") as ws:
+        with client.websocket_connect(ingest_url(8)) as ws:
             response = client.post("/streams/8/ingest", content=b"video")
             ws.close()
             wait_until_finished(8)
@@ -182,7 +134,7 @@ def test_http_ingest_ffmpeg_crash_returns_500(procs, monkeypatch):
 
 def test_shutdown_mid_stream_still_closes_ffmpeg(procs):
     with TestClient(app) as client:
-        with client.websocket_connect("/streams/9/ingest") as ws:
+        with client.websocket_connect(ingest_url(9)) as ws:
             ws.send_bytes(b"chunk")
         # leaving the blocks cancels the handler, then shuts the app down
 

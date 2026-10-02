@@ -5,7 +5,7 @@ from starlette.requests import ClientDisconnect
 
 from app.config import settings
 from app.hls import HlsError
-from app.live import Live, lives
+from app.live import Live, LiveInfo, lives
 
 router = APIRouter(tags=["ingest"])
 
@@ -14,11 +14,11 @@ class Refused(Exception):
     pass
 
 
-def get_live(stream_id: int) -> Live:
+def get_live(stream_id: int, info: LiveInfo) -> Live:
     live = lives.get(stream_id)
     if live is None:
         try:
-            return Live.create(stream_id, settings.lives_dir)
+            return Live.create(stream_id, settings.lives_dir, info)
         except FileExistsError:
             raise Refused("Stream id already used")
     if live.ending:
@@ -26,13 +26,21 @@ def get_live(stream_id: int) -> Live:
     if live.connected:
         raise Refused("Stream already live")
     # the streamer comes back during the grace period, the live goes on in the same playlist
+    # and keeps the info of its first connection
     return live
 
 
 @router.websocket("/streams/{stream_id}/ingest")
-async def ingest(stream_id: int, websocket: WebSocket):
+async def ingest(
+    stream_id: int,
+    websocket: WebSocket,
+    streamer_id: int,
+    streamer_name: str,
+    title: str,
+    game: str,
+):
     try:
-        live = get_live(stream_id)
+        live = get_live(stream_id, LiveInfo(streamer_id, streamer_name, title, game))
     except Refused as exc:
         await websocket.accept()
         await websocket.close(code=status.WS_1008_POLICY_VIOLATION, reason=str(exc))
@@ -64,9 +72,16 @@ async def ingest(stream_id: int, websocket: WebSocket):
     summary="Send a video over HTTP instead of the WebSocket (dev only)",
     responses={409: {"description": "Stream already live or stream id already used"}},
 )
-async def ingest_http(stream_id: int, request: Request):
+async def ingest_http(
+    stream_id: int,
+    request: Request,
+    streamer_id: int = 0,
+    streamer_name: str = "dev",
+    title: str = "Dev live",
+    game: str = "Dev",
+):
     try:
-        live = get_live(stream_id)
+        live = get_live(stream_id, LiveInfo(streamer_id, streamer_name, title, game))
     except Refused as exc:
         raise HTTPException(status.HTTP_409_CONFLICT, str(exc))
 
