@@ -3,7 +3,7 @@ from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
-from app import events, hls
+from app import events, hls, live
 from app.config import settings
 
 
@@ -37,4 +37,5 @@ def procs(tmp_path, monkeypatch):
         return proc
 
     monkeypatch.setattr(hls.asyncio, "create_subprocess_exec", spawn)
+    monkeypatch.setattr(live, "probe_height", AsyncMock(return_value=None))
     return created
