@@ -1,7 +1,8 @@
 from datetime import datetime
+from uuid import UUID
 
 import pytest
-from common.events import PlayerEvent, StreamEnded, StreamStarted
+from common.events import ChatMessage, PlayerEvent, StreamEnded, StreamStarted
 from pydantic import ValidationError
 
 
@@ -117,3 +118,78 @@ def test_player_event_round_trips_through_json():
 def test_player_event_with_unknown_type_is_rejected():
     with pytest.raises(ValidationError):
         PlayerEvent.model_validate(make_player_event_payload(event_type="seek"))
+
+
+def make_chat_message_payload(**overrides):
+    base = {
+        "event_id": "9e4a1c7b-3d5f-4b2a-8c6e-1f0d2b4a6c83",
+        "message_id": 1203,
+        "stream_id": 42,
+        "author_id": 7,
+        "author_name": "Célèste",
+        "content": "GG WP !",
+        "sent_at": "2026-10-02T20:14:03Z",
+    }
+    return {**base, **overrides}
+
+
+def test_chat_message_is_built_from_valid_payload():
+    event = ChatMessage.model_validate(make_chat_message_payload())
+
+    assert event.event_id == UUID("9e4a1c7b-3d5f-4b2a-8c6e-1f0d2b4a6c83")
+    assert event.message_id == 1203
+    assert event.author_name == "Célèste"
+    assert isinstance(event.sent_at, datetime)
+    assert event.sent_at.tzinfo is not None
+
+
+def test_chat_message_round_trips_through_json():
+    event = ChatMessage.model_validate(make_chat_message_payload())
+
+    assert ChatMessage.model_validate_json(event.model_dump_json()) == event
+
+
+def test_chat_message_content_is_stripped():
+    event = ChatMessage.model_validate(make_chat_message_payload(content="  gg wp  "))
+
+    assert event.content == "gg wp"
+
+
+def test_chat_message_accepts_content_of_500_characters():
+    event = ChatMessage.model_validate(make_chat_message_payload(content="x" * 500))
+
+    assert len(event.content) == 500
+
+
+def test_chat_message_without_content_is_rejected():
+    payload = make_chat_message_payload()
+    del payload["content"]
+
+    with pytest.raises(ValidationError):
+        ChatMessage.model_validate(payload)
+
+
+@pytest.mark.parametrize(
+    "overrides",
+    [
+        {"content": ""},
+        {"content": "   "},
+        {"content": "x" * 501},
+        {"author_name": ""},
+        {"message_id": "abc"},
+        {"message_id": 12.5},
+        {"sent_at": "2026-10-02T20:14:03"},
+    ],
+    ids=[
+        "empty-content",
+        "blank-content",
+        "content-too-long",
+        "empty-author-name",
+        "message-id-not-a-number",
+        "message-id-fractional",
+        "sent-at-without-timezone",
+    ],
+)
+def test_chat_message_with_invalid_field_is_rejected(overrides):
+    with pytest.raises(ValidationError):
+        ChatMessage.model_validate(make_chat_message_payload(**overrides))
