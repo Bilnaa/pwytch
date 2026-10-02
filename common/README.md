@@ -10,7 +10,6 @@ Bibliothèque partagée entre les services : les contrats que plusieurs services
 | `common.events`      | Modèles Pydantic des events : `BaseEvent`, `StreamStarted`, `StreamEnded`, `PlayerEvent` |
 | `common.mqtt`        | `MqttClient` : client asynchrone avec reconnexion, `publish` et `subscribe` |
 | `common.pagination`  | `Page[T]` : réponse paginée (`items`, `total`, `page`, `size`)              |
-| `common.identity`    | `UserIdentity`, `to_headers` et la dépendance FastAPI `CurrentUser`         |
 
 Exemple :
 
