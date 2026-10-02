@@ -2,7 +2,7 @@ import httpx
 import pytest
 
 from app.main import app
-from app.routers.lives import get_stream_client
+from app.dependencies import get_stream_client
 
 
 def use_stream(handler):

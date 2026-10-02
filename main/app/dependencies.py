@@ -1,6 +1,7 @@
 from typing import Annotated
 
-from fastapi import Depends, HTTPException, status
+import httpx
+from fastapi import Depends, HTTPException, Request, status
 from fastapi.security import OAuth2PasswordBearer
 from sqlalchemy.orm import Session
 
@@ -23,3 +24,7 @@ def get_current_user(
             detail=str(exc),
             headers={"WWW-Authenticate": "Bearer"},
         ) from exc
+
+
+def get_stream_client(request: Request) -> httpx.AsyncClient:
+    return request.app.state.stream_client
