@@ -238,6 +238,10 @@ Tout compte créé par `/auth/register` a le rôle `user`. Pour donner le rôle 
 
     uv run python -m app.scripts.make_admin john_doe
 
+Dans l'image Docker, ajouter `--no-dev` (les dépendances de dev n'y sont pas installées) :
+
+    uv run --no-dev python -m app.scripts.make_admin john_doe
+
 Le `username` n'est pas sensible à la casse. Le script affiche `john_doe is now admin`, ou `User 'john_doe' not found` (code de sortie `1`) si le compte n'existe pas. Le rôle est lu en base à chaque requête : le jeton déjà obtenu par le compte devient admin tout de suite, sans reconnexion. `GET /auth/me` renvoie le rôle dans le champ `role`.
 
 ## Events MQTT
