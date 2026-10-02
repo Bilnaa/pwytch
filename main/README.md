@@ -27,6 +27,8 @@ ou depuis `main/` :
 | `JWT_SECRET_KEY` | aucun | Clé qui signe les jetons d'accès. Obligatoire. À générer avec `openssl rand -hex 32` |
 | `JWT_ALGORITHM` | `HS256` | Algorithme de signature des jetons |
 | `ACCESS_TOKEN_EXPIRE_MINUTES` | `30` | Durée de validité d'un jeton, en minutes |
+| `STREAM_URL` | `http://localhost:8001` | URL du service `stream`, utilisée pour relayer le HLS |
+| `STREAM_TIMEOUT_SECONDS` | `5` | Délai maximum d'attente d'une réponse de `stream`, en secondes |
 
 Les variables se mettent dans `main/.env` (copier `.env.example`). Les valeurs de `.env.example` correspondent à celles par défaut du `docker-compose.yml`. Remplacer `JWT_SECRET_KEY=change-me` par une vraie clé : quiconque la connaît peut fabriquer un jeton valide pour n'importe quel compte.
 
@@ -44,6 +46,7 @@ Les tables sont créées au démarrage (`Base.metadata.create_all`) si elles n'e
 | `/streams`       | HTTP POST | Crée une session de live (protégé)    |
 | `/streams`       | HTTP GET  | Liste les sessions, filtrable par statut |
 | `/streams/{id}`  | HTTP GET  | Renvoie le détail d'une session       |
+| `/lives/{stream_id}/{filename}` | HTTP GET | Relaie la playlist ou un segment HLS d'un live depuis `stream` |
 
 La doc interactive est sur `http://localhost:8000/docs`.
 
@@ -154,6 +157,26 @@ Une session `created` depuis plus de 10 minutes sans ingestion est passée en `c
 `GET /streams/{id}` renvoie la session, ou 404.
 
 Le passage en `live` et en `ended` est prêt dans `app/services/streams.py` (`mark_started`, `mark_ended`) mais rien ne l'appelle encore : il faudra les brancher sur `stream/started` et `stream/ended` quand #11 (MQTT) sera faite.
+
+### `GET /lives/{stream_id}/{filename}`
+
+`main` appelle `stream` et renvoie sa réponse telle quelle, pour que le player hls.js du front ne contacte jamais `stream` directement. Pas besoin d'être connecté pour regarder.
+
+| Fichier        | Type                                | `Cache-Control`           |
+|----------------|-------------------------------------|---------------------------|
+| `index.m3u8`   | `application/vnd.apple.mpegurl`     | `no-cache` (la playlist change pendant le live) |
+| `index{N}.ts`  | `video/mp2t`                        | `public, max-age=3600`    |
+
+`filename` doit respecter `^index\d*\.(m3u8|ts)$`, sinon 422 : impossible de sortir du dossier du live. Les segments sont relayés en streaming, sans être chargés entièrement en mémoire.
+
+| Code | Cas |
+|------|-----|
+| 200  | Fichier relayé |
+| 404  | Live ou fichier inexistant |
+| 422  | `stream_id` ou `filename` invalide |
+| 502  | `stream` a renvoyé une réponse inattendue |
+| 503  | `stream` est injoignable |
+| 504  | `stream` n'a pas répondu à temps |
 
 ### Protéger une route
 
