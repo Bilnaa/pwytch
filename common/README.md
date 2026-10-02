@@ -7,7 +7,7 @@ Bibliothèque partagée entre les services : les contrats que plusieurs services
 | Module               | Contenu                                                                     |
 |----------------------|-----------------------------------------------------------------------------|
 | `common.topics`      | Noms des topics MQTT (`STREAM_STARTED = "stream/started"`, …)               |
-| `common.events`      | Modèles Pydantic des events : `BaseEvent`, `StreamStarted`, `StreamEnded`, `PlayerEvent` |
+| `common.events`      | Modèles Pydantic des events : `BaseEvent`, `StreamStarted`, `StreamEnded`, `PlayerEvent`, `ChatMessage` |
 | `common.mqtt`        | `MqttClient` : client asynchrone avec reconnexion, `publish` et `subscribe` |
 | `common.pagination`  | `Page[T]` : réponse paginée (`items`, `total`, `page`, `size`)              |
 | `common.identity`    | `UserIdentity`, `to_headers` et la dépendance FastAPI `CurrentUser`         |
@@ -23,6 +23,14 @@ event = StreamStarted.model_validate_json(payload)      # côté consommateur
 ```
 
 `event_id` (UUID) est généré à la création de l'event si on ne le donne pas. Il sert à dédupliquer : avec la QoS 1, un message peut arriver deux fois.
+
+`ChatMessage` (topic `chat/message`) :
+
+- publié par `live-chat`, consommé par `search` et `stats` ;
+- `message_id` : uuid4 généré par `live-chat`, unique dans tout le système (pas par live) ;
+- `content` : `strip`, puis entre 1 et 500 caractères, sinon `ValidationError` ;
+- `author_name` : non vide ;
+- `sent_at` : date avec fuseau obligatoire (UTC conseillé), une date sans fuseau est refusée.
 
 ## Client MQTT
 
