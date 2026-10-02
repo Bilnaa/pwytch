@@ -10,7 +10,6 @@ class ConnectionManager():
         if stream_id not in self.rooms:
             self.rooms[stream_id] = set()
         self.rooms[stream_id].add(websocket)
-        print(self.rooms)
 
     def disconnect(self, stream_id: int, websocket: WebSocket):
         room = self.rooms.get(stream_id, set())

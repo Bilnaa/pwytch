@@ -1,10 +1,16 @@
 # live-chat
 
 ## Run
-
+    
+    uv run fastapi dev --port 8002
+    or
     make live-chat
 
 ## Test
+
+    uv run pytest
+
+## Utilisation du Micro-Service
 Lorsqu'un "stream" est lancé avec le make live-chat, connectez un client en utilisant :
     
     uvx websockets "ws://localhost:8002/streams/1/chat?user_id=1&username=whateverusernameyouwant"
