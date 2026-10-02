@@ -249,6 +249,8 @@ channels/
 
 `channels/` est ignoré par Git : chacun y met ses propres fichiers.
 
+Le nom d'un dossier fait 24 caractères au plus (il sert de nom de compte sur `main`, avec `_radio` à la fin) : un dossier au nom plus long est ignoré.
+
 Le dossier d'une chaîne est relu à chaque passage : un fichier ajouté pendant que le script tourne est diffusé au passage suivant, sans rien relancer (y déposer un fichier complet, pas un téléchargement en cours). Un passage ne commence jamais par le morceau qui a fini le précédent.
 
 `main` et `stream` doivent tourner (avec postgres et le broker). Depuis `stream/` :

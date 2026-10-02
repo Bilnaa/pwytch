@@ -63,7 +63,11 @@ async def open_session(api: str, name: str, password: str) -> tuple[int, str]:
     username = re.sub(r"[^a-zA-Z0-9]", "_", name) + "_radio"
     async with httpx.AsyncClient(base_url=api) as client:
         # 409 if the account is already there, the login tells if the password is right
-        await client.post("/auth/register", json={"username": username, "password": password})
+        register = await client.post(
+            "/auth/register", json={"username": username, "password": password}
+        )
+        if register.status_code != 409:
+            register.raise_for_status()
         login = await client.post("/auth/login", data={"username": username, "password": password})
         login.raise_for_status()
         token = login.json()["access_token"]
@@ -77,6 +81,7 @@ async def open_session(api: str, name: str, password: str) -> tuple[int, str]:
             # the session of a previous run is still open, the channel goes on in it
             for status in ("live", "created"):
                 page = await client.get("/streams", params={"status": status, "size": 100})
+                page.raise_for_status()
                 for stream in page.json()["items"]:
                     if stream["streamer"]["username"] == username.lower():
                         return stream["id"], token
@@ -95,6 +100,10 @@ def shuffled(folder: Path, last: Path | None) -> list[Path]:
 
 async def run(folder: Path, api: str, password: str) -> None:
     name = folder.name
+    if len(name) > 24:
+        # main takes usernames of 30 characters at most, and "_radio" is added to the name
+        print(f"{name}: folder name too long (24 characters at most), skipped")
+        return
     if not shuffled(folder, None):
         print(f"{name}: no track, skipped")
         return
