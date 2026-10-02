@@ -12,6 +12,8 @@ from app.hls import HlsPipeline, SlatePipeline
 # lives that are not over yet, connected or waiting for the streamer
 lives: dict[int, "Live"] = {}
 
+STARTED_FILE = "started.json"
+
 
 @dataclass
 class LiveInfo:
@@ -62,12 +64,12 @@ class Live:
         if self.started_at is None:
             # only the first ffmpeg starts the live, a reconnection doesn't
             self.started_at = datetime.now(timezone.utc)
-            await events.publish(
-                topics.STREAM_STARTED,
-                StreamStarted(
-                    stream_id=self.stream_id, started_at=self.started_at, **asdict(self.info)
-                ),
+            started = StreamStarted(
+                stream_id=self.stream_id, started_at=self.started_at, **asdict(self.info)
             )
+            # kept on disk: after a restart it is all we have left to publish stream/ended
+            (self.output_dir / STARTED_FILE).write_text(started.model_dump_json())
+            await events.publish(topics.STREAM_STARTED, started)
         return self.pipeline
 
     def disconnect(self, reconnect_seconds: float) -> asyncio.Task:
