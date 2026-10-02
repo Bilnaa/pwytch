@@ -159,3 +159,34 @@ def test_list_streams_is_paginated(client, db_session):
 )
 def test_list_streams_invalid_query_returns_422(client, params):
     assert client.get("/streams", params=params).status_code == 422
+
+
+def test_cancelled_stream_does_not_block_a_new_one(client, db_session):
+    headers = auth_headers(client)
+    stream_id = client.post("/streams", json=PAYLOAD, headers=headers).json()["id"]
+    db_session.get(Stream, stream_id).status = "cancelled"
+    db_session.commit()
+
+    assert client.post("/streams", json=PAYLOAD, headers=headers).status_code == 201
+
+
+def test_list_streams_returns_newest_first(client):
+    ids = [
+        client.post("/streams", json=PAYLOAD, headers=auth_headers(client, name)).json()["id"]
+        for name in ("alice", "bob", "carol")
+    ]
+
+    body = client.get("/streams").json()
+
+    assert [item["id"] for item in body["items"]] == ids[::-1]
+
+
+def test_list_streams_cancels_stale_sessions(client, db_session):
+    stream_id = client.post(
+        "/streams", json=PAYLOAD, headers=auth_headers(client)
+    ).json()["id"]
+    db_session.get(Stream, stream_id).created_at = utcnow() - timedelta(minutes=11)
+    db_session.commit()
+
+    assert client.get("/streams", params={"status": "created"}).json()["total"] == 0
+    assert client.get("/streams", params={"status": "cancelled"}).json()["total"] == 1

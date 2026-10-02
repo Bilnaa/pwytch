@@ -1,6 +1,7 @@
 import pytest
+from sqlalchemy.exc import IntegrityError
 
-from app.models import User
+from app.models import Stream, User
 from app.models.stream import utcnow
 from app.services import streams as streams_service
 
@@ -25,6 +26,7 @@ def test_mark_started_sets_live_and_started_at(db_session, streamer):
 
 def test_mark_ended_sets_ended_and_ended_at(db_session, streamer):
     stream = streams_service.create_stream(db_session, streamer, "Title", "Game")
+    streams_service.mark_started(db_session, stream.id, utcnow())
     ended_at = utcnow()
 
     streams_service.mark_ended(db_session, stream.id, ended_at)
@@ -36,3 +38,30 @@ def test_mark_ended_sets_ended_and_ended_at(db_session, streamer):
 def test_mark_unknown_stream_raises(db_session):
     with pytest.raises(streams_service.StreamNotFoundError):
         streams_service.mark_started(db_session, 999, utcnow())
+
+
+def test_mark_started_ignores_a_cancelled_stream(db_session, streamer):
+    stream = streams_service.create_stream(db_session, streamer, "Title", "Game")
+    stream.status = "cancelled"
+
+    streams_service.mark_started(db_session, stream.id, utcnow())
+
+    assert stream.status == "cancelled"
+    assert stream.started_at is None
+
+
+def test_mark_ended_ignores_a_stream_that_is_not_live(db_session, streamer):
+    stream = streams_service.create_stream(db_session, streamer, "Title", "Game")
+
+    streams_service.mark_ended(db_session, stream.id, utcnow())
+
+    assert stream.status == "created"
+    assert stream.ended_at is None
+
+
+def test_second_active_stream_is_rejected_by_the_database(db_session, streamer):
+    streams_service.create_stream(db_session, streamer, "Title", "Game")
+    db_session.add(Stream(streamer_id=streamer.id, title="Other", game="Game"))
+
+    with pytest.raises(IntegrityError):
+        db_session.commit()
