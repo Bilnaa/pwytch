@@ -6,7 +6,12 @@ router = APIRouter(tags=["streams"])
 
 
 @router.get("/streams", summary="List the lives that are not over yet")
-# async: on the event loop, like the lives that add and remove themselves from the dict
 async def list_streams() -> list[int]:
-    # a live waiting for its streamer counts, one that is ending doesn't
-    return sorted(stream_id for stream_id, live in lives.items() if not live.ending)
+    # async so it runs on the event loop: the lives add and remove themselves from the dict there
+    stream_ids = []
+    for stream_id, live in lives.items():
+        # a live waiting for its streamer counts, one that is ending doesn't
+        if live.ending is None:
+            stream_ids.append(stream_id)
+    stream_ids.sort()
+    return stream_ids
