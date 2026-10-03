@@ -1,7 +1,12 @@
 from datetime import datetime
 from enum import Enum
-from pydantic import BaseModel
+from typing import Annotated
+from pydantic import AfterValidator, BaseModel, ConfigDict
 
+def reject_none(value: str | None) -> str:
+    if value is None:
+        raise ValueError("Value cannot be None")
+    return value
 
 class TargetType(str, Enum):
     REPLAY = "replay"
@@ -9,6 +14,8 @@ class TargetType(str, Enum):
 
 
 class BookmarkCreate(BaseModel):
+    model_config = ConfigDict(extra='forbid')
+    
     target_type: TargetType
     target_id: int
     label: str
@@ -16,7 +23,9 @@ class BookmarkCreate(BaseModel):
 
 
 class BookmarkUpdate(BaseModel):
-    label: str | None = None
+    model_config = ConfigDict(extra='forbid')
+
+    label: Annotated[str | None, AfterValidator(reject_none)] = None
     note: str | None = None
 
 
