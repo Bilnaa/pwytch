@@ -11,7 +11,7 @@ from sqlalchemy.pool import StaticPool
 
 from app.db import Base, get_db
 from app.main import app
-from app.routers import ingest
+from app.services import ingest
 from tests.fakes import FakeUpstream
 
 

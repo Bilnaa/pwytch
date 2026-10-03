@@ -59,6 +59,49 @@ def test_mark_ended_ignores_a_stream_that_is_not_live(db_session, streamer):
     assert stream.ended_at is None
 
 
+def test_record_started_keeps_the_time_of_stream(db_session, streamer):
+    stream = streams_service.create_stream(db_session, streamer, "Title", "Game")
+    streams_service.mark_started(db_session, stream.id, utcnow())
+    started_at = utcnow()
+
+    streams_service.record_started(db_session, stream.id, started_at)
+
+    assert stream.status == "live"
+    assert stream.started_at == started_at
+
+
+def test_record_started_ignores_an_ended_stream(db_session, streamer):
+    stream = streams_service.create_stream(db_session, streamer, "Title", "Game")
+    started_at = utcnow()
+    streams_service.mark_started(db_session, stream.id, started_at)
+    streams_service.mark_ended(db_session, stream.id, utcnow())
+
+    streams_service.record_started(db_session, stream.id, utcnow())
+
+    assert stream.status == "ended"
+    assert stream.started_at == started_at
+
+
+def test_mark_over_ends_a_live_stream(db_session, streamer):
+    stream = streams_service.create_stream(db_session, streamer, "Title", "Game")
+    streams_service.mark_started(db_session, stream.id, utcnow())
+    at = utcnow()
+
+    streams_service.mark_over(db_session, stream.id, at)
+
+    assert stream.status == "ended"
+    assert stream.ended_at == at
+
+
+def test_mark_over_cancels_a_created_stream(db_session, streamer):
+    stream = streams_service.create_stream(db_session, streamer, "Title", "Game")
+
+    streams_service.mark_over(db_session, stream.id, utcnow())
+
+    assert stream.status == "cancelled"
+    assert stream.ended_at is None
+
+
 def test_second_active_stream_is_rejected_by_the_database(db_session, streamer):
     streams_service.create_stream(db_session, streamer, "Title", "Game")
     db_session.add(Stream(streamer_id=streamer.id, title="Other", game="Game"))

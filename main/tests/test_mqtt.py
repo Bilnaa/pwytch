@@ -57,6 +57,16 @@ async def test_stream_started_marks_the_stream_live(mqtt, db_session, stream):
     assert stream.started_at.replace(tzinfo=timezone.utc) == STARTED_AT
 
 
+async def test_stream_started_corrects_the_time_of_main(mqtt, db_session, stream):
+    streams_service.mark_started(db_session, stream.id, ENDED_AT)
+
+    await mqtt.handle(topics.STREAM_STARTED, started(stream.id))
+
+    db_session.refresh(stream)
+    assert stream.status == "live"
+    assert stream.started_at.replace(tzinfo=timezone.utc) == STARTED_AT
+
+
 async def test_stream_ended_marks_the_stream_ended(mqtt, db_session, stream):
     await mqtt.handle(topics.STREAM_STARTED, started(stream.id))
     await mqtt.handle(topics.STREAM_ENDED, ended(stream.id))
