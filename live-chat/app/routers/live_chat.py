@@ -3,7 +3,7 @@ import json
 from fastapi import APIRouter, WebSocket
 from starlette.websockets import WebSocketDisconnect
 
-from app.message import Message, Author
+from app.models.message_model import MessageModel, Author
 from app.connection_manager import connectionManager
 
 router = APIRouter(tags=["liveChat"])
@@ -11,13 +11,14 @@ router = APIRouter(tags=["liveChat"])
 
 @router.websocket("/streams/{stream_id}/chat")
 async def live_chat(websocket: WebSocket, stream_id: int, user_id: int | None = None, username: str | None = None):
+    username = (username or "").strip()[:50]
     await connectionManager.connect(stream_id, websocket)
     try:
         while True:
             ws_text = await websocket.receive_text()
             # Not sending any message if the user_id isn't in the QueryParams
-            if user_id is None:
-                await websocket.send_json({"type": "error", "code": "READ_ONLY", "detail": "Utilisateur sans identifiant"})
+            if user_id is None or not username:
+                await websocket.send_json({"type": "error", "code": "READ_ONLY", "detail": "Utilisateur non identifié"})
                 continue
 
             # Checking if the json format is valid
@@ -51,7 +52,7 @@ async def live_chat(websocket: WebSocket, stream_id: int, user_id: int | None = 
                 await websocket.send_json({"type": "error", "code": "CONTENT_TOO_LONG", "detail": "Le message est trop long"})
                 continue
 
-            final_message = Message(stream_id=stream_id, author=Author(id=user_id, username=username if username else "Utilisateur Anonyme"), content=message)
+            final_message = MessageModel(stream_id=stream_id, author=Author(id=user_id, username=username), content=message)
 
             await connectionManager.broadcast(stream_id, final_message)
 

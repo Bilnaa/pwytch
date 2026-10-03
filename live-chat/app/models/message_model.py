@@ -7,7 +7,7 @@ class Author(BaseModel):
     id : int
     username : str
 
-class Message(BaseModel):
+class MessageModel(BaseModel):
     id : UUID = Field(default_factory=uuid4)
     stream_id : int
     author : Author

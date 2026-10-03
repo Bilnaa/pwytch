@@ -1,6 +1,7 @@
 from fastapi import WebSocket
+from starlette.websockets import WebSocketDisconnect
 
-from app.message import Message
+from app.models.message_model import MessageModel
 
 
 class ConnectionManager():
@@ -19,8 +20,12 @@ class ConnectionManager():
         if stream_id in self.rooms and len(self.rooms[stream_id]) == 0:
             del self.rooms[stream_id]
 
-    async def broadcast(self, stream_id: int, message: Message):
+    async def broadcast(self, stream_id: int, message: MessageModel):
+        payload = message.model_dump_json()
         for ws in list(self.rooms.get(stream_id, set())):
-            await ws.send_text(message.model_dump_json())
+            try:
+                await ws.send_text(payload)
+            except (WebSocketDisconnect, RuntimeError):
+                self.disconnect(stream_id, ws)
 
 connectionManager = ConnectionManager()
