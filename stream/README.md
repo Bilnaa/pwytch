@@ -41,6 +41,7 @@ En image Docker, le build se lance depuis la racine du repo, car l'image embarqu
 | Chemin                          | Protocole | Rôle                                  |
 |---------------------------------|-----------|---------------------------------------|
 | `/health`                       | HTTP GET  | `ok` ou `degraded` (ffmpeg et broker) |
+| `/streams`                      | HTTP GET  | Liste les lives en cours              |
 | `/streams/{stream_id}/ingest`   | WebSocket | Reçoit le flux WebM d'un live         |
 | `/streams/{stream_id}/ingest`   | HTTP POST | Pareil en HTTP, pour tester sans webcam |
 | `/lives/{stream_id}/{filename}` | HTTP GET  | Sert la playlist et les segments HLS  |
@@ -205,6 +206,8 @@ Dans un second terminal, depuis `stream/` :
     # ou la récupérer en HTTP, comme le fera main
     curl -i http://localhost:8001/lives/42/index.m3u8
     ffplay http://localhost:8001/lives/42/index.m3u8
+
+Pendant l'envoi et l'écran « Signal lost », `curl http://localhost:8001/streams` renvoie `[42]`, puis `[]` une fois le live terminé.
 
 `uv run python scripts/fake_streamer.py --help` liste les options (`--url`, `--delay`). Le script envoie des infos de live fixes (`streamer_id=1`, `streamer_name=fake`, ...) ; pour en envoyer d'autres, passer l'URL complète avec `--url`.
 
