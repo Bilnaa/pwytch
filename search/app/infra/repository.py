@@ -2,8 +2,15 @@ from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.helpers.text import normalize
-from app.infra.models import LATEST_STREAM_ORDER, Stream, Streamer
-from app.schemas import StreamerResult
+from app.infra.models import (
+    LATEST_STREAM_ORDER,
+    IndexedChatMessage,
+    Stream,
+    Streamer,
+)
+from app.schemas import MessageResult, StreamerResult
+
+CHAT_SEARCH_LIMIT = 10
 
 
 def _latest_stream_field(column):
@@ -65,3 +72,25 @@ async def search_streamers(
 
     results = [StreamerResult.model_validate(row) for row in rows.mappings()]
     return results, total
+
+
+async def search_chat_messages(
+    session: AsyncSession, stream_id: int, search_query: str
+) -> list[MessageResult]:
+    rows = await session.scalars(
+        select(IndexedChatMessage)
+        .where(
+            IndexedChatMessage.stream_id == stream_id,
+            IndexedChatMessage.search_text.contains(
+                normalize(search_query), autoescape=True
+            ),
+        )
+        # Même ordre que l'index (stream_id, sent_at, message_id), lu à l'envers.
+        .order_by(
+            IndexedChatMessage.sent_at.desc(), IndexedChatMessage.message_id.desc()
+        )
+        .limit(CHAT_SEARCH_LIMIT)
+    )
+    return [
+        MessageResult.model_validate(message, from_attributes=True) for message in rows
+    ]

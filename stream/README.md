@@ -25,6 +25,8 @@ ou depuis `stream/` :
 | `LIVES_DIR` | `lives` | Dossier de sortie HLS, relatif à `stream/`. Ignoré par Git.   |
 | `RECONNECT_SECONDS` | `30` | Temps laissé au streamer pour revenir après une coupure      |
 | `SIGNAL_TIMEOUT_SECONDS` | `10` | Sans aucune donnée pendant ce temps, le streamer est considéré comme coupé |
+| `VIDEO_CRF` | `23` | Qualité x264 de la sortie HLS : plus bas, l'image est plus nette et les segments plus lourds (`18` est proche de la source) |
+| `VIDEO_HEIGHT` | `720` | Hauteur maximale de la sortie HLS, en 16:9. Un flux plus grand est réduit, un flux plus petit n'est pas agrandi (`1080` laisse passer du 1920x1080, plus lourd pour le CPU et le disque) |
 | `MQTT_HOST` | `localhost` | Hôte du broker MQTT (`mqtt` dans le docker-compose) |
 | `MQTT_PORT` | `1883` | Port du broker MQTT |
 
@@ -38,10 +40,17 @@ En image Docker, le build se lance depuis la racine du repo, car l'image embarqu
 
 | Chemin                          | Protocole | Rôle                                  |
 |---------------------------------|-----------|---------------------------------------|
-| `/health`                       | HTTP GET  | Renvoie `{"status": "ok"}`            |
+| `/health`                       | HTTP GET  | `ok` ou `degraded` (ffmpeg et broker) |
+| `/streams`                      | HTTP GET  | Liste les lives en cours              |
 | `/streams/{stream_id}/ingest`   | WebSocket | Reçoit le flux WebM d'un live         |
 | `/streams/{stream_id}/ingest`   | HTTP POST | Pareil en HTTP, pour tester sans webcam |
 | `/lives/{stream_id}/{filename}` | HTTP GET  | Sert la playlist et les segments HLS  |
+
+### `GET /health`
+
+Renvoie `{"status": "ok"}` si `ffmpeg` est trouvé dans le `PATH` et que le client MQTT est connecté, `{"status": "degraded"}` sinon : sans ffmpeg aucun live ne peut être diffusé, sans broker les lives tournent mais les events sont perdus.
+
+La réponse est toujours un `200` : le service répond, `status` dit s'il peut tout faire.
 
 ### `/streams/{stream_id}/ingest`
 
@@ -95,9 +104,9 @@ Comme sur Twitch, une coupure du streamer ne termine pas le live :
 2. Si le streamer se reconnecte sur le même `stream_id` avant `RECONNECT_SECONDS`, l'écran s'arrête et le live reprend, toujours dans la même playlist.
 3. Sinon, le live se termine : la playlist reçoit `#EXT-X-ENDLIST` et devient le replay.
 
-La vidéo est une boucle de 6 s en 1280x720. Pour la changer, il suffit de remplacer `assets/slate.mp4` (elle est lue en boucle, sa durée n'a pas d'importance).
+La vidéo est une boucle de 6 s en 1280x720, mise à la taille du live. Pour la changer, il suffit de remplacer `assets/slate.mp4` (elle est lue en boucle, sa durée n'a pas d'importance).
 
-Chaque passage live / écran est séparé par un `#EXT-X-DISCONTINUITY` dans la playlist, ce qui permet au lecteur (hls.js) d'enchaîner sans couper. Tout est encodé en 1280x720 à 30 i/s, quelle que soit la webcam, pour que le replay s'exporte toujours avec `-c copy`.
+Chaque passage live / écran est séparé par un `#EXT-X-DISCONTINUITY` dans la playlist, ce qui permet au lecteur (hls.js) d'enchaîner sans couper. La taille du live est choisie à la première connexion : le cadre 16:9 qui contient le flux du streamer, sans dépasser `VIDEO_HEIGHT` (une webcam 720p reste en 720p, une source 4K est réduite). L'écran « Signal lost » et les reconnexions reprennent ensuite cette taille, relue avec `ffprobe` dans le premier segment (`index0.ts`). Tout un live est donc encodé à la même taille et à 30 i/s, pour que le replay s'exporte toujours avec `-c copy`.
 
 Un `stream_id` terminé ne sert plus jamais : toute connexion dessus est refusée (`1008`, raison `Stream id already used`), même après un redémarrage de `stream`, puisque son dossier `lives/{stream_id}/` existe. Les fichiers d'un live ne sont donc jamais écrasés.
 
@@ -198,6 +207,8 @@ Dans un second terminal, depuis `stream/` :
     curl -i http://localhost:8001/lives/42/index.m3u8
     ffplay http://localhost:8001/lives/42/index.m3u8
 
+Pendant l'envoi et l'écran « Signal lost », `curl http://localhost:8001/streams` renvoie `[42]`, puis `[]` une fois le live terminé.
+
 `uv run python scripts/fake_streamer.py --help` liste les options (`--url`, `--delay`). Le script envoie des infos de live fixes (`streamer_id=1`, `streamer_name=fake`, ...) ; pour en envoyer d'autres, passer l'URL complète avec `--url`.
 
 Sans le script, en HTTP (`-re` envoie la vidéo à sa vitesse réelle, comme un vrai live) :
@@ -227,6 +238,44 @@ Pour voir un live coupé par un redémarrage : lancer le service avec `fastapi r
     uv run fastapi run --port 8001
     tail -1 lives/42/index.m3u8
 
+## Chaînes musicales
+
+`scripts/channels.py` fait tourner des chaînes en continu (lo-fi, K-pop, ...) pour la démo. Chaque sous-dossier de `channels/` est une chaîne : le script lui crée un compte sur `main` (`lofi_radio` pour le dossier `lofi`), ouvre une session de live et envoie ses morceaux en boucle, dans un ordre aléatoire, sur l'ingest WebSocket de `main`. Pour `main` et `stream`, c'est un streamer comme un autre : la chaîne apparaît dans `GET /streams?status=live` et publie les mêmes events.
+
+```
+channels/
+├── lofi/
+│   ├── cover.jpg
+│   ├── track1.mp3
+│   └── track2.mp3
+└── kpop/
+    ├── clip1.mp4
+    └── clip2.mp4
+```
+
+- un fichier vidéo (`.mp4`, `.mkv`, `.mov`, `.webm`) est diffusé tel quel : c'est le clip du morceau
+- un fichier audio (`.mp3`, `.m4a`, `.flac`, `.wav`, `.ogg`, `.opus`) n'est jamais diffusé tel quel : le script en fait d'abord une vidéo qui prend sa place (`track1.mp3` devient `track1.mp4`, le fichier audio est supprimé une fois la vidéo entière). On y voit le spectre du morceau en anneau autour de la pochette, avec la pochette floutée en fond
+
+Seules les vidéos sont diffusées. Fabriquer celle d'un morceau prend à peu près un tiers de sa durée, en tâche de fond et en basse priorité (`nice`) : le morceau entre dans la rotation quand sa vidéo est prête, et une chaîne qui n'a que des fichiers audio démarre à la première. Garder une copie des fichiers audio ailleurs : la suppression est définitive. Un fichier audio qui a déjà une vidéo du même nom n'est ni refait ni supprimé.
+
+La pochette est, dans l'ordre : l'image contenue dans le fichier (tag ID3 d'un mp3 ou d'un wav, m4a, flac), une image du même nom que le morceau (`track1.jpg`), `cover.*`. Seul son centre carré est utilisé. Sans pochette, l'anneau est seul sur un fond uni.
+
+`channels/` est ignoré par Git : chacun y met ses propres fichiers.
+
+Le nom d'un dossier fait 24 caractères au plus (il sert de nom de compte sur `main`, avec `_radio` à la fin) : un dossier au nom plus long est ignoré.
+
+Le dossier d'une chaîne est relu à chaque passage : un fichier ajouté pendant que le script tourne est pris en compte sans rien relancer (y déposer un fichier complet, pas un téléchargement en cours). Un passage ne commence jamais par le morceau qui a fini le précédent.
+
+`main` et `stream` doivent tourner (avec postgres et le broker). Depuis `stream/` :
+
+    uv run python scripts/channels.py
+
+Le script envoie du 1080p. Pour que les viewers le reçoivent tel quel, lancer `stream` avec `VIDEO_HEIGHT=1080` (et `VIDEO_CRF=18` pour une image plus nette) ; sinon il est réduit en 720p. Le script agrandit lui-même les fichiers plus petits : tous les morceaux d'une chaîne doivent sortir à la même taille.
+
+Le script affiche l'URL de la playlist de chaque chaîne et le morceau en cours. `--help` liste les options (`--api`, `--password`, un autre dossier que `channels/`).
+
+`Ctrl+C` arrête les chaînes : les viewers voient l'écran « Signal lost », puis les lives se terminent. Relancé avant `RECONNECT_SECONDS`, le script reprend les mêmes lives ; après, il en crée de nouveaux. Si `main` ou `stream` tombe, il réessaie toutes les 5 s.
+
 ## Limites
 
 - L'état est en mémoire : si `stream` redémarre, les lives en cours (et ceux sur l'écran « Signal lost ») s'arrêtent. Leur playlist est terminée, à l'arrêt ou au démarrage suivant, mais le streamer doit relancer un live avec un nouveau `stream_id`.
@@ -237,3 +286,6 @@ Pour voir un live coupé par un redémarrage : lancer le service avec `fastapi r
 - Un event qui n'a pas pu être publié (broker injoignable) est perdu : `main` ne saura pas que le live a commencé ou fini.
 - Un processus ffmpeg par live : le nombre de lives simultanés est limité par le CPU de la machine.
 - Latence de 15 à 20 s entre le streamer et les viewers, normale pour du HLS avec des segments de 4 s.
+- Une chaîne musicale est un live qui ne finit pas : sa playlist et ses segments grossissent tant qu'elle tourne (environ 1 Go par heure et par chaîne en 720p, plus de 2 Go en 1080p), et chaque chaîne occupe deux ffmpeg (celui du script, celui de `stream`).
+- Si `main` rate le `stream/ended` d'une chaîne (broker coupé), sa session reste `live` alors que `stream` l'a terminée : le script affiche `Stream id already used` en boucle, jusqu'à ce que la session soit passée en `ended` côté `main` (#107).
+- Un live coupé avant son premier segment (moins de 4 s) n'a pas de taille connue : son écran « Signal lost » sort en 1280x720, et une reconnexion choisit sa taille à nouveau.

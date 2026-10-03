@@ -1,12 +1,13 @@
 from datetime import UTC, datetime, timedelta
-from uuid import uuid4
+from uuid import UUID, uuid4
 
-from common.events import StreamEnded, StreamStarted
+from common.events import ChatMessage, StreamEnded, StreamStarted
 from sqlalchemy import func, select
 
 STREAMER_ID = 1
 FIRST_START = datetime(2026, 10, 1, 20, 0, tzinfo=UTC)
 SECOND_START = FIRST_START + timedelta(hours=1)
+MESSAGE_ID = UUID("3f2b8d6a-7c1e-4a95-b0d4-6e8f1a2c5b97")
 
 
 def make_started(**overrides) -> StreamStarted:
@@ -32,6 +33,19 @@ def make_ended(**overrides) -> StreamEnded:
         "reason": "normal",
     }
     return StreamEnded(**(defaults | overrides))
+
+
+def make_chat_message(**overrides) -> ChatMessage:
+    defaults = {
+        "event_id": uuid4(),
+        "message_id": MESSAGE_ID,
+        "stream_id": 1,
+        "author_id": 1,
+        "author_name": "Célèste",
+        "content": "GG WP !",
+        "sent_at": FIRST_START,
+    }
+    return ChatMessage(**(defaults | overrides))
 
 
 async def count_rows(session, model) -> int:

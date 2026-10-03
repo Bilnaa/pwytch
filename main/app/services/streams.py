@@ -100,6 +100,16 @@ def mark_started(db: Session, stream_id: int, started_at: datetime) -> Stream:
     return stream
 
 
+def record_started(db: Session, stream_id: int, started_at: datetime) -> Stream:
+    stream = get_stream(db, stream_id)
+    if stream.status == Status.CREATED:
+        return mark_started(db, stream_id, started_at)
+    if stream.status == Status.LIVE:
+        stream.started_at = started_at
+        db.commit()
+    return stream
+
+
 def mark_ended(db: Session, stream_id: int, ended_at: datetime) -> Stream:
     stream = get_stream(db, stream_id)
     if stream.status != Status.LIVE:
@@ -110,9 +120,19 @@ def mark_ended(db: Session, stream_id: int, ended_at: datetime) -> Stream:
     return stream
 
 
+def mark_over(db: Session, stream_id: int, at: datetime) -> Stream:
+    stream = get_stream(db, stream_id)
+    if stream.status == Status.LIVE:
+        return mark_ended(db, stream_id, at)
+    if stream.status == Status.CREATED:
+        stream.status = Status.CANCELLED
+        db.commit()
+    return stream
+
+
 def on_stream_started(db: Session, event: StreamStarted) -> None:
     try:
-        stream = mark_started(db, event.stream_id, event.started_at)
+        stream = record_started(db, event.stream_id, event.started_at)
     except StreamNotFoundError:
         logger.warning("Ignored stream/started for the unknown stream %s", event.stream_id)
         return

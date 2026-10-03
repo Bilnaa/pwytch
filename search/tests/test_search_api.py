@@ -54,6 +54,10 @@ async def matching_names(client, search_query: str) -> list[str]:
         {"q": "ab", "size": 0},
         {"q": "ab", "size": 51},
         {"q": "ab", "page": 0},
+        # Deux diacritiques combinants : 2 caractères, mais vide après normalize().
+        {"q": "\u0301\u0301"},
+        {"q": "\u0301 \u0301"},
+        {"q": "a\x00"},
     ],
     ids=[
         "missing",
@@ -65,6 +69,9 @@ async def matching_names(client, search_query: str) -> list[str]:
         "size-zero",
         "size-too-big",
         "page-zero",
+        "combining-marks-only",
+        "combining-marks-around-space",
+        "null-character",
     ],
 )
 async def test_invalid_parameters_return_422(client, params):

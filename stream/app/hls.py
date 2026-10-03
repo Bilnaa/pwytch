@@ -2,15 +2,46 @@ import asyncio
 import logging
 from pathlib import Path
 
+from app.config import settings
+
 logger = logging.getLogger(__name__)
 
 SEGMENT_SECONDS = 4
 SLATE = Path(__file__).parent.parent / "assets" / "slate.mp4"
-# same size for the streamer and the slate, so the replay can still be exported with -c copy
-VIDEO_FILTER = (
-    "scale=1280:720:force_original_aspect_ratio=decrease,"
-    "pad=1280:720:(ow-iw)/2:(oh-ih)/2,setsar=1,fps=30"
-)
+
+
+def video_filter(size: tuple[int, int] | None) -> str:
+    if size is None:
+        # first connection: the 16:9 frame that holds the source, never above VIDEO_HEIGHT
+        box = f"trunc(min({settings.video_height},max(ih,iw*9/16))/2)*2"
+        scale = f"scale=w='trunc(oh*16/9/2)*2':h='{box}'"
+        pad = "pad=w='max(iw,trunc(ih*16/9/2)*2)':h='max(ih,trunc(iw*9/16/2)*2)'"
+    else:
+        # the size of the live is known: the slate and the reconnections keep it,
+        # so the replay can still be exported with -c copy
+        box = f"{size[0]}:{size[1]}"
+        scale, pad = f"scale={box}", f"pad={box}"
+    return (
+        f"{scale}:force_original_aspect_ratio=decrease:force_divisible_by=2,"
+        f"{pad}:x=(ow-iw)/2:y=(oh-ih)/2,setsar=1,fps=30"
+    )
+
+
+async def probe_size(segment: Path) -> tuple[int, int] | None:
+    try:
+        proc = await asyncio.create_subprocess_exec(
+            "ffprobe", "-v", "error", "-select_streams", "v:0",
+            "-show_entries", "stream=width,height", "-of", "csv=p=0", str(segment),
+            stdout=asyncio.subprocess.PIPE,
+            stderr=asyncio.subprocess.DEVNULL,
+        )
+        out, _ = await proc.communicate()
+        # the width too: for a source that is not exactly 16:9, it can't be found from the height
+        width, height = out.split()[0].split(b",")
+        return int(width), int(height)
+    except (OSError, ValueError, IndexError):
+        # no segment yet, or ffprobe is missing: the size stays unknown
+        return None
 
 
 class HlsError(Exception):
@@ -28,11 +59,12 @@ class HlsPipeline:
         self.stderr_lines: list[str] = []
         self.closing: asyncio.Task | None = None
 
-    async def start(self) -> None:
+    async def start(self, size: tuple[int, int] | None = None) -> None:
         self.proc = await asyncio.create_subprocess_exec(
             "ffmpeg", "-hide_banner", "-loglevel", "error", "-y",
             *self.input_args,
-            "-c:v", "libx264", "-preset", "veryfast", "-vf", VIDEO_FILTER,
+            "-c:v", "libx264", "-preset", "veryfast", "-crf", str(settings.video_crf),
+            "-vf", video_filter(size),
             "-c:a", "aac", "-ar", "48000", "-ac", "2",
             "-force_key_frames", f"expr:gte(t,n_forced*{SEGMENT_SECONDS})",
             "-hls_time", str(SEGMENT_SECONDS),

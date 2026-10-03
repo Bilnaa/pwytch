@@ -3,14 +3,14 @@ from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
-from app import events, hls
+from app import events, hls, live
 from app.config import settings
 
 
 @pytest.fixture(autouse=True)
 def mqtt(monkeypatch):
     """Fake MQTT client: no broker is needed, the published events stay on the mock."""
-    fake = AsyncMock()
+    fake = AsyncMock(connected=True)
     monkeypatch.setattr(events, "mqtt", fake)
     return fake
 
@@ -37,4 +37,5 @@ def procs(tmp_path, monkeypatch):
         return proc
 
     monkeypatch.setattr(hls.asyncio, "create_subprocess_exec", spawn)
+    monkeypatch.setattr(live, "probe_size", AsyncMock(return_value=None))
     return created
