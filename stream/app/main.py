@@ -5,7 +5,7 @@ from fastapi import FastAPI
 
 from app import events, live, recovery
 from app.config import settings
-from app.routers import health, ingest, lives
+from app.routers import health, ingest, lives, streams
 
 
 @asynccontextmanager
@@ -27,6 +27,7 @@ app = FastAPI(title="stream", lifespan=lifespan)
 app.include_router(health.router)
 app.include_router(ingest.router)
 app.include_router(lives.router)
+app.include_router(streams.router)
 
 
 @app.get("/")
