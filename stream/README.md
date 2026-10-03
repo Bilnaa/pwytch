@@ -40,17 +40,17 @@ En image Docker, le build se lance depuis la racine du repo, car l'image embarqu
 
 | Chemin                          | Protocole | Rôle                                  |
 |---------------------------------|-----------|---------------------------------------|
-| `/health`                       | HTTP GET  | Renvoie `{"status": "ok"}`            |
+| `/health`                       | HTTP GET  | `ok` ou `degraded` (ffmpeg et broker) |
 | `/streams`                      | HTTP GET  | Liste les lives en cours              |
 | `/streams/{stream_id}/ingest`   | WebSocket | Reçoit le flux WebM d'un live         |
 | `/streams/{stream_id}/ingest`   | HTTP POST | Pareil en HTTP, pour tester sans webcam |
 | `/lives/{stream_id}/{filename}` | HTTP GET  | Sert la playlist et les segments HLS  |
 
-### `GET /streams`
+### `GET /health`
 
-Renvoie les `stream_id` des lives en cours, triés : `[42, 43]`. Un live en attente de reconnexion (écran « Signal lost ») est compté, un live en train de se terminer non.
+Renvoie `{"status": "ok"}` si `ffmpeg` est trouvé dans le `PATH` et que le client MQTT est connecté, `{"status": "degraded"}` sinon : sans ffmpeg aucun live ne peut être diffusé, sans broker les lives tournent mais les events sont perdus.
 
-Sert à `main` pour corriger ses sessions après un redémarrage : une session « live » dont le `stream_id` n'est pas dans la liste est finie. Après un redémarrage de `stream`, la liste est vide, les lives coupés ont été terminés (voir « Redémarrage »).
+La réponse est toujours un `200` : le service répond, `status` dit s'il peut tout faire.
 
 ### `/streams/{stream_id}/ingest`
 

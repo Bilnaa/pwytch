@@ -10,7 +10,7 @@ from app.config import settings
 @pytest.fixture(autouse=True)
 def mqtt(monkeypatch):
     """Fake MQTT client: no broker is needed, the published events stay on the mock."""
-    fake = AsyncMock()
+    fake = AsyncMock(connected=True)
     monkeypatch.setattr(events, "mqtt", fake)
     return fake
 
