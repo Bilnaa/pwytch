@@ -1,5 +1,5 @@
 import asyncio
-from collections.abc import Awaitable, Callable
+from collections.abc import Callable
 from urllib.parse import urlencode
 
 from fastapi import WebSocket, WebSocketDisconnect
@@ -73,9 +73,7 @@ def stream_url(stream: Stream) -> str:
     return f"{stream_settings.stream_ws_url}/streams/{stream.id}/ingest?{params}"
 
 
-async def forward(
-    websocket: WebSocket, upstream, on_first_chunk: Callable[[], Awaitable[None]]
-) -> None:
+async def forward(websocket: WebSocket, upstream, on_first_chunk: Callable[[], None]) -> None:
     first = True
     while True:
         try:
@@ -85,12 +83,10 @@ async def forward(
         await upstream.send(chunk)
         if first:
             first = False
-            await on_first_chunk()
+            on_first_chunk()
 
 
-async def relay(
-    websocket: WebSocket, url: str, on_first_chunk: Callable[[], Awaitable[None]]
-) -> None:
+async def relay(websocket: WebSocket, url: str, on_first_chunk: Callable[[], None]) -> None:
     """Copy the chunks of the streamer to stream until one of the two sides leaves."""
     try:
         async with connect(
@@ -136,7 +132,7 @@ async def run_ingest(websocket: WebSocket, db: Session, stream: Stream) -> None:
         db.close()
 
     try:
-        await relay(websocket, url, lambda: asyncio.to_thread(mark_live))
+        await relay(websocket, url, mark_live)
     except UpstreamClosedError as exc:
         if session_is_over(exc):
             await asyncio.to_thread(mark_over)
