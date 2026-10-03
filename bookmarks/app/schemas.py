@@ -1,12 +1,33 @@
 from datetime import datetime
 from enum import Enum
 from typing import Annotated
-from pydantic import AfterValidator, BaseModel, ConfigDict
+from pydantic import BaseModel, ConfigDict, Field, StringConstraints
 
-def reject_none(value: str | None) -> str:
-    if value is None:
-        raise ValueError("Value cannot be None")
-    return value
+
+MAX_TARGET_ID = 2**31 - 1
+
+
+Note = Annotated[
+    str | None,
+    StringConstraints(strip_whitespace=True),
+    Field(
+        description="Optional note for the bookmark",
+        max_length=300,
+        min_length=1
+    )
+]
+
+
+Label = Annotated[
+    str,
+    StringConstraints(strip_whitespace=True),
+    Field(
+        description="Label for the bookmark",
+        max_length=100,
+        min_length=1
+    )
+]
+
 
 class TargetType(str, Enum):
     REPLAY = "replay"
@@ -15,18 +36,18 @@ class TargetType(str, Enum):
 
 class BookmarkCreate(BaseModel):
     model_config = ConfigDict(extra='forbid')
-    
+
     target_type: TargetType
-    target_id: int
-    label: str
-    note: str | None = None
+    target_id: int = Field(description="ID of the target to bookmark", gt=0, le=MAX_TARGET_ID)
+    label: Label
+    note: Note | None = None
 
 
 class BookmarkUpdate(BaseModel):
     model_config = ConfigDict(extra='forbid')
 
-    label: Annotated[str | None, AfterValidator(reject_none)] = None
-    note: str | None = None
+    label: Label = None
+    note: Note | None = None
 
 
 class BookmarkResponse(BaseModel):
