@@ -163,7 +163,7 @@ Une session `created` depuis plus de 10 minutes sans ingestion est passée en `c
 
 `GET /streams/{id}` renvoie la session, ou 404.
 
-Le passage en `live` et en `ended` est prêt dans `app/services/streams.py` (`mark_started`, `mark_ended`) mais rien ne l'appelle encore (`mark_started` n'agit que sur une session `created`, `mark_ended` que sur une session `live`, tout autre événement est ignoré) : il faudra les brancher sur `stream/started` et `stream/ended` quand #11 (MQTT) sera faite.
+Le passage en `live` et en `ended` se fait dans `app/services/streams.py` (`mark_started`, `mark_ended`), appelés par l'ingest (premier morceau relayé, refus définitif de `stream` via `mark_over`) et par les events MQTT `stream/started` et `stream/ended` (voir « Events MQTT »). `mark_started` n'agit que sur une session `created`, `mark_ended` que sur une session `live` : tout autre appel est ignoré.
 
 ### `WS /streams/{stream_id}/ingest?token=<jwt>`
 
@@ -177,16 +177,32 @@ Les refus sont envoyés après l'ouverture de la connexion : avant, le navigateu
 
 | Code de fermeture | Cas |
 |-------------------|-----|
-| 4401 | Jeton absent ou invalide (un jeton absent de l'URL est refusé par un 403 HTTP) |
-| 4403 | La session appartient à un autre streamer |
-| 4404 | La session n'existe pas |
-| 4409 | La session est `ended` ou `cancelled` |
-| 1003 | Le streamer a envoyé un message texte au lieu de binaire |
-| 1011 | `stream` est injoignable, a coupé la connexion ou l'a refusée (ex. `Stream already live`). La raison est reprise dans le message de fermeture |
+| Code de fermeture | Cas | Que faire côté front |
+|-------------------|-----|----------------------|
+| 4401 | Jeton absent ou invalide (un jeton absent de l'URL est refusé par un 403 HTTP) | Se reconnecter |
+| 4403 | La session appartient à un autre streamer | - |
+| 4404 | La session n'existe pas | - |
+| 4409 | La session est terminée : `ended` ou `cancelled` en base, ou `stream` ne l'accepte plus (`Stream id already used`, ou `stream` a redémarré) | Créer une nouvelle session (`POST /streams`) |
+| 4423 | Une autre connexion diffuse déjà sur cette session (`Stream already live` côté `stream`) | Fermer l'autre onglet ou attendre |
+| 1003 | Le streamer a envoyé un message texte au lieu de binaire | - |
+| 1013 | `stream` n'a rien reçu pendant `SIGNAL_TIMEOUT_SECONDS` : c'est une coupure, pas la fin du live | Se reconnecter sur la **même** session avant `RECONNECT_SECONDS` |
+| 1011 | `stream` est injoignable, ffmpeg a planté, ou autre fermeture inattendue. La raison est reprise dans le message de fermeture | Réessayer |
 
 Quand le streamer se déconnecte, la connexion vers `stream` est fermée proprement. Une session `live` peut être rouverte : c'est la reconnexion du streamer pendant la période de grâce de `stream`.
 
-Dès le premier morceau relayé à `stream`, la session passe de `created` à `live` : une session qui diffuse n'est donc pas annulée par le nettoyage des 10 minutes. Les messages texte sont refusés (`1003`). Après un `1013` envoyé par `stream` (rien reçu pendant `SIGNAL_TIMEOUT_SECONDS`), le streamer reçoit un `1011` et doit rouvrir la connexion.
+`main` traduit les codes de fermeture de `stream` (voir `stream/README.md`) :
+
+| `stream` envoie | `main` envoie | Effet sur la session |
+|-----------------|---------------|----------------------|
+| `1008` `Stream id already used` | `4409` | `live` → `ended` (`ended_at` = maintenant), `created` → `cancelled` |
+| `1012` (redémarrage, le live est terminé) | `4409` | Pareil |
+| `1008` `Stream already live` | `4423` | Aucun |
+| `1013` `No data received` | `1013` | Aucun, la session reste `live` |
+| `1011` ou autre | `1011` | Aucun |
+
+Sur `4409`, `main` termine la session sans attendre `stream/ended` : si cet event a été perdu (broker coupé), la session ne reste pas bloquée en `live` et le streamer peut en créer une nouvelle. Si `stream/ended` arrive ensuite, il est ignoré (la session n'est plus `live`). Les deux cas de `1008` ne se distinguent que par leur raison : `main` compare le texte exact envoyé par `stream`.
+
+Dès le premier morceau relayé à `stream`, la session passe de `created` à `live` (avec l'heure de `main`) : une session qui diffuse n'est donc pas annulée par le nettoyage des 10 minutes. `stream/started` remplace ensuite `started_at` par l'heure où ffmpeg a démarré (voir « Events MQTT »). Les messages texte sont refusés (`1003`). Les accès à la base pendant le relais se font dans un thread (`asyncio.to_thread`), pour ne pas bloquer les autres connexions.
 
 ### `GET /lives/{stream_id}/{filename}`
 
@@ -250,10 +266,10 @@ Au démarrage, `main` se connecte au broker avec le `MqttClient` de `common` (`a
 
 | Topic            | Event           | Effet                                                      |
 |------------------|-----------------|------------------------------------------------------------|
-| `stream/started` | `StreamStarted` | `mark_started` : le stream passe de `created` à `live`, `started_at` est rempli |
+| `stream/started` | `StreamStarted` | `record_started` : le stream passe de `created` à `live`, `started_at` est rempli. S'il est déjà `live` (passé en `live` par l'ingest au premier morceau), `started_at` est remplacé par celui de l'event : c'est `stream` qui fait foi |
 | `stream/ended`   | `StreamEnded`   | `mark_ended` : le stream passe de `live` à `ended`, `ended_at` est rempli |
 
-Les handlers sont dans `app/services/streams.py`. Chaque event ouvre sa propre session et tourne dans un thread (`asyncio.to_thread`), car la base est synchrone et ne doit pas bloquer la boucle. Un event pour un stream inconnu est ignoré et journalisé. Un event en retard ou en double ne change rien : `stream/started` n'agit que sur un stream `created`, `stream/ended` que sur un stream `live`.
+Les handlers sont dans `app/services/streams.py`. Chaque event ouvre sa propre session et tourne dans un thread (`asyncio.to_thread`), car la base est synchrone et ne doit pas bloquer la boucle. Un event pour un stream inconnu est ignoré et journalisé. Un event en retard ou en double ne change rien : `stream/started` n'agit que sur un stream `created` ou `live`, `stream/ended` que sur un stream `live`.
 
 Le client est aussi dans `app.state.mqtt` pour publier depuis une route.
 
@@ -314,4 +330,5 @@ Avec le service lancé :
 - Pas de route pour retirer le rôle `admin` : il faut modifier la colonne `role` en base.
 - Pas de migrations : les tables sont créées au démarrage, un changement de modèle demande de recréer la table.
 - Si PostgreSQL n'est pas prêt quand l'API démarre, le `create_all` échoue et l'API plante : il faut la relancer.
-- Le relais vers les autres services n'est pas encore implémenté.
+- Seul `stream` est relayé (ingest et HLS) : le relais vers `live-chat`, `replay`, ... n'est pas encore implémenté.
+- Les ids de session viennent de l'auto-incrément PostgreSQL, et `stream` refuse un id dont le dossier `lives/{stream_id}/` existe déjà (`Stream id already used`). Si la base est vidée (volume `postgres-data` supprimé) sans vider `stream/lives/`, les nouvelles sessions reprennent à 1 et leurs lives sont refusés : il faut vider les deux ensemble.

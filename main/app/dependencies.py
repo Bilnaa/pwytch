@@ -1,16 +1,23 @@
 from typing import Annotated
 
 import httpx
-from fastapi import Depends, HTTPException, Request, status
+from fastapi import Depends, HTTPException, Request, WebSocket, WebSocketException, status
 from fastapi.security import OAuth2PasswordBearer
 from sqlalchemy.orm import Session
 
 from app.db import get_db
-from app.models import User
+from app.models import Stream, User
 from app.models.user import ADMIN_ROLE
 from app.services import auth as auth_service
+from app.services import ingest as ingest_service
+from app.services import streams as streams_service
 
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="auth/login")
+
+UNAUTHENTICATED = 4401
+FORBIDDEN = 4403
+NOT_FOUND = 4404
+ALREADY_ENDED = 4409
 
 
 def get_current_user(
@@ -39,3 +46,23 @@ def require_admin(
 
 def get_stream_client(request: Request) -> httpx.AsyncClient:
     return request.app.state.stream_client
+
+
+async def get_ingest_stream(
+    websocket: WebSocket,
+    stream_id: int,
+    token: str,
+    db: Annotated[Session, Depends(get_db)],
+) -> Stream:
+    # a refusal sent before accept() would only be an HTTP 403, the close code would be lost
+    await websocket.accept()
+    try:
+        return ingest_service.authorize(db, token, stream_id)
+    except auth_service.InvalidCredentialsError as exc:
+        raise WebSocketException(code=UNAUTHENTICATED, reason="Not authenticated") from exc
+    except streams_service.StreamNotFoundError as exc:
+        raise WebSocketException(code=NOT_FOUND, reason=str(exc)) from exc
+    except ingest_service.NotStreamOwnerError as exc:
+        raise WebSocketException(code=FORBIDDEN, reason=str(exc)) from exc
+    except ingest_service.StreamOverError as exc:
+        raise WebSocketException(code=ALREADY_ENDED, reason=str(exc)) from exc

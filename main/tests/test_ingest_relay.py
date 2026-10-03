@@ -3,7 +3,7 @@ from starlette.websockets import WebSocketDisconnect
 from websockets.exceptions import ConnectionClosedError
 
 from app.models import Stream
-from app.routers import ingest
+from app.services import ingest
 from tests.fakes import FakeUpstream, close_code, create_stream
 
 
@@ -51,18 +51,53 @@ def test_stream_down_closes_with_1011(client, monkeypatch):
     assert close_code(client, f"/streams/{stream_id}/ingest?token={token}") == 1011
 
 
-def test_stream_closing_the_connection_closes_with_1011(client, monkeypatch):
-    fake = FakeUpstream(close_after_send=True)
-    monkeypatch.setattr(ingest, "connect", fake)
+def closed_by_stream(client, monkeypatch, code, reason):
+    monkeypatch.setattr(
+        ingest,
+        "connect",
+        FakeUpstream(close_after_send=True, close_code=code, close_reason=reason),
+    )
     stream_id, token = create_stream(client)
 
     with client.websocket_connect(f"/streams/{stream_id}/ingest?token={token}") as ws:
         ws.send_bytes(b"x")
         with pytest.raises(WebSocketDisconnect) as exc:
             ws.receive_bytes()
+    return stream_id, exc.value
 
-    assert exc.value.code == 1011
-    assert exc.value.reason == "Stream already live"
+
+def test_stream_already_live_closes_with_4423(client, monkeypatch):
+    _, closed = closed_by_stream(client, monkeypatch, 1008, "Stream already live")
+
+    assert closed.code == 4423
+    assert closed.reason == "Stream already live"
+
+
+def test_no_data_from_stream_closes_with_1013(client, db_session, monkeypatch):
+    stream_id, closed = closed_by_stream(client, monkeypatch, 1013, "No data received")
+
+    assert closed.code == 1013
+    assert db_session.get(Stream, stream_id).status == "live"
+
+
+@pytest.mark.parametrize(
+    ("code", "reason"), [(1008, "Stream id already used"), (1012, "")]
+)
+def test_stream_id_over_ends_the_session(client, db_session, monkeypatch, code, reason):
+    stream_id, closed = closed_by_stream(client, monkeypatch, code, reason)
+
+    assert closed.code == 4409
+    stream = db_session.get(Stream, stream_id)
+    db_session.refresh(stream)
+    assert stream.status == "ended"
+    assert stream.ended_at is not None
+
+
+def test_ffmpeg_crash_closes_with_1011(client, monkeypatch):
+    _, closed = closed_by_stream(client, monkeypatch, 1011, "Transcoding failed")
+
+    assert closed.code == 1011
+    assert closed.reason == "Transcoding failed"
 
 
 def test_send_failure_closes_with_1011(client, monkeypatch):

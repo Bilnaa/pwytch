@@ -9,11 +9,20 @@ from tests.test_streams_router import PAYLOAD, auth_headers
 class FakeUpstream:
     """Stands for the WebSocket of stream, so the tests don't need the real service."""
 
-    def __init__(self, close_after_send=False, send_error=None, connect_error=None):
+    def __init__(
+        self,
+        close_after_send=False,
+        send_error=None,
+        connect_error=None,
+        close_code=1008,
+        close_reason="Stream already live",
+    ):
         self.chunks = []
         self.urls = []
+        self.close_code = None
         self.close_reason = ""
         self.close_after_send = close_after_send
+        self.closing = (close_code, close_reason)
         self.send_error = send_error
         self.connect_error = connect_error
         self.entered = False
@@ -39,7 +48,7 @@ class FakeUpstream:
             raise self.send_error
         self.chunks.append(chunk)
         if self.close_after_send:
-            self.close_reason = "Stream already live"
+            self.close_code, self.close_reason = self.closing
             self._closed.set()
 
     async def wait_closed(self):
