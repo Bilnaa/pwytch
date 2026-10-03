@@ -3,7 +3,7 @@ from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError
 from http import HTTPStatus
 
-from app.verify_auth import CurrentUserId
+from common.identity import CurrentUser
 from app.schemas import BookmarkCreate, BookmarkResponse, BookmarkUpdate
 from app.database import SessionDep
 from app.models import Bookmark
@@ -16,12 +16,12 @@ router = APIRouter(tags=["bookmarks"])
 def update_bookmarks(
     bookmark_id: int, 
     request: BookmarkUpdate,
-    user_id: CurrentUserId,
+    user: CurrentUser,
     session: SessionDep
 ) -> BookmarkResponse:
     stmt = select(Bookmark).where(
         Bookmark.id == bookmark_id,
-        Bookmark.user_id == user_id
+        Bookmark.user_id == user.id
     )
     bookmark = session.scalar(stmt)
 
@@ -40,12 +40,12 @@ def update_bookmarks(
 @router.post("/bookmarks", status_code=HTTPStatus.CREATED, response_model=BookmarkResponse)
 def create_bookmarks(
     request: BookmarkCreate, 
-    user_id: CurrentUserId, 
+    user: CurrentUser,
     session: SessionDep,
     response: Response
 ) -> BookmarkResponse:
     bookmark = Bookmark(
-        user_id=user_id,
+        user_id=user.id,
         target_type=request.target_type,
         target_id=request.target_id,
         label=request.label,
@@ -63,10 +63,10 @@ def create_bookmarks(
 
 
 @router.delete("/bookmarks/{bookmark_id}", status_code=HTTPStatus.NO_CONTENT)
-def delete_bookmarks(bookmark_id: int, user_id: CurrentUserId, session: SessionDep) -> None:
+def delete_bookmarks(bookmark_id: int, user: CurrentUser, session: SessionDep) -> None:
     stmt = select(Bookmark).where(
         Bookmark.id == bookmark_id,
-        Bookmark.user_id == user_id
+        Bookmark.user_id == user.id
     )
     bookmark = session.scalar(stmt)
 
