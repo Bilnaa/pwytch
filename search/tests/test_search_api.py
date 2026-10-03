@@ -1,7 +1,19 @@
+import logging
+
 import pytest
 from app.indexer import on_stream_ended, on_stream_started
+from app.infra.db import get_session
+from app.main import app
+from common.events import ItemType
+from common.mqtt import NotConnectedError
 
-from tests.factories import FIRST_START, SECOND_START, make_ended, make_started
+from tests.factories import (
+    FIRST_START,
+    SECOND_START,
+    make_ended,
+    make_started,
+    published_hits,
+)
 
 SEARCH_URL = "/search/streamers"
 
@@ -281,3 +293,116 @@ async def test_page_past_the_end_is_empty_with_real_total(client, session):
 
     assert body["items"] == []
     assert body["total"] == 25
+
+
+# Publication de search/hit
+
+
+async def start_zera_streamers(session, count: int) -> None:
+    for streamer_number in range(1, count + 1):
+        await start_live(
+            session, streamer_number, streamer_name=f"Zera {streamer_number}"
+        )
+
+
+@pytest.mark.anyio
+async def test_each_streamer_found_is_published(client, session, fake_mqtt):
+    await start_zera_streamers(session, 2)
+
+    body = await search(client, q="zera")
+
+    hits = published_hits(fake_mqtt)
+    assert len(body["items"]) == 2
+    assert [hit.item_id for hit in hits] == [
+        str(item["streamer_id"]) for item in body["items"]
+    ]
+    assert [hit.item_type for hit in hits] == [ItemType.STREAMER, ItemType.STREAMER]
+    assert [hit.query for hit in hits] == ["zera", "zera"]
+    assert hits[0].hit_at.tzinfo is not None
+    assert len({hit.hit_at for hit in hits}) == 1
+
+
+@pytest.mark.anyio
+async def test_published_query_is_stripped(client, session, fake_mqtt):
+    await start_zera_streamers(session, 1)
+
+    await search(client, q="  zera ")
+
+    [hit] = published_hits(fake_mqtt)
+    assert hit.query == "zera"
+
+
+@pytest.mark.anyio
+async def test_only_the_current_page_is_published(client, session, fake_mqtt):
+    await start_zera_streamers(session, 3)
+
+    body = await search(client, q="zera", page=2, size=2)
+
+    # Sans ce contrôle, une page vide donnerait [] == [] et le test passerait.
+    assert len(body["items"]) == 1
+    assert [hit.item_id for hit in published_hits(fake_mqtt)] == [
+        str(item["streamer_id"]) for item in body["items"]
+    ]
+
+
+@pytest.mark.anyio
+async def test_page_past_the_end_publishes_nothing(client, session, fake_mqtt):
+    # Même branche que « aucun résultat », mais avec un total > 0.
+    await start_zera_streamers(session, 3)
+
+    body = await search(client, q="zera", page=5, size=2)
+
+    assert body["total"] == 3
+    assert published_hits(fake_mqtt) == []
+
+
+@pytest.mark.anyio
+async def test_no_result_publishes_nothing(client, fake_mqtt):
+    await search(client, q="zera")
+
+    assert published_hits(fake_mqtt) == []
+
+
+@pytest.mark.anyio
+async def test_invalid_query_publishes_nothing(client, fake_mqtt):
+    response = await client.get(SEARCH_URL, params={"q": "a"})
+
+    assert response.status_code == 422
+    assert published_hits(fake_mqtt) == []
+
+
+@pytest.mark.anyio
+async def test_broker_down_still_returns_the_results(
+    client, session, fake_mqtt, caplog
+):
+    await start_zera_streamers(session, 1)
+    fake_mqtt.publish.side_effect = NotConnectedError("down")
+
+    body = await search(client, q="zera")
+
+    assert [item["streamer_name"] for item in body["items"]] == ["Zera 1"]
+    errors = [record for record in caplog.records if record.levelno == logging.ERROR]
+    assert [error.getMessage() for error in errors] == [
+        "1 search/hit events not published: down"
+    ]
+
+
+@pytest.mark.anyio
+async def test_session_is_closed_before_publishing(client, session, fake_mqtt):
+    await start_zera_streamers(session, 1)
+    session_state = {"closed": False}
+    closed_when_publishing = []
+
+    async def tracked_get_session():
+        yield session
+        session_state["closed"] = True
+
+    # Remplace l'override de la fixture client, vidé à la fin du test.
+    app.dependency_overrides[get_session] = tracked_get_session
+    fake_mqtt.publish.side_effect = lambda topic, event: closed_when_publishing.append(
+        session_state["closed"]
+    )
+
+    await search(client, q="zera")
+
+    assert closed_when_publishing == [True]

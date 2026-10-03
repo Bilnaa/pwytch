@@ -1,8 +1,11 @@
+from types import SimpleNamespace
+from unittest.mock import sentinel
+
 import pytest
 from app import mqtt as mqtt_module
 from app.infra.config import Settings
 from app.infra.models import IndexedChatMessage, Stream, Streamer
-from app.mqtt import MQTT_CLIENT_ID, create_mqtt_client
+from app.mqtt import MQTT_CLIENT_ID, create_mqtt_client, get_mqtt
 from common.topics import CHAT_MESSAGE, STREAM_ENDED, STREAM_STARTED
 
 from tests.factories import (
@@ -83,3 +86,11 @@ async def test_failing_handler_leaves_no_row(monkeypatch, session_factory):
 @pytest.mark.anyio
 async def test_client_uses_a_persistent_session(mqtt):
     assert mqtt.client_id == MQTT_CLIENT_ID == "search"
+
+
+def test_get_mqtt_returns_the_client_of_the_app():
+    request = SimpleNamespace(
+        app=SimpleNamespace(state=SimpleNamespace(mqtt=sentinel.mqtt))
+    )
+
+    assert get_mqtt(request) is sentinel.mqtt

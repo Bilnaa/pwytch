@@ -1,7 +1,8 @@
 from datetime import UTC, datetime, timedelta
 from uuid import UUID, uuid4
 
-from common.events import ChatMessage, StreamEnded, StreamStarted
+from common.events import ChatMessage, SearchHit, StreamEnded, StreamStarted
+from common.topics import SEARCH_HIT
 from sqlalchemy import func, select
 
 STREAMER_ID = 1
@@ -61,3 +62,10 @@ async def reload(session, model, primary_key):
 def as_utc(naive_or_aware: datetime) -> datetime:
     # SQLite perd le fuseau à la relecture ; Postgres (timestamptz) le garde.
     return naive_or_aware.replace(tzinfo=UTC)
+
+
+def published_hits(fake_mqtt) -> list[SearchHit]:
+    # Chaque appel de publish reçoit (topic, event).
+    calls = fake_mqtt.publish.await_args_list
+    assert [publish_call.args[0] for publish_call in calls] == [SEARCH_HIT] * len(calls)
+    return [publish_call.args[1] for publish_call in calls]

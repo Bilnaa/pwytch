@@ -52,8 +52,9 @@ def test_streamer_hits_keep_the_order_of_the_results():
     hits = streamer_hits(results, "zera", HIT_AT)
 
     assert [hit.item_id for hit in hits] == ["42", "7"]
-    assert all(hit.item_type is ItemType.STREAMER for hit in hits)
-    assert all(hit.query == "zera" and hit.hit_at == HIT_AT for hit in hits)
+    assert [hit.item_type for hit in hits] == [ItemType.STREAMER, ItemType.STREAMER]
+    assert [hit.query for hit in hits] == ["zera", "zera"]
+    assert [hit.hit_at for hit in hits] == [HIT_AT, HIT_AT]
 
 
 def test_message_hits_use_the_message_id_as_text():
