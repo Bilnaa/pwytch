@@ -8,7 +8,7 @@ from pydantic import AfterValidator, StringConstraints
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.helpers.text import normalize
-from app.hits import publish_hits, streamer_hits
+from app.hits import message_hits, publish_hits, streamer_hits
 from app.infra.db import get_session
 from app.infra.repository import search_chat_messages, search_streamers
 from app.mqtt import get_mqtt
@@ -68,8 +68,15 @@ async def search_streamers_route(
     responses={422: {"description": "Invalid stream_id or q"}},
 )
 async def search_chat_messages_route(
-    session: Annotated[AsyncSession, Depends(get_session)],
+    session: Annotated[AsyncSession, Depends(get_session, scope="function")],
+    mqtt: Annotated[MqttClient, Depends(get_mqtt)],
+    background_tasks: BackgroundTasks,
     stream_id: Annotated[int, Path(ge=1, le=MAX_POSTGRES_INTEGER)],
     search_query: Annotated[ChatSearchQuery, Query(alias="q")],
 ) -> list[MessageResult]:
-    return await search_chat_messages(session, stream_id, search_query)
+    results = await search_chat_messages(session, stream_id, search_query)
+    if results:
+        hits = message_hits(results, search_query, datetime.now(UTC))
+        # Lancé après l'envoi de la réponse : la publication ne la retarde pas.
+        background_tasks.add_task(publish_hits, mqtt, hits)
+    return results
