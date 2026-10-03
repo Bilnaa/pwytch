@@ -1,10 +1,15 @@
 from datetime import datetime
 from enum import Enum
 from typing import Annotated
-from pydantic import BaseModel, ConfigDict, Field, StringConstraints
+from pydantic import AfterValidator, BaseModel, ConfigDict, Field, StringConstraints
+
+from app.utils import LIMIT_INTEGER
 
 
-MAX_TARGET_ID = 2**31 - 1
+def reject_null_characters(value: str) -> str:
+    if "\u0000" in value:
+        raise ValueError("Null character is not allowed")
+    return value
 
 
 Note = Annotated[
@@ -14,7 +19,8 @@ Note = Annotated[
         description="Optional note for the bookmark",
         max_length=300,
         min_length=1
-    )
+    ),
+    AfterValidator(reject_null_characters),
 ]
 
 
@@ -25,7 +31,8 @@ Label = Annotated[
         description="Label for the bookmark",
         max_length=100,
         min_length=1
-    )
+    ),
+    AfterValidator(reject_null_characters),
 ]
 
 
@@ -38,7 +45,7 @@ class BookmarkCreate(BaseModel):
     model_config = ConfigDict(extra='forbid')
 
     target_type: TargetType
-    target_id: int = Field(description="ID of the target to bookmark", gt=0, le=MAX_TARGET_ID)
+    target_id: int = Field(description="ID of the target to bookmark", gt=0, le=LIMIT_INTEGER, strict=True)
     label: Label
     note: Note | None = None
 
