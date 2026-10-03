@@ -40,10 +40,23 @@ En image Docker, le build se lance depuis la racine du repo, car l'image embarqu
 
 | Chemin                          | Protocole | Rôle                                  |
 |---------------------------------|-----------|---------------------------------------|
-| `/health`                       | HTTP GET  | Renvoie `{"status": "ok"}`            |
+| `/health`                       | HTTP GET  | État de ffmpeg, du broker et des lives |
 | `/streams/{stream_id}/ingest`   | WebSocket | Reçoit le flux WebM d'un live         |
 | `/streams/{stream_id}/ingest`   | HTTP POST | Pareil en HTTP, pour tester sans webcam |
 | `/lives/{stream_id}/{filename}` | HTTP GET  | Sert la playlist et les segments HLS  |
+
+### `GET /health`
+
+    {"status": "ok", "ffmpeg": true, "broker": true, "lives": 2}
+
+| Champ    | Rôle                                                                 |
+|----------|----------------------------------------------------------------------|
+| `ffmpeg` | `ffmpeg` est trouvé dans le `PATH`. Sans lui, aucun live ne peut être diffusé |
+| `broker` | Le client MQTT est connecté. Sans lui, les lives tournent mais les events sont perdus |
+| `lives`  | Nombre de lives en cours, en attente de reconnexion compris          |
+| `status` | `ok` si `ffmpeg` et `broker` sont à `true`, `degraded` sinon         |
+
+La réponse est toujours un `200` : le service répond, `status` dit s'il peut tout faire.
 
 ### `/streams/{stream_id}/ingest`
 
