@@ -1,4 +1,5 @@
 from datetime import datetime
+from enum import StrEnum
 from typing import Annotated, Literal
 from uuid import UUID, uuid4
 
@@ -45,3 +46,17 @@ class ChatMessage(BaseEvent):
         str, StringConstraints(strip_whitespace=True, min_length=1, max_length=500)
     ]
     sent_at: AwareDatetime
+
+
+# StrEnum rather than Literal: stats imports ItemType to type its routes
+class ItemType(StrEnum):
+    STREAMER = "streamer"
+    MESSAGE = "message"
+
+
+# published by search, consumed by stats; one event per item returned by a search
+class SearchHit(BaseEvent):
+    item_type: ItemType
+    item_id: str = Field(min_length=1)
+    query: str = Field(min_length=1)
+    hit_at: AwareDatetime
