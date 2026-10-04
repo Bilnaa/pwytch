@@ -31,6 +31,7 @@ ou depuis `main/` :
 | `STREAM_TIMEOUT_SECONDS` | `5` | Délai maximum d'attente d'une réponse de `stream`, en secondes |
 | `MQTT_HOST` | `localhost` | Hôte du broker MQTT (`mqtt` dans le docker-compose) |
 | `MQTT_PORT` | `1883` | Port du broker MQTT |
+| `FRONTEND_ORIGIN` | `http://localhost:5173` | Origine du front autorisée à appeler `main` depuis le navigateur (CORS), ex. `https://app.example.com`, sans `/` final |
 
 Les variables se mettent dans `main/.env` (copier `.env.example`). Les valeurs de `.env.example` correspondent à celles par défaut du `docker-compose.yml`. Remplacer `JWT_SECRET_KEY=change-me` par une vraie clé : quiconque la connaît peut fabriquer un jeton valide pour n'importe quel compte.
 
