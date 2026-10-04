@@ -7,7 +7,7 @@ client = TestClient(app)
 
 
 def test_cors_allows_frontend_origin():
-    response = client.get("/health", headers={"Origin": cors_settings.frontend_origin})
+    response = client.get("/", headers={"Origin": cors_settings.frontend_origin})
     assert response.headers["access-control-allow-origin"] == cors_settings.frontend_origin
 
 
@@ -26,5 +26,5 @@ def test_cors_preflight_allows_authorization_header():
 
 
 def test_cors_ignores_other_origin():
-    response = client.get("/health", headers={"Origin": "https://evil.example.com"})
+    response = client.get("/", headers={"Origin": "https://evil.example.com"})
     assert "access-control-allow-origin" not in response.headers
