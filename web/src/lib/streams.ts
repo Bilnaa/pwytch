@@ -19,3 +19,24 @@ export function createStream(title: string, game: string): Promise<Stream> {
     body: JSON.stringify({ title, game }),
   })
 }
+
+export interface StreamPage {
+  items: Stream[]
+  total: number
+  page: number
+  size: number
+}
+
+// The session of this streamer that is still open (created, or live and waiting
+// for them to come back after a closed tab). main allows only one at a time
+export async function findMyOpenStream(userId: number): Promise<Stream | null> {
+  for (const status of ['live', 'created']) {
+    const page = await api<StreamPage>(`/streams?status=${status}&size=100`)
+    for (const stream of page.items) {
+      if (stream.streamer.id === userId) {
+        return stream
+      }
+    }
+  }
+  return null
+}

@@ -7,8 +7,9 @@ import { Button } from '@/components/ui/button'
 import { Card, CardAction, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { useBroadcast, type BroadcastStatus } from '@/hooks/use-broadcast'
 import { useWebcam } from '@/hooks/use-webcam'
-import { ApiError, errorMessage } from '@/lib/api'
-import { createStream } from '@/lib/streams'
+import { errorMessage } from '@/lib/api'
+import { useAuth } from '@/lib/auth'
+import { createStream, findMyOpenStream, type Stream } from '@/lib/streams'
 
 function StatusBadge({ status }: { status: BroadcastStatus }) {
   if (status === 'live') {
@@ -25,12 +26,15 @@ function StatusBadge({ status }: { status: BroadcastStatus }) {
 }
 
 export function GoLivePage() {
+  const { user } = useAuth()
   const webcam = useWebcam()
   const broadcast = useBroadcast(webcam.stream)
   const videoRef = useRef<HTMLVideoElement>(null)
   const [title, setTitle] = useState('')
   const [game, setGame] = useState('')
   const [formError, setFormError] = useState('')
+  // session still open on the server, Go live resumes it instead of creating one
+  const [openStream, setOpenStream] = useState<Stream | null>(null)
 
   useEffect(() => {
     if (videoRef.current) {
@@ -38,24 +42,41 @@ export function GoLivePage() {
     }
   }, [webcam.stream])
 
+  // After a closed tab or a lost connection, stream keeps the live ~30 s for the
+  // streamer to come back. Checked again each time we're not broadcasting anymore
+  useEffect(() => {
+    if (!user || broadcast.status === 'connecting' || broadcast.status === 'live') {
+      return
+    }
+    findMyOpenStream(user.id)
+      .then((stream) => {
+        setOpenStream(stream)
+        if (stream) {
+          setTitle(stream.title)
+          setGame(stream.game)
+        }
+      })
+      .catch(() => setOpenStream(null))
+  }, [user, broadcast.status])
+
   async function handleGoLive(event: FormEvent) {
     event.preventDefault()
     setFormError('')
+    if (openStream) {
+      broadcast.start(openStream.id)
+      return
+    }
     try {
-      // a new session each time, main refuses to reuse an ended one (4409)
       const stream = await createStream(title, game)
       broadcast.start(stream.id)
     } catch (err) {
-      // after Stop, stream keeps the session ~30 s in case the streamer comes back
-      if (err instanceof ApiError && err.status === 409) {
-        setFormError('Your last live is still closing, try again in a few seconds.')
-      } else {
-        setFormError(errorMessage(err))
-      }
+      setFormError(errorMessage(err))
     }
   }
 
   const busy = broadcast.status === 'connecting' || broadcast.status === 'live'
+  // stream keeps the title and game of the first connection, no point editing them
+  const locked = busy || openStream !== null
 
   return (
     <div className="grid items-start gap-6 lg:grid-cols-[1fr_320px]">
@@ -85,7 +106,7 @@ export function GoLivePage() {
               onChange={(e) => setTitle(e.target.value)}
               required
               maxLength={100}
-              disabled={busy}
+              disabled={locked}
             />
             <FormField
               id="game"
@@ -94,8 +115,13 @@ export function GoLivePage() {
               onChange={(e) => setGame(e.target.value)}
               required
               maxLength={50}
-              disabled={busy}
+              disabled={locked}
             />
+            {openStream && !busy && (
+              <p className="text-sm text-muted-foreground">
+                Your live is still open, you can pick it up where you left it.
+              </p>
+            )}
             {formError && <p className="text-sm text-destructive">{formError}</p>}
             {broadcast.error && <p className="text-sm text-destructive">{broadcast.error}</p>}
 
@@ -107,7 +133,7 @@ export function GoLivePage() {
             ) : (
               <Button type="submit" className="w-full" disabled={!webcam.stream}>
                 <Radio />
-                Go live
+                {openStream ? 'Resume live' : 'Go live'}
               </Button>
             )}
           </form>
