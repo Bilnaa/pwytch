@@ -29,6 +29,20 @@ class SearchSettings(BaseSettings):
     search_url: str = "http://localhost:8004"
     search_timeout_seconds: float = 5
 
+
+class ReplaySettings(BaseSettings):
+    model_config = SettingsConfigDict(env_file=".env", extra="ignore")
+
+    replay_url: str = "http://localhost:8003"
+    replay_timeout_seconds: float = 5
+
+
+class StatsSettings(BaseSettings):
+    model_config = SettingsConfigDict(env_file=".env", extra="ignore")
+
+    stats_url: str = "http://localhost:8006"
+    stats_timeout_seconds: float = 5
+
 class MqttSettings(BaseSettings):
     model_config = SettingsConfigDict(env_file=".env", extra="ignore")
     mqtt_host: str = "localhost"
@@ -44,5 +58,7 @@ db_settings = DbSettings.model_validate({})
 auth_settings = AuthSettings.model_validate({})
 stream_settings = StreamSettings()
 search_settings = SearchSettings()
+replay_settings = ReplaySettings()
+stats_settings = StatsSettings()
 mqtt_settings = MqttSettings()
 cors_settings = CorsSettings()
