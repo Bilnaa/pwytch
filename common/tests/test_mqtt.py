@@ -1,5 +1,5 @@
 import asyncio
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
 import aiomqtt
 import pytest
@@ -8,7 +8,7 @@ from common import mqtt, topics
 from common.events import StreamEnded
 from common.mqtt import MqttClient, NotConnectedError
 
-NOW = datetime(2026, 10, 1, 18, 0, tzinfo=timezone.utc)
+NOW = datetime(2026, 10, 1, 18, 0, tzinfo=UTC)
 
 
 def ended(stream_id=1) -> StreamEnded:
