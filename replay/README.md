@@ -54,7 +54,7 @@ Une table, `replays`, une ligne par live. `stream_id` est la clé et l'identifia
 
 ## Topics consommés
 
-Souscrits en QoS 1 avec le `client_id` fixe `replay` : la session est persistante, le broker garde les messages publiés pendant un redémarrage de `replay`. Les modèles viennent de `common.events`.
+Souscrits en QoS 1 avec le `client_id` fixe `replay` : la session est persistante, le broker garde les messages publiés pendant que `replay` est arrêté. Un message en cours de traitement au moment de l'arrêt est perdu (voir « Dettes connues »). Les modèles viennent de `common.events`.
 
 | Topic            | Event           | Effet                                                                                   |
 |------------------|-----------------|-----------------------------------------------------------------------------------------|
@@ -93,5 +93,7 @@ Les tests n'ont besoin ni de Postgres ni de Mosquitto : ils tournent sur SQLite 
 
 - **Tables absentes si la base était coupée au démarrage** : le service tourne, mais les requêtes échouent tant qu'il n'a pas été redémarré avec la base disponible.
 - **Event perdu si un handler échoue** (base indisponible par exemple) : `MqttClient` le journalise en `ERROR` puis l'abandonne. À traiter avec #11.
+- **Event perdu à l'arrêt** : `mqtt.stop()` annule le handler en cours, par exemple un `stream/ended` qui attend le `HEAD` vers `stream` (jusqu'à `STREAM_TIMEOUT_S`). Le message QoS 1 est acquitté dès sa réception, le broker ne le renvoie pas : le live reste invisible. Même cause que la ligne précédente (acquittement avant traitement, dans `common.mqtt`), à traiter avec #11.
+- **Deux instances avec le même `client_id`** : le broker déconnecte la première quand la seconde se connecte, et elles se volent la session en boucle ; des events partent vers la mauvaise instance ou se perdent. Une seule instance de `replay` à la fois : ne pas lancer `make replay` pendant que le conteneur tourne.
 - **Ligne invisible pour toujours** : un `stream/ended` en erreur, sans playlist, reçu avant son `stream/started` ne supprime rien ; la ligne créée ensuite par `stream/started` n'a jamais de `ended_at`. Sans effet pour l'utilisateur.
 - **Pas de migration** : `create_all` crée les tables absentes mais ne modifie pas une table existante. Après un changement de colonne, supprimer la table en local : `DROP TABLE replays;`. Alembic sera nécessaire au premier changement de schéma sur une base qui a des données à garder.
