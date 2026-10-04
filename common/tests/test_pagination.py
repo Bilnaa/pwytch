@@ -1,5 +1,6 @@
-from common.pagination import Page
 from pydantic import BaseModel
+
+from common.pagination import Page
 
 
 class SampleItem(BaseModel):

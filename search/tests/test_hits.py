@@ -2,11 +2,11 @@ import logging
 from unittest.mock import AsyncMock, call
 
 import pytest
-from app.hits import build_hits, publish_hits
 from common.events import ItemType
 from common.mqtt import MqttClient, NotConnectedError
 from common.topics import SEARCH_HIT
 
+from app.hits import build_hits, publish_hits
 from tests.factories import FIRST_START, MESSAGE_ID
 
 HIT_AT = FIRST_START

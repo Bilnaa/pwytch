@@ -3,12 +3,12 @@ from datetime import timedelta
 from uuid import UUID, uuid4
 
 import pytest
-from app.indexer import on_chat_message
-from app.infra.db import get_session
-from app.main import app
 from common.events import ItemType
 from common.mqtt import NotConnectedError
 
+from app.indexer import on_chat_message
+from app.infra.db import get_session
+from app.main import app
 from tests.factories import FIRST_START, make_chat_message, published_hits
 
 STREAM_ID = 1

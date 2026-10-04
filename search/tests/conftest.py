@@ -1,13 +1,14 @@
 from unittest.mock import AsyncMock
 
 import pytest
-from app.infra.db import SCHEMA_NAME, get_session, init_db
-from app.main import app
-from app.mqtt import get_mqtt
 from common.mqtt import MqttClient
 from httpx import ASGITransport, AsyncClient
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 from sqlalchemy.pool import StaticPool
+
+from app.infra.db import SCHEMA_NAME, get_session, init_db
+from app.main import app
+from app.mqtt import get_mqtt
 
 
 @pytest.fixture

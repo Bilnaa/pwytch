@@ -4,7 +4,7 @@ from starlette.websockets import WebSocketDisconnect
 from app.models.message_model import MessageModel
 
 
-class ConnectionManager():
+class ConnectionManager:
     def __init__(self):
         self.rooms : dict[int, set[WebSocket]] = {}
 
