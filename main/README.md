@@ -92,13 +92,15 @@ Réponses :
 |-------|-----------------------------------------------------------------------|
 | `201` | Compte créé. Renvoie un `UserResponse` : `{"id": 1, "username": "john_doe", "display_name": "John_Doe", "role": "user"}` |
 | `409` | Le `username` est déjà pris, quelle que soit la casse (`Username already registered`) |
-| `422` | Corps invalide (champ manquant, trop court, caractère interdit, ...)  |
+| `422` | Corps invalide (champ manquant, trop court, caractère interdit, nom réservé, ...)  |
 
 Le mot de passe n'est jamais stocké en clair : il est haché avec Argon2id via [pwdlib](https://frankie567.github.io/pwdlib/) (`PasswordHash.recommended()`, comme dans le [tuto sécurité de FastAPI](https://fastapi.tiangolo.com/tutorial/security/oauth2-jwt/#hash-and-verify-the-passwords)). La chaîne stockée contient l'algorithme, les paramètres, le sel et le hash (ex. `$argon2id$v=19$m=65536,t=3,p=4$<sel>$<hash>`) : si on change les paramètres, les anciens mots de passe restent vérifiables. Tout nouveau compte a le rôle `user`.
 
 La réponse est filtrée par le schéma `UserResponse` (`response_model`) : seuls ses champs sont renvoyés, jamais `hashed_password`.
 
 Le `username` est l'identifiant : il est enregistré en minuscules, donc `alice` et `Alice` sont le même compte (le second reçoit `409`). L'orthographe saisie est gardée dans `display_name`, c'est elle qu'on affiche (chat, profil, ...).
+
+Le front met la chaîne d'un streamer à `/{username}`, comme Twitch. Les noms qui sont des pages du front (actuelles ou prévues) sont donc refusés avec un `422` (`This username is reserved`), quelle que soit la casse : `admin`, `api`, `assets`, `login`, `search`, `stats`, ... La liste est `RESERVED_USERNAMES` dans `app/schemas/auth.py` : y ajouter le nom d'une nouvelle page du front.
 
 ### `POST /auth/login`
 
