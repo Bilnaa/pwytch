@@ -1,13 +1,18 @@
+from datetime import UTC, datetime
 from typing import Annotated
 
+from common.events import ItemType
+from common.mqtt import MqttClient
 from common.pagination import Page
-from fastapi import APIRouter, Depends, Path, Query
+from fastapi import APIRouter, BackgroundTasks, Depends, Path, Query
 from pydantic import AfterValidator, StringConstraints
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.helpers.text import normalize
+from app.hits import build_hits, publish_hits
 from app.infra.db import get_session
 from app.infra.repository import search_chat_messages, search_streamers
+from app.mqtt import get_mqtt
 from app.schemas import MessageResult, StreamerResult
 
 router = APIRouter(prefix="/search", tags=["search"])
@@ -44,12 +49,22 @@ ChatSearchQuery = Annotated[
 
 @router.get("/streamers")
 async def search_streamers_route(
-    session: Annotated[AsyncSession, Depends(get_session)],
+    session: Annotated[AsyncSession, Depends(get_session, scope="function")],
+    mqtt: Annotated[MqttClient, Depends(get_mqtt)],
+    background_tasks: BackgroundTasks,
     search_query: Annotated[SearchQuery, Query(alias="q")],
     page: Annotated[int, Query(ge=1)] = 1,
     size: Annotated[int, Query(ge=1, le=50)] = 20,
 ) -> Page[StreamerResult]:
     results, total = await search_streamers(session, search_query, page, size)
+    if results:
+        hits = build_hits(
+            ItemType.STREAMER,
+            (result.streamer_id for result in results),
+            search_query,
+            datetime.now(UTC),
+        )
+        background_tasks.add_task(publish_hits, mqtt, hits)
     return Page[StreamerResult](items=results, total=total, page=page, size=size)
 
 
@@ -59,8 +74,20 @@ async def search_streamers_route(
     responses={422: {"description": "Invalid stream_id or q"}},
 )
 async def search_chat_messages_route(
-    session: Annotated[AsyncSession, Depends(get_session)],
+    session: Annotated[AsyncSession, Depends(get_session, scope="function")],
+    mqtt: Annotated[MqttClient, Depends(get_mqtt)],
+    background_tasks: BackgroundTasks,
     stream_id: Annotated[int, Path(ge=1, le=MAX_POSTGRES_INTEGER)],
     search_query: Annotated[ChatSearchQuery, Query(alias="q")],
 ) -> list[MessageResult]:
-    return await search_chat_messages(session, stream_id, search_query)
+    results = await search_chat_messages(session, stream_id, search_query)
+    if results:
+        hits = build_hits(
+            ItemType.MESSAGE,
+            (result.message_id for result in results),
+            search_query,
+            datetime.now(UTC),
+        )
+        # Lancé après l'envoi de la réponse : la publication ne la retarde pas.
+        background_tasks.add_task(publish_hits, mqtt, hits)
+    return results
