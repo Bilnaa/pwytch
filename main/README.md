@@ -288,7 +288,7 @@ Les erreurs sont des exceptions, transformées en réponse par les handlers de `
 
 | Le satellite                         | Exception                       | `main` renvoie |
 |--------------------------------------|---------------------------------|----------------|
-| répond 4xx                           | `SatelliteRejectedError`        | La même réponse : code, corps et `Content-Type` |
+| répond 4xx                           | `SatelliteRejectedError`        | La même réponse : code, corps et `Content-Type` (Starlette ajoute `; charset=utf-8` à un type `text/*` qui n'a pas de charset) |
 | répond un autre code (3xx, 5xx)      | `InvalidSatelliteResponseError` | `502 {"detail": "Invalid answer from service"}` |
 | renvoie un corps refusé par `parse`  | `InvalidSatelliteResponseError` | `502 {"detail": "Invalid answer from service"}` |
 | est injoignable                      | `SatelliteUnavailableError`     | `503 {"detail": "Service is unavailable"}` |
