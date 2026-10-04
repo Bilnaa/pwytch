@@ -1,10 +1,15 @@
 import json
+import logging
 
 from fastapi import APIRouter, WebSocket
+from sqlalchemy.exc import SQLAlchemyError
 from starlette.websockets import WebSocketDisconnect
 
 from app.models.message_model import MessageModel, Author
 from app.connection_manager import connectionManager
+from app.services.messages import save_message
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter(tags=["liveChat"])
 
@@ -53,6 +58,14 @@ async def live_chat(websocket: WebSocket, stream_id: int, user_id: int | None = 
                 continue
 
             final_message = MessageModel(stream_id=stream_id, author=Author(id=user_id, username=username), content=message)
+
+            # Saving before broadcasting: a message that isn't stored is never broadcast
+            try:
+                await save_message(final_message)
+            except SQLAlchemyError:
+                logger.exception("Could not save a message of stream %s", stream_id)
+                await websocket.send_json({"type": "error", "code": "MESSAGE_NOT_SAVED", "detail": "Le message n'a pas pu être enregistré"})
+                continue
 
             await connectionManager.broadcast(stream_id, final_message)
 
