@@ -4,7 +4,7 @@ Point d'entrée unique du front. `main` gère les comptes utilisateurs et sert d
 
 ```
 front ──HTTP──> main ──> PostgreSQL (users)
-                  └────> stream, live-chat, replay, ...
+                  └────> stream, search, live-chat, replay, ...
 ```
 
 ## Lancer
@@ -29,6 +29,8 @@ ou depuis `main/` :
 | `ACCESS_TOKEN_EXPIRE_MINUTES` | `30` | Durée de validité d'un jeton, en minutes |
 | `STREAM_URL` | `http://localhost:8001` | URL du service `stream`, utilisée pour relayer le HLS |
 | `STREAM_TIMEOUT_SECONDS` | `5` | Délai maximum d'attente d'une réponse de `stream`, en secondes |
+| `SEARCH_URL` | `http://localhost:8004` | URL du service `search`, utilisée pour relayer la recherche |
+| `SEARCH_TIMEOUT_SECONDS` | `5` | Délai maximum d'attente d'une réponse de `search`, en secondes |
 | `MQTT_HOST` | `localhost` | Hôte du broker MQTT (`mqtt` dans le docker-compose) |
 | `MQTT_PORT` | `1883` | Port du broker MQTT |
 | `FRONTEND_ORIGIN` | `http://localhost:5173` | Origine du front autorisée à appeler `main` depuis le navigateur (CORS), ex. `https://app.example.com`, sans `/` final |
@@ -55,6 +57,7 @@ Les tables sont créées au démarrage (`Base.metadata.create_all`) si elles n'e
 | `/streams/{id}`  | HTTP GET  | Renvoie le détail d'une session       |
 | `/streams/{stream_id}/ingest` | WebSocket | Reçoit le flux vidéo du streamer et le relaie à `stream` (jeton en query) |
 | `/lives/{stream_id}/{filename}` | HTTP GET | Relaie la playlist ou un segment HLS d'un live depuis `stream` |
+| `/search/streamers` | HTTP GET | Relaie la recherche de streamers vers `search` |
 
 La doc interactive est sur `http://localhost:8000/docs`.
 
@@ -225,6 +228,26 @@ Dès le premier morceau relayé à `stream`, la session passe de `created` à `l
 | 503  | `stream` est injoignable |
 | 504  | `stream` n'a pas répondu à temps |
 
+### `GET /search/streamers?q=&page=&size=`
+
+`main` relaie la recherche vers `search` (voir `search/README.md`) et renvoie sa réponse, validée par le schéma `StreamerPage`. Pas besoin d'être connecté. Le diagramme de séquence est dans `docs/main-search-sequences.md`.
+
+| Paramètre | Règle                          | Défaut |
+|-----------|--------------------------------|--------|
+| `q`       | obligatoire, 2 à 100 caractères | —      |
+| `page`    | entier ≥ 1                     | `1`    |
+| `size`    | entier entre 1 et 50           | `20`   |
+
+`main` refuse lui-même un paramètre hors bornes (422), sans appeler `search`. Les règles plus fines (`q` fait d'espaces ou vide après normalisation) restent dans `search` : son 422 est renvoyé avec le même `detail`.
+
+| Code | Cas |
+|------|-----|
+| 200  | `{"items": [...], "total", "page", "size"}`, `items` vide si rien ne correspond |
+| 422  | Paramètre invalide, refusé par `main` ou par `search` |
+| 502  | `search` a renvoyé une réponse inattendue |
+| 503  | `search` est injoignable |
+| 504  | `search` n'a pas répondu à temps |
+
 ### Protéger une route
 
 La dépendance `get_current_user` (`app/dependencies.py`) lit le jeton, le vérifie et renvoie le `User` correspondant, ou répond `401`. Pour protéger une route :
@@ -331,5 +354,5 @@ Avec le service lancé :
 - Pas de route pour retirer le rôle `admin` : il faut modifier la colonne `role` en base.
 - Pas de migrations : les tables sont créées au démarrage, un changement de modèle demande de recréer la table.
 - Si PostgreSQL n'est pas prêt quand l'API démarre, le `create_all` échoue et l'API plante : il faut la relancer.
-- Seul `stream` est relayé (ingest et HLS) : le relais vers `live-chat`, `replay`, ... n'est pas encore implémenté.
+- Seuls `stream` (ingest et HLS) et la recherche de streamers de `search` sont relayés : le relais vers `live-chat`, `replay`, la recherche dans le chat, ... n'est pas encore implémenté.
 - Les ids de session viennent de l'auto-incrément PostgreSQL, et `stream` refuse un id dont le dossier `lives/{stream_id}/` existe déjà (`Stream id already used`). Si la base est vidée (volume `postgres-data` supprimé) sans vider `stream/lives/`, les nouvelles sessions reprennent à 1 et leurs lives sont refusés : il faut vider les deux ensemble.

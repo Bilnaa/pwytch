@@ -22,6 +22,12 @@ class StreamSettings(BaseSettings):
         # http -> ws, https -> wss
         return self.stream_url.replace("http", "ws", 1).rstrip("/")
     
+class SearchSettings(BaseSettings):
+    model_config = SettingsConfigDict(env_file=".env", extra="ignore")
+
+    search_url: str = "http://localhost:8004"
+    search_timeout_seconds: float = 5
+
 class MqttSettings(BaseSettings):
     model_config = SettingsConfigDict(env_file=".env", extra="ignore")
     mqtt_host: str = "localhost"
@@ -36,5 +42,6 @@ class CorsSettings(BaseSettings):
 db_settings = DbSettings.model_validate({})
 auth_settings = AuthSettings.model_validate({})
 stream_settings = StreamSettings()
+search_settings = SearchSettings()
 mqtt_settings = MqttSettings()
 cors_settings = CorsSettings()
