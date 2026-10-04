@@ -20,7 +20,7 @@ def get_live(stream_id: int, info: LiveInfo) -> Live:
         try:
             return Live.create(stream_id, settings.lives_dir, info)
         except FileExistsError:
-            raise Refused("Stream id already used")
+            raise Refused("Stream id already used") from None
     if live.ending:
         raise Refused("Stream id already used")
     if live.connected:
@@ -83,7 +83,7 @@ async def ingest_http(
     try:
         live = get_live(stream_id, LiveInfo(streamer_id, streamer_name, title, game))
     except Refused as exc:
-        raise HTTPException(status.HTTP_409_CONFLICT, str(exc))
+        raise HTTPException(status.HTTP_409_CONFLICT, str(exc)) from None
 
     pipeline = await live.connect()
     try:
@@ -92,7 +92,7 @@ async def ingest_http(
                 await pipeline.write(chunk)
     except ClientDisconnect:
         pass
-    except HlsError:
-        raise HTTPException(status.HTTP_500_INTERNAL_SERVER_ERROR, "Transcoding failed")
+    except HlsError as exc:
+        raise HTTPException(status.HTTP_500_INTERNAL_SERVER_ERROR, "Transcoding failed") from exc
     finally:
         await asyncio.shield(live.disconnect(settings.reconnect_seconds))
