@@ -3,6 +3,11 @@ const API_URL = import.meta.env.VITE_API_URL ?? ''
 
 const TOKEN_KEY = 'token'
 
+// Full URL of a route of main, for what doesn't go through api() (video player, links)
+export function apiUrl(path: string): string {
+  return `${API_URL}/api${path}`
+}
+
 // ws:// or wss:// version of main's URL, for the WebSocket routes (ingest, chat)
 export function wsUrl(path: string): string {
   const base = API_URL || window.location.origin
@@ -55,7 +60,7 @@ export async function api<T>(path: string, init: RequestInit = {}): Promise<T> {
     headers.set('Content-Type', 'application/json')
   }
 
-  const response = await fetch(`${API_URL}/api${path}`, { ...init, headers })
+  const response = await fetch(apiUrl(path), { ...init, headers })
 
   if (response.status === 401) {
     clearToken()

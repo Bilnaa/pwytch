@@ -1,4 +1,4 @@
-import { api } from '@/lib/api'
+import { api, apiUrl } from '@/lib/api'
 
 export type StreamStatus = 'created' | 'live' | 'ended' | 'cancelled'
 
@@ -39,4 +39,13 @@ export async function findMyOpenStream(userId: number): Promise<Stream | null> {
     }
   }
   return null
+}
+
+export function getStream(id: number): Promise<Stream> {
+  return api<Stream>(`/streams/${id}`)
+}
+
+// HLS playlist of a live, relayed by main from stream
+export function playlistUrl(id: number): string {
+  return apiUrl(`/lives/${id}/index.m3u8`)
 }
