@@ -76,7 +76,7 @@ Par défaut, un service prévient les autres avec un event MQTT : le producteur 
 
 - `main` : ce qui est rendu. Seules `develop` et les branches `hotfix/*` peuvent y être mergées.
 - `develop` : branche de travail, toutes les PR la visent.
-- Les branches commencent par `feature/`, `fix/`, `chore/`, `docs/`, `hotfix/` ou `microservice/`. La CI le vérifie, lance ruff et les tests de chaque service.
+- Les branches commencent par `feature/`, `fix/`, `chore/`, `docs/`, `hotfix/` ou `microservice/`. La CI le vérifie, lance ruff et les tests de chaque service, et lint puis build le front.
 - Un ticket = un dossier de service. La PR a le label `ms:<service>` du dossier touché.
 - Comme les PR visent `develop`, `Closes #N` ne ferme rien : on met un commentaire `Ticket : #N` sur la PR et `PR : #N` sur le ticket, et la carte passe en « In review ».
 - Une fois mergée : cases cochées, ticket fermé, carte en « Done ».
