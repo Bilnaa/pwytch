@@ -76,6 +76,12 @@ hls.js (build `light`) n'est chargé qu'à l'ouverture d'une chaîne (`lazy` dan
 
 Pour avoir un live à regarder sans webcam : `uv run python scripts/channels.py` depuis `stream/` (voir `stream/README.md`).
 
+## Chat
+
+À côté du player sur la page d'une chaîne (en dessous sur mobile), et sur `/go-live` pour le streamer pendant son live. `wsUrl('/streams/{id}/chat')`, avec `?token=` si on est connecté (`hooks/use-chat.ts`). Sans compte, le chat est en lecture seule avec un lien « Log in » qui ramène sur la chaîne.
+
+Les erreurs de `live-chat` arrivent avec un `code` (`EMPTY_MESSAGE`, `CONTENT_TOO_LONG`...) traduit en message sous le champ. Si la connexion coupe (`main` redémarré, `live-chat` down), le chat se reconnecte toutes les 3 s, sauf sur 4401 (session expirée) et 4404 (live inconnu). Pas encore d'historique à l'arrivée ni des messages manqués pendant une coupure, en attendant la route de #84.
+
 ## Pages et routes de l'API
 
 Comme l'API est sous `/api`, une page peut avoir le même chemin qu'une route de l'API (`/search` côté front, `/api/search` côté API). Recharger une page renvoie toujours le front.
