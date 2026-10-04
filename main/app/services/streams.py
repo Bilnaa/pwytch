@@ -162,8 +162,10 @@ def list_live_ids(db: Session) -> list[int]:
 async def get_playlist_end(client: httpx.AsyncClient, stream_id: int) -> datetime | None:
     try:
         response = await satellites.send(client, "GET", f"/lives/{stream_id}/index.m3u8")
-    except satellites.SatelliteRejectedError:
-        return None
+    except satellites.SatelliteRejectedError as exc:
+        if exc.status_code == 404:
+            return utcnow()
+        raise
     if "#EXT-X-ENDLIST" not in response.text:
         return None
     last_modified = response.headers.get("last-modified")
@@ -204,6 +206,8 @@ async def watch_missed_ends(
     while True:
         try:
             await end_missed_lives(client, session_factory)
+        except satellites.SatelliteRejectedError as exc:
+            logger.warning("Checking the lives with stream failed: %s", exc)
         except satellites.SatelliteError:
             pass
         except Exception:

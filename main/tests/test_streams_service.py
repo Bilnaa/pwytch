@@ -195,15 +195,18 @@ async def test_end_missed_lives_keeps_a_playlist_without_endlist(
 
 
 @pytest.mark.anyio
-async def test_end_missed_lives_keeps_a_live_without_playlist(
+async def test_end_missed_lives_ends_a_live_without_playlist_at_the_catch_up(
     db_session, live_stream, session_factory
 ):
     client, _ = stream_client()
+    before = utcnow()
 
     async with client:
         await streams_service.end_missed_lives(client, session_factory)
 
-    assert status_of(db_session, live_stream).status == "live"
+    stream = status_of(db_session, live_stream)
+    assert stream.status == "ended"
+    assert stream.ended_at.replace(tzinfo=UTC) >= before
 
 
 @pytest.mark.anyio

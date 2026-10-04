@@ -364,8 +364,9 @@ Si `main` est arrêté ou si le broker est coupé quand `stream` publie `stream/
 1. il demande à `stream` les lives en cours (`GET /streams`) : une session qui y est n'est pas touchée
 2. pour les autres, il lit la playlist (`GET /lives/{stream_id}/index.m3u8`). Si elle se termine par `#EXT-X-ENDLIST`, la session passe en `ended` via `mark_ended`
 3. `ended_at` est le `Last-Modified` de la playlist, c'est-à-dire l'heure du dernier segment écrit, pas l'heure du rattrapage (même valeur que le `stream/ended` envoyé par `stream` après un redémarrage). Sans ce header, c'est l'heure du rattrapage
+4. si la playlist n'existe pas (`404`), la session passe aussi en `ended`, avec l'heure du rattrapage. Le live n'est plus dans `GET /streams`, il est donc fini côté `stream`, mais avant son premier segment : par exemple `stream` tué juste après `stream/started`. Ce live n'a pas de playlist, `stream` ne le voit pas au redémarrage et n'envoie jamais `stream/ended`. Sans ce cas, la session resterait `live` et le streamer ne pourrait plus créer de live (`409`)
 
-Une playlist sans `#EXT-X-ENDLIST` (live en train de se terminer) ou absente (`404`, live coupé avant son premier segment) ne change rien : la session est revue au passage suivant. Si `stream` ne répond pas, le passage est abandonné (l'erreur est journalisée par `satellites.send`) et refait 30 s plus tard. Un `stream/ended` reçu en retard après le rattrapage est ignoré, la session n'étant plus `live`.
+Une playlist sans `#EXT-X-ENDLIST` (live en train de se terminer) ne change rien : la session est revue au passage suivant. Si `stream` ne répond pas, répond une erreur ou un autre code `4xx`, le passage est abandonné, l'erreur est journalisée, et il est refait 30 s plus tard. Un `stream/ended` reçu en retard après le rattrapage est ignoré, la session n'étant plus `live`.
 
 ## Base de données
 

@@ -1,7 +1,7 @@
 import asyncio
 import logging
 import os
-from contextlib import asynccontextmanager
+from contextlib import asynccontextmanager, suppress
 
 import httpx
 from fastapi import APIRouter, FastAPI, Request
@@ -58,6 +58,8 @@ async def lifespan(app: FastAPI):
     )
     yield
     missed_ends.cancel()
+    with suppress(asyncio.CancelledError):
+        await missed_ends
     await app.state.mqtt.stop()
     await app.state.live_chat_client.aclose()
     await app.state.stats_client.aclose()
