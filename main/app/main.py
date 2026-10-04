@@ -1,6 +1,7 @@
+import asyncio
 import logging
 import os
-from contextlib import asynccontextmanager
+from contextlib import asynccontextmanager, suppress
 
 import httpx
 from fastapi import APIRouter, FastAPI, Request
@@ -17,9 +18,10 @@ from app.config import (
     stats_settings,
     stream_settings,
 )
-from app.db import Base, engine
+from app.db import Base, SessionLocal, engine
 from app.mqtt import create_mqtt_client
 from app.routers import auth, chat, health, ingest, lives, search, streams, users
+from app.services import streams as streams_service
 from app.services.satellites import SatelliteError, SatelliteRejectedError
 
 logging.basicConfig(level=logging.INFO)
@@ -51,7 +53,13 @@ async def lifespan(app: FastAPI):
     app.state.mqtt = create_mqtt_client()
     # connects in the background: the API starts even if the broker is down
     await app.state.mqtt.start()
+    missed_ends = asyncio.create_task(
+        streams_service.watch_missed_ends(app.state.stream_client, SessionLocal)
+    )
     yield
+    missed_ends.cancel()
+    with suppress(asyncio.CancelledError):
+        await missed_ends
     await app.state.mqtt.stop()
     await app.state.live_chat_client.aclose()
     await app.state.stats_client.aclose()
