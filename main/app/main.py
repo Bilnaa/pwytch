@@ -19,7 +19,7 @@ from app.config import (
 )
 from app.db import Base, engine
 from app.mqtt import create_mqtt_client
-from app.routers import auth, health, ingest, lives, search, streams
+from app.routers import auth, chat, health, ingest, lives, search, streams
 from app.services.satellites import SatelliteError, SatelliteRejectedError
 
 logging.basicConfig(level=logging.INFO)
@@ -91,6 +91,7 @@ api = APIRouter(prefix="/api")
 api.include_router(auth.router)
 api.include_router(health.router)
 api.include_router(ingest.router)
+api.include_router(chat.router)
 api.include_router(streams.router)
 api.include_router(lives.router)
 api.include_router(search.router)

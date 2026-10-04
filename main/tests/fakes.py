@@ -55,6 +55,46 @@ class FakeUpstream:
         await self._closed.wait()
 
 
+class FakeChat:
+    def __init__(self, messages=(), close_after_send=False, connect_error=None, close_error=None):
+        self.urls = []
+        self.sent = []
+        self.messages = list(messages)
+        self.close_after_send = close_after_send
+        self.connect_error = connect_error
+        self.close_error = close_error
+        self.exited = False
+        self._closed = None
+
+    def __call__(self, url, **kwargs):
+        self.urls.append(url)
+        return self
+
+    async def __aenter__(self):
+        if self.connect_error:
+            raise self.connect_error
+        self._closed = asyncio.Event()
+        return self
+
+    async def __aexit__(self, *exc):
+        self.exited = True
+
+    async def send(self, message):
+        self.sent.append(message)
+        if self.close_after_send:
+            self._closed.set()
+
+    def __aiter__(self):
+        return self.receive()
+
+    async def receive(self):
+        for message in self.messages:
+            yield message
+        await self._closed.wait()
+        if self.close_error:
+            raise self.close_error
+
+
 def create_stream(client, username="alice"):
     headers = auth_headers(client, username)
     response = client.post("/streams", json=PAYLOAD, headers=headers)
