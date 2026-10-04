@@ -1,11 +1,16 @@
-from sqlalchemy import BigInteger, UniqueConstraint
+from sqlalchemy import BigInteger, MetaData, UniqueConstraint
 from sqlalchemy.orm import DeclarativeBase, Mapped, declared_attr, mapped_column
+
+
+SCHEMA_NAME = "stats"
 
 
 class Base(DeclarativeBase):
     @declared_attr.directive
     def __tablename__(cls) -> str:
         return cls.__name__.lower()
+
+    metadata = MetaData(schema=SCHEMA_NAME)
 
 
 class Counter(Base):
