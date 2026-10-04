@@ -35,6 +35,9 @@ export function GoLivePage() {
   const [formError, setFormError] = useState('')
   // session still open on the server, Go live resumes it instead of creating one
   const [openStream, setOpenStream] = useState<Stream | null>(null)
+  // after Stop, main may not have ended the session yet when the socket closes:
+  // looking it up then would offer to resume a live that is over
+  const stoppedRef = useRef(false)
 
   useEffect(() => {
     if (videoRef.current) {
@@ -48,6 +51,10 @@ export function GoLivePage() {
     if (!user || broadcast.status === 'connecting' || broadcast.status === 'live') {
       return
     }
+    if (stoppedRef.current) {
+      stoppedRef.current = false
+      return
+    }
     findMyOpenStream(user.id)
       .then((stream) => {
         setOpenStream(stream)
@@ -58,6 +65,12 @@ export function GoLivePage() {
       })
       .catch(() => setOpenStream(null))
   }, [user, broadcast.status])
+
+  function handleStop() {
+    stoppedRef.current = true
+    setOpenStream(null)
+    broadcast.stop()
+  }
 
   async function handleGoLive(event: FormEvent) {
     event.preventDefault()
@@ -126,7 +139,7 @@ export function GoLivePage() {
             {broadcast.error && <p className="text-sm text-destructive">{broadcast.error}</p>}
 
             {busy ? (
-              <Button type="button" variant="destructive" className="w-full" onClick={broadcast.stop}>
+              <Button type="button" variant="destructive" className="w-full" onClick={handleStop}>
                 <Square />
                 Stop
               </Button>
