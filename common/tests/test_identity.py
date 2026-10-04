@@ -1,7 +1,8 @@
 import pytest
-from common.identity import CurrentUser, UserIdentity, to_headers
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
+
+from common.identity import CurrentUser, UserIdentity, to_headers
 
 app = FastAPI()
 

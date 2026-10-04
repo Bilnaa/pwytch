@@ -1,7 +1,7 @@
 import pytest
+
 from app.indexer import on_stream_ended, on_stream_started
 from app.infra.models import Stream, Streamer
-
 from tests.factories import (
     FIRST_START,
     SECOND_START,

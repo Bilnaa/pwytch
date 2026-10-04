@@ -2,12 +2,12 @@ from types import SimpleNamespace
 from unittest.mock import sentinel
 
 import pytest
+from common.topics import CHAT_MESSAGE, STREAM_ENDED, STREAM_STARTED
+
 from app import mqtt as mqtt_module
 from app.infra.config import Settings
 from app.infra.models import IndexedChatMessage, Stream, Streamer
 from app.mqtt import MQTT_CLIENT_ID, create_mqtt_client, get_mqtt
-from common.topics import CHAT_MESSAGE, STREAM_ENDED, STREAM_STARTED
-
 from tests.factories import (
     MESSAGE_ID,
     STREAMER_ID,

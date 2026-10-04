@@ -28,6 +28,14 @@ jobs:
           echo "::error::Branch '$HEAD' must start with feature/, fix/, chore/, docs/, hotfix/ or microservice/"
           exit 1
 
+  lint:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v6
+      - name: Run ruff
+        run: make lint
+
   services:
     runs-on: ubuntu-latest
     outputs:

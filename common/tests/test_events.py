@@ -2,6 +2,8 @@ from datetime import datetime
 from uuid import UUID
 
 import pytest
+from pydantic import ValidationError
+
 from common.events import (
     ChatMessage,
     ItemType,
@@ -10,7 +12,6 @@ from common.events import (
     StreamEnded,
     StreamStarted,
 )
-from pydantic import ValidationError
 
 
 def make_stream_started_payload(**overrides):
