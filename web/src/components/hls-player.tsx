@@ -1,75 +1,86 @@
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useRef } from 'react'
+import '@vidstack/react/player/styles/default/theme.css'
+import '@vidstack/react/player/styles/default/layouts/video.css'
+import {
+  isHLSProvider,
+  MediaPlayer,
+  MediaProvider,
+  type HLSErrorEvent,
+  type HLSProvider,
+  type MediaPlayerInstance,
+  type MediaProviderAdapter,
+} from '@vidstack/react'
+import { DefaultVideoLayout, defaultLayoutIcons } from '@vidstack/react/player/layouts/default'
 // light build: no DRM or subtitles, we don't need them
 import Hls from 'hls.js/light'
 
 const RETRY_MS = 3000
 
-// onEnded: the playlist is over (#EXT-X-ENDLIST reached), the live has ended
-export function HlsPlayer({ src, onEnded }: { src: string; onEnded?: () => void }) {
-  const videoRef = useRef<HTMLVideoElement>(null)
-  const [waiting, setWaiting] = useState(true)
+interface HlsPlayerProps {
+  src: string
+  onPlay?: () => void
+  onPause?: () => void
+  // the playlist is over (#EXT-X-ENDLIST reached), the live has ended
+  onEnded?: () => void
+}
+
+export function HlsPlayer({ src, onPlay, onPause, onEnded }: HlsPlayerProps) {
+  const playerRef = useRef<MediaPlayerInstance>(null)
+  const hlsRef = useRef<HLSProvider | null>(null)
+  const retryRef = useRef<number | undefined>(undefined)
 
   useEffect(() => {
-    const video = videoRef.current
-    if (!video) {
-      return
-    }
-
-    // Safari reads HLS by itself, hls.js is for the others
-    if (!Hls.isSupported()) {
-      video.src = src
-      return
-    }
-
-    const hls = new Hls({ liveSyncDurationCount: 3 })
-    let retry: number | undefined
-
-    hls.on(Hls.Events.MANIFEST_PARSED, () => {
-      // browsers block autoplay with sound, the viewer can unmute with the controls
-      video.play().catch(() => {
-        video.muted = true
-        video.play()
-      })
-    })
-
-    hls.on(Hls.Events.ERROR, (_event, data) => {
-      if (!data.fatal) {
-        return
-      }
-      if (data.type === Hls.ErrorTypes.MEDIA_ERROR) {
-        hls.recoverMediaError()
-        return
-      }
-      // the playlist is a 404 for the first seconds of a live, so we try again
-      setWaiting(true)
-      retry = window.setTimeout(() => hls.loadSource(src), RETRY_MS)
-    })
-
-    hls.loadSource(src)
-    hls.attachMedia(video)
-
-    return () => {
-      window.clearTimeout(retry)
-      hls.destroy()
-    }
+    return () => window.clearTimeout(retryRef.current)
   }, [src])
+
+  function onProviderChange(provider: MediaProviderAdapter | null) {
+    if (!isHLSProvider(provider)) {
+      return
+    }
+    // without this vidstack downloads hls.js from a CDN
+    provider.library = Hls
+    provider.config = { liveSyncDurationCount: 3 }
+    hlsRef.current = provider
+  }
+
+  // vidstack already recovers media errors, network ones are left to us
+  function onHlsError(error: HLSErrorEvent['detail']) {
+    if (!error.fatal || error.type !== Hls.ErrorTypes.NETWORK_ERROR) {
+      return
+    }
+    // the playlist is a 404 for the first seconds of a live, so we try again
+    window.clearTimeout(retryRef.current)
+    retryRef.current = window.setTimeout(() => hlsRef.current?.instance?.loadSource(src), RETRY_MS)
+  }
+
+  // browsers block autoplay with sound, the viewer can unmute with the controls
+  function onAutoPlayFail() {
+    const player = playerRef.current
+    if (!player) {
+      return
+    }
+    player.muted = true
+    player.play().catch(() => {})
+  }
 
   // height capped like on twitch, so the title stays visible under the player
   return (
-    <div className="relative aspect-video max-h-[calc(100svh-12rem)] w-full overflow-hidden rounded-lg bg-black">
-      <video
-        ref={videoRef}
-        controls
-        playsInline
-        className="size-full object-contain"
-        onPlaying={() => setWaiting(false)}
-        onEnded={onEnded}
-      />
-      {waiting && (
-        <p className="pointer-events-none absolute inset-0 flex items-center justify-center text-sm text-white/70">
-          Waiting for the stream...
-        </p>
-      )}
-    </div>
+    <MediaPlayer
+      ref={playerRef}
+      src={{ src, type: 'application/x-mpegurl' }}
+      streamType="live"
+      autoPlay
+      playsInline
+      className="aspect-video max-h-[calc(100svh-12rem)] w-full overflow-hidden rounded-lg bg-black"
+      onProviderChange={onProviderChange}
+      onHlsError={onHlsError}
+      onAutoPlayFail={onAutoPlayFail}
+      onPlay={onPlay}
+      onPause={onPause}
+      onEnded={onEnded}
+    >
+      <MediaProvider />
+      <DefaultVideoLayout icons={defaultLayoutIcons} />
+    </MediaPlayer>
   )
 }

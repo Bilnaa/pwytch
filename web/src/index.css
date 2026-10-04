@@ -130,3 +130,8 @@
     @apply font-sans;
     }
 }
+
+/* vidstack player (sliders, focus) in our blue instead of its default red */
+[data-media-player] {
+  --video-brand: var(--primary);
+}

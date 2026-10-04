@@ -22,7 +22,7 @@ const router = createBrowserRouter([
       {
         // channel of a streamer, like twitch. The fixed paths above (/login...) win over it
         path: '/:username',
-        // hls.js is heavy, it's only loaded when someone opens a channel
+        // the player (vidstack + hls.js) is heavy, it's only loaded when someone opens a channel
         lazy: async () => ({ Component: (await import('@/pages/channel')).ChannelPage }),
       },
       {
