@@ -16,12 +16,13 @@ export const MAX_LENGTH = 500
 // past this, the oldest messages are dropped so a long live doesn't eat the memory
 const MAX_MESSAGES = 200
 
-// Close codes sent by main on the chat WebSocket (see main/README.md)
+const RETRY_MS = 3000
+
+// Close codes of main where trying again won't change anything (see main/README.md).
+// Any other close (main restarted, live-chat down, network lost) reconnects
 const CLOSE_MESSAGES: Record<number, string> = {
   4401: 'Your session expired, log in again.',
   4404: 'This live does not exist.',
-  1011: 'The chat is unavailable, refresh the page to try again.',
-  1006: 'Cannot reach the server.',
 }
 
 // live-chat sends its errors with a French detail, so we use the code
@@ -46,33 +47,44 @@ export function useChat(streamId: number, loggedIn: boolean) {
     if (loggedIn && token) {
       path += `?token=${encodeURIComponent(token)}`
     }
-    const socket = new WebSocket(wsUrl(path))
-    socketRef.current = socket
+    let socket: WebSocket
+    let retry: number | undefined
 
-    socket.onopen = () => {
-      setConnected(true)
-      setError('')
-    }
+    function connect() {
+      socket = new WebSocket(wsUrl(path))
+      socketRef.current = socket
 
-    socket.onmessage = (event) => {
-      const data = JSON.parse(event.data)
-      if (data.type === 'error') {
-        setError(ERROR_MESSAGES[data.code] ?? data.detail)
-        return
+      socket.onopen = () => {
+        setConnected(true)
+        setError('')
       }
-      setMessages((old) => [...old, data].slice(-MAX_MESSAGES))
+
+      socket.onmessage = (event) => {
+        const data = JSON.parse(event.data)
+        if (data.type === 'error') {
+          setError(ERROR_MESSAGES[data.code] ?? data.detail)
+          return
+        }
+        setMessages((old) => [...old, data].slice(-MAX_MESSAGES))
+      }
+
+      socket.onclose = (event) => {
+        setConnected(false)
+        if (event.code in CLOSE_MESSAGES) {
+          setError(CLOSE_MESSAGES[event.code])
+          return
+        }
+        // messages sent while we were away are lost, until the history of #84
+        setError('Chat disconnected, reconnecting...')
+        retry = window.setTimeout(connect, RETRY_MS)
+      }
     }
 
-    socket.onclose = (event) => {
-      setConnected(false)
-      if (event.code === 1000) {
-        return
-      }
-      setError(CLOSE_MESSAGES[event.code] ?? `Chat closed (${event.code} ${event.reason})`)
-    }
+    connect()
 
     return () => {
-      // no error message for a close we asked for
+      window.clearTimeout(retry)
+      // no reconnect for a close we asked for
       socket.onclose = null
       socket.close(1000)
     }
