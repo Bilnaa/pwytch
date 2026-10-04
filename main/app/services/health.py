@@ -37,18 +37,29 @@ async def check_satellite(client: httpx.AsyncClient) -> Status:
         return "down"
 
 
+async def check_satellites(clients: dict[str, httpx.AsyncClient]) -> dict[str, Status]:
+    async with asyncio.TaskGroup() as group:
+        tasks = {
+            name: group.create_task(check_satellite(client)) for name, client in clients.items()
+        }
+    return {name: task.result() for name, task in tasks.items()}
+
+
+def overall(statuses: list[Status]) -> Status:
+    if all(status == "ok" for status in statuses):
+        return "ok"
+    return "degraded"
+
+
 async def check_all(
     db: Session, mqtt: MqttClient, clients: dict[str, httpx.AsyncClient]
 ) -> Health:
-    database, *statuses = await asyncio.gather(
-        asyncio.to_thread(check_database, db),
-        *(check_satellite(client) for client in clients.values()),
-    )
+    database = await asyncio.to_thread(check_database, db)
     broker = check_broker(mqtt)
-    all_ok = all(status == "ok" for status in (database, broker, *statuses))
+    satellites_statuses = await check_satellites(clients)
     return Health(
-        status="ok" if all_ok else "degraded",
+        status=overall([database, broker, *satellites_statuses.values()]),
         database=database,
         broker=broker,
-        satellites=dict(zip(clients, statuses)),
+        satellites=satellites_statuses,
     )
