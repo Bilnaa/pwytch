@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState, type FormEvent } from 'react'
 import { Radio, Square } from 'lucide-react'
 
+import { Chat } from '@/components/chat'
 import { FormField } from '@/components/form-field'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
@@ -35,6 +36,8 @@ export function GoLivePage() {
   const [formError, setFormError] = useState('')
   // session still open on the server, Go live resumes it instead of creating one
   const [openStream, setOpenStream] = useState<Stream | null>(null)
+  // live being broadcast, for the chat
+  const [liveId, setLiveId] = useState<number | null>(null)
   // after Stop, main may not have ended the session yet when the socket closes:
   // looking it up then would offer to resume a live that is over
   const stoppedRef = useRef(false)
@@ -76,11 +79,13 @@ export function GoLivePage() {
     event.preventDefault()
     setFormError('')
     if (openStream) {
+      setLiveId(openStream.id)
       broadcast.start(openStream.id)
       return
     }
     try {
       const stream = await createStream(title, game)
+      setLiveId(stream.id)
       broadcast.start(stream.id)
     } catch (err) {
       setFormError(errorMessage(err))
@@ -103,55 +108,60 @@ export function GoLivePage() {
         )}
       </div>
 
-      <Card>
-        <CardHeader>
-          <CardTitle>Stream info</CardTitle>
-          <CardAction>
-            <StatusBadge status={broadcast.status} />
-          </CardAction>
-        </CardHeader>
-        <CardContent>
-          <form onSubmit={handleGoLive} className="space-y-4">
-            <FormField
-              id="title"
-              label="Title"
-              value={title}
-              onChange={(e) => setTitle(e.target.value)}
-              required
-              maxLength={100}
-              disabled={locked}
-            />
-            <FormField
-              id="game"
-              label="Game"
-              value={game}
-              onChange={(e) => setGame(e.target.value)}
-              required
-              maxLength={50}
-              disabled={locked}
-            />
-            {openStream && !busy && (
-              <p className="text-sm text-muted-foreground">
-                Your live is still open, you can pick it up where you left it.
-              </p>
-            )}
-            {formError && <p className="text-sm text-destructive">{formError}</p>}
-            {broadcast.error && <p className="text-sm text-destructive">{broadcast.error}</p>}
+      <div className="space-y-6">
+        <Card>
+          <CardHeader>
+            <CardTitle>Stream info</CardTitle>
+            <CardAction>
+              <StatusBadge status={broadcast.status} />
+            </CardAction>
+          </CardHeader>
+          <CardContent>
+            <form onSubmit={handleGoLive} className="space-y-4">
+              <FormField
+                id="title"
+                label="Title"
+                value={title}
+                onChange={(e) => setTitle(e.target.value)}
+                required
+                maxLength={100}
+                disabled={locked}
+              />
+              <FormField
+                id="game"
+                label="Game"
+                value={game}
+                onChange={(e) => setGame(e.target.value)}
+                required
+                maxLength={50}
+                disabled={locked}
+              />
+              {openStream && !busy && (
+                <p className="text-sm text-muted-foreground">
+                  Your live is still open, you can pick it up where you left it.
+                </p>
+              )}
+              {formError && <p className="text-sm text-destructive">{formError}</p>}
+              {broadcast.error && <p className="text-sm text-destructive">{broadcast.error}</p>}
 
-            {busy ? (
-              <Button type="button" variant="destructive" className="w-full" onClick={handleStop}>
-                <Square />
-                Stop
-              </Button>
-            ) : (
-              <Button type="submit" className="w-full" disabled={!webcam.stream}>
-                <Radio />
-                {openStream ? 'Resume live' : 'Go live'}
-              </Button>
-            )}
-          </form>
-        </CardContent>
-      </Card>
+              {busy ? (
+                <Button type="button" variant="destructive" className="w-full" onClick={handleStop}>
+                  <Square />
+                  Stop
+                </Button>
+              ) : (
+                <Button type="submit" className="w-full" disabled={!webcam.stream}>
+                  <Radio />
+                  {openStream ? 'Resume live' : 'Go live'}
+                </Button>
+              )}
+            </form>
+          </CardContent>
+        </Card>
+
+        {/* the streamer reads and answers their chat from here */}
+        {busy && liveId !== null && <Chat key={liveId} streamId={liveId} className="lg:h-[32rem]" />}
+      </div>
     </div>
   )
 }

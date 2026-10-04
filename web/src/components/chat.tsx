@@ -5,11 +5,12 @@ import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { MAX_LENGTH, useChat } from '@/hooks/use-chat'
 import { useAuth } from '@/lib/auth'
+import { cn } from '@/lib/utils'
 
 // how close to the bottom (px) still counts as "at the bottom"
 const BOTTOM_MARGIN = 40
 
-export function Chat({ streamId }: { streamId: number }) {
+export function Chat({ streamId, className }: { streamId: number; className?: string }) {
   const { user } = useAuth()
   const location = useLocation()
   const { messages, error, connected, send } = useChat(streamId, user !== null)
@@ -42,7 +43,7 @@ export function Chat({ streamId }: { streamId: number }) {
   }
 
   return (
-    <aside className="flex h-[32rem] flex-col rounded-lg border bg-card lg:h-[calc(100svh-6rem)]">
+    <aside className={cn('flex h-[32rem] flex-col rounded-lg border bg-card lg:h-[calc(100svh-6rem)]', className)}>
       <p className="border-b px-3 py-2 text-center text-sm font-semibold">Chat</p>
 
       <ul ref={listRef} onScroll={onScroll} className="flex-1 space-y-1 overflow-y-auto px-3 py-2 text-sm">
