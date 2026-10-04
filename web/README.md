@@ -9,7 +9,7 @@ Front de Pwytch. Il n'appelle que `main`, sous `/api`.
 - [Tailwind CSS](https://tailwindcss.com/) v4, via le plugin Vite
 - [shadcn/ui](https://ui.shadcn.com/) pour les composants (`src/components/ui`)
 
-Le build (`dist/`) est servi par `main` avec `app.frontend()` de FastAPI : pas de serveur à part en prod, et le front et l'API sont sur la même origine.
+Le build (`dist/`) est servi par `main` avec `app.frontend()` de FastAPI : pas de serveur à part en prod, et le front et l'API sont sur la même origine. L'image Docker de `main` build le front elle-même (voir `main/Dockerfile`).
 
 ## Lancer
 

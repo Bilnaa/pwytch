@@ -48,6 +48,8 @@ En image Docker, le build se lance depuis la racine du repo, car l'image embarqu
 
     docker build -f main/Dockerfile -t main .
 
+L'image build aussi le front (`web/`) dans une première étape Node et le copie dans `/web/dist`, là où `FRONTEND_DIR` pointe par défaut.
+
 Les tables sont créées au démarrage (`Base.metadata.create_all`) si elles n'existent pas. Il n'y a pas encore de migrations : une table existante n'est jamais modifiée, il faut la supprimer à la main si son modèle change.
 
 ## Endpoints
