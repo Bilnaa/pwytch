@@ -4,6 +4,10 @@ import { getToken, wsUrl } from '@/lib/api'
 
 export type BroadcastStatus = 'offline' | 'connecting' | 'live' | 'error'
 
+// Stop: main and stream end the live right away. Any other close (tab closed,
+// leaving the page) is a cut, the live waits ~30 s for the streamer to resume it
+const LIVE_ENDED = 4000
+
 // Close codes sent by main on the ingest WebSocket (see main/README.md)
 const CLOSE_MESSAGES: Record<number, string> = {
   4401: 'Your session expired, log in again.',
@@ -72,8 +76,8 @@ export function useBroadcast(media: MediaStream | null) {
     socket.onclose = (event) => {
       stopRecorder()
       socketRef.current = null
-      // 1000 = we closed it with the Stop button
-      if (event.code === 1000) {
+      // we closed it ourselves: Stop, or leaving the page
+      if (event.code === LIVE_ENDED || event.code === 1000) {
         setStatus('offline')
         return
       }
@@ -84,10 +88,10 @@ export function useBroadcast(media: MediaStream | null) {
 
   function stop() {
     stopRecorder()
-    socketRef.current?.close(1000)
+    socketRef.current?.close(LIVE_ENDED, 'Live ended')
   }
 
-  // leaving the page ends the live too
+  // leaving the page is a cut, not an end: the live can be resumed from /go-live
   useEffect(() => {
     return () => {
       stopRecorder()
