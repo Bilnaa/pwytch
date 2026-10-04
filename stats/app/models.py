@@ -1,7 +1,6 @@
 from sqlalchemy import BigInteger, MetaData, UniqueConstraint
 from sqlalchemy.orm import DeclarativeBase, Mapped, declared_attr, mapped_column
 
-
 SCHEMA_NAME = "stats"
 
 

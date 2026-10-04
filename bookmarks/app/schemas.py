@@ -1,6 +1,7 @@
 from datetime import datetime
 from enum import Enum
 from typing import Annotated
+
 from pydantic import AfterValidator, BaseModel, ConfigDict, Field, StringConstraints
 
 from app.utils import LIMIT_INTEGER

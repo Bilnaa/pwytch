@@ -1,19 +1,16 @@
 import logging
-from typing import AsyncIterator
+from collections.abc import AsyncIterator
+from contextlib import asynccontextmanager
 
 from common.mqtt import MqttClient
 from fastapi import FastAPI
-from contextlib import asynccontextmanager
-
-from sqlalchemy import text
 from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.schema import CreateSchema
 
-from app.routers import health
+from app.config import settings
 from app.database import engine
 from app.models import SCHEMA_NAME, Base
-from app.config import settings
-
+from app.routers import health
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)

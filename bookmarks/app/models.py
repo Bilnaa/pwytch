@@ -1,6 +1,6 @@
 from datetime import datetime
 
-from sqlalchemy import UniqueConstraint, func, DateTime, Enum
+from sqlalchemy import DateTime, Enum, UniqueConstraint, func
 from sqlalchemy.orm import DeclarativeBase, Mapped, declared_attr, mapped_column
 
 from app.schemas import TargetType
