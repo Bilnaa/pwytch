@@ -5,6 +5,7 @@ import { Avatar } from '@/components/avatar'
 import { Chat } from '@/components/chat'
 import { HlsPlayer } from '@/components/hls-player'
 import { Badge } from '@/components/ui/badge'
+import { usePlayerEvents } from '@/hooks/use-player-events'
 import { errorMessage } from '@/lib/api'
 import { NotFoundPage } from '@/pages/not-found'
 import { findLive, playlistUrl, type Stream } from '@/lib/streams'
@@ -18,6 +19,25 @@ interface Lookup {
   user: PublicUser | null
   stream: Stream | null
   error: string
+}
+
+// player of a live, its play / pause / stop go to the stats
+function LivePlayer({ streamId, onEnded }: { streamId: number; onEnded: () => void }) {
+  const events = usePlayerEvents(streamId)
+
+  function handleEnded() {
+    events.onEnded()
+    onEnded()
+  }
+
+  return (
+    <HlsPlayer
+      src={playlistUrl(streamId)}
+      onPlay={events.onPlay}
+      onPause={events.onPause}
+      onEnded={handleEnded}
+    />
+  )
 }
 
 // Channel page, like twitch.tv/<name>. Refreshed every 15 s to follow the live
@@ -95,7 +115,8 @@ export function ChannelPage() {
   return (
     <div className="grid gap-4 lg:grid-cols-[1fr_20rem]">
       <div className="min-w-0 space-y-4">
-        <HlsPlayer src={playlistUrl(stream.id)} onEnded={() => setEndedCount((n) => n + 1)} />
+        <LivePlayer streamId={stream.id} onEnded={() => setEndedCount((n) => n + 1)} />
+
 
         <div className="flex items-start gap-3">
           <Avatar username={user.display_name} />

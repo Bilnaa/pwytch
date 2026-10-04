@@ -1,4 +1,4 @@
-import { api, apiUrl } from '@/lib/api'
+import { api, apiUrl, getToken } from '@/lib/api'
 
 export type StreamStatus = 'created' | 'live' | 'ended' | 'cancelled'
 
@@ -62,4 +62,23 @@ export async function findLive(username: string): Promise<Stream | null> {
 // HLS playlist of a live, relayed by main from stream
 export function playlistUrl(id: number): string {
   return apiUrl(`/lives/${id}/index.m3u8`)
+}
+
+export type PlayerEventType = 'play' | 'pause' | 'stop'
+
+// Counted in the stats. Never awaited and errors ignored: it must not get in the way
+// of watching. Plain fetch and not api(), an expired token must not send the viewer
+// to /login. keepalive: the stop sent while the page closes still goes out
+export function sendPlayerEvent(streamId: number, eventType: PlayerEventType): void {
+  const headers = new Headers({ 'Content-Type': 'application/json' })
+  const token = getToken()
+  if (token) {
+    headers.set('Authorization', `Bearer ${token}`)
+  }
+  fetch(apiUrl(`/streams/${streamId}/player-events`), {
+    method: 'POST',
+    headers,
+    body: JSON.stringify({ event_type: eventType }),
+    keepalive: true,
+  }).catch(() => {})
 }
