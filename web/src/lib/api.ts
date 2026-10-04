@@ -27,6 +27,17 @@ export class ApiError extends Error {
   }
 }
 
+// FastAPI sends a string in detail, except on a 422 where it's a list of errors
+export function errorMessage(error: unknown): string {
+  if (!(error instanceof ApiError)) {
+    return 'Server error'
+  }
+  if (Array.isArray(error.detail) && error.detail.length > 0) {
+    return error.detail[0].msg
+  }
+  return error.message
+}
+
 export async function api<T>(path: string, init: RequestInit = {}): Promise<T> {
   const headers = new Headers(init.headers)
   const token = getToken()
