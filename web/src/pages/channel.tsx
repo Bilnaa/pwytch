@@ -5,20 +5,21 @@ import { Avatar } from '@/components/avatar'
 import { HlsPlayer } from '@/components/hls-player'
 import { Badge } from '@/components/ui/badge'
 import { errorMessage } from '@/lib/api'
+import { NotFoundPage } from '@/pages/not-found'
 import { findLive, playlistUrl, type Stream } from '@/lib/streams'
+import { getUser, type PublicUser } from '@/lib/users'
 
 const REFRESH_MS = 15000
 
 interface Lookup {
-  // the channel this answer is for: after /a -> /b, an answer for /a is not shown
+  // which channel this answer is for, so a late answer for /a never shows on /b
   username: string
+  user: PublicUser | null
   stream: Stream | null
   error: string
 }
 
-// /:username, like twitch.tv/<name>: the live of this streamer if there is one.
-// Checked again every 15 s, so the page goes offline when the live ends and
-// comes back when the streamer starts a new one
+// Channel page, like twitch.tv/<name>. Refreshed every 15 s to follow the live
 export function ChannelPage() {
   const { username = '' } = useParams()
   const [lookup, setLookup] = useState<Lookup | null>(null)
@@ -29,10 +30,10 @@ export function ChannelPage() {
     let cancelled = false
 
     function load() {
-      findLive(username)
-        .then((stream) => {
+      Promise.all([getUser(username), findLive(username)])
+        .then(([user, stream]) => {
           if (!cancelled) {
-            setLookup({ username, stream, error: '' })
+            setLookup({ username, user, stream, error: '' })
           }
         })
         .catch((err) => {
@@ -44,7 +45,7 @@ export function ChannelPage() {
             if (old && old.username === username) {
               return old
             }
-            return { username, stream: null, error: errorMessage(err) }
+            return { username, user: null, stream: null, error: errorMessage(err) }
           })
         })
     }
@@ -63,18 +64,21 @@ export function ChannelPage() {
   if (lookup.error) {
     return <p className="text-sm text-destructive">{lookup.error}</p>
   }
+  if (!lookup.user) {
+    return <NotFoundPage />
+  }
+  const user = lookup.user
   const stream = lookup.stream
 
-  // no way to tell an unknown user from an offline one with the current API
   if (!stream) {
     return (
       <div className="space-y-4">
         <div className="flex aspect-video max-h-[calc(100svh-12rem)] w-full items-center justify-center rounded-lg bg-black text-white/70">
-          {username} is offline
+          {user.display_name} is offline
         </div>
         <div className="flex items-center gap-3">
-          <Avatar username={username} />
-          <p className="font-semibold">{username}</p>
+          <Avatar username={user.display_name} />
+          <p className="font-semibold">{user.display_name}</p>
         </div>
       </div>
     )
