@@ -35,6 +35,8 @@ ou depuis `main/` :
 | `REPLAY_TIMEOUT_SECONDS` | `5` | Délai maximum d'attente d'une réponse de `replay`, en secondes |
 | `STATS_URL` | `http://localhost:8006` | URL du service `stats` |
 | `STATS_TIMEOUT_SECONDS` | `5` | Délai maximum d'attente d'une réponse de `stats`, en secondes |
+| `LIVE_CHAT_URL` | `http://localhost:8002` | URL du service `live-chat`, utilisée pour relayer le chat |
+| `LIVE_CHAT_TIMEOUT_SECONDS` | `5` | Délai maximum d'attente d'une réponse de `live-chat`, en secondes |
 | `MQTT_HOST` | `localhost` | Hôte du broker MQTT (`mqtt` dans le docker-compose) |
 | `MQTT_PORT` | `1883` | Port du broker MQTT |
 | `FRONTEND_ORIGIN` | `http://localhost:5173` | Origine du front autorisée à appeler `main` depuis le navigateur (CORS), ex. `https://app.example.com`, sans `/` final |
@@ -60,6 +62,7 @@ Les tables sont créées au démarrage (`Base.metadata.create_all`) si elles n'e
 | `/streams`       | HTTP GET  | Liste les sessions, filtrable par statut |
 | `/streams/{id}`  | HTTP GET  | Renvoie le détail d'une session       |
 | `/streams/{stream_id}/ingest` | WebSocket | Reçoit le flux vidéo du streamer et le relaie à `stream` (jeton en query) |
+| `/streams/{stream_id}/chat` | WebSocket | Relaie le chat du live avec `live-chat` dans les deux sens (jeton facultatif en query, sans jeton : lecture seule) |
 | `/lives/{stream_id}/{filename}` | HTTP GET | Relaie la playlist ou un segment HLS d'un live depuis `stream` |
 | `/search` | HTTP GET | Cherche des streamers et des messages du chat de tous les lives via `search` |
 
@@ -402,5 +405,5 @@ Avec le service lancé :
 - Pas de route pour retirer le rôle `admin` : il faut modifier la colonne `role` en base.
 - Pas de migrations : les tables sont créées au démarrage, un changement de modèle demande de recréer la table.
 - Si PostgreSQL n'est pas prêt quand l'API démarre, le `create_all` échoue et l'API plante : il faut la relancer.
-- Seuls `stream` (ingest et HLS) et `search` sont relayés : le relais vers `live-chat`, `replay`, ... n'est pas encore implémenté.
+- Seuls `stream` (ingest et HLS), `search` et le chat de `live-chat` sont relayés : le relais vers `replay`, ... n'est pas encore implémenté.
 - Les ids de session viennent de l'auto-incrément PostgreSQL, et `stream` refuse un id dont le dossier `lives/{stream_id}/` existe déjà (`Stream id already used`). Si la base est vidée (volume `postgres-data` supprimé) sans vider `stream/lives/`, les nouvelles sessions reprennent à 1 et leurs lives sont refusés : il faut vider les deux ensemble.
