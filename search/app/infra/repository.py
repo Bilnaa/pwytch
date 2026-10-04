@@ -75,22 +75,26 @@ async def search_streamers(
 
 
 async def search_chat_messages(
-    session: AsyncSession, stream_id: int, search_query: str
+    session: AsyncSession, stream_id: int | None, search_query: str
 ) -> list[MessageResult]:
-    rows = await session.scalars(
-        select(IndexedChatMessage)
-        .where(
-            IndexedChatMessage.stream_id == stream_id,
-            IndexedChatMessage.search_text.contains(
-                normalize(search_query), autoescape=True
-            ),
+    """Cherche dans le chat d'un live, ou de tous les lives si stream_id est None."""
+    conditions = [
+        IndexedChatMessage.search_text.contains(
+            normalize(search_query), autoescape=True
         )
-        # Même ordre que l'index (stream_id, sent_at, message_id), lu à l'envers.
+    ]
+    if stream_id is not None:
+        conditions.append(IndexedChatMessage.stream_id == stream_id)
+    statement = (
+        select(IndexedChatMessage)
+        .where(*conditions)
+        # Même ordre que les index (..., sent_at, message_id), lus à l'envers.
         .order_by(
             IndexedChatMessage.sent_at.desc(), IndexedChatMessage.message_id.desc()
         )
         .limit(CHAT_SEARCH_LIMIT)
     )
+    rows = await session.scalars(statement)
     return [
         MessageResult.model_validate(message, from_attributes=True) for message in rows
     ]
