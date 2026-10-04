@@ -1,14 +1,14 @@
+from http import HTTPStatus
 from typing import Annotated
 
+from common.identity import CurrentUser
 from fastapi import APIRouter, HTTPException, Path, Response
 from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError
-from http import HTTPStatus
 
-from common.identity import CurrentUser
-from app.schemas import BookmarkCreate, BookmarkResponse, BookmarkUpdate
 from app.database import SessionDep
 from app.models import Bookmark
+from app.schemas import BookmarkCreate, BookmarkResponse, BookmarkUpdate
 from app.utils import LIMIT_INTEGER
 
 router = APIRouter(tags=["bookmarks"])
@@ -80,4 +80,3 @@ def delete_bookmarks(bookmark_id: BookmarkId, user: CurrentUser, session: Sessio
 
     session.delete(bookmark)
     session.commit()
-    return
