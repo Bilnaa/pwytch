@@ -28,12 +28,18 @@ export function ChannelPage() {
 
   useEffect(() => {
     let cancelled = false
+    let timer: number | undefined
 
     function load() {
       Promise.all([getUser(username), findLive(username)])
         .then(([user, stream]) => {
-          if (!cancelled) {
-            setLookup({ username, user, stream, error: '' })
+          if (cancelled) {
+            return
+          }
+          setLookup({ username, user, stream, error: '' })
+          // unknown account: it's a 404 page, nothing to follow
+          if (!user) {
+            window.clearInterval(timer)
           }
         })
         .catch((err) => {
@@ -51,7 +57,7 @@ export function ChannelPage() {
     }
 
     load()
-    const timer = window.setInterval(load, REFRESH_MS)
+    timer = window.setInterval(load, REFRESH_MS)
     return () => {
       cancelled = true
       window.clearInterval(timer)
@@ -89,9 +95,9 @@ export function ChannelPage() {
       <HlsPlayer src={playlistUrl(stream.id)} onEnded={() => setEndedCount((n) => n + 1)} />
 
       <div className="flex items-start gap-3">
-        <Avatar username={stream.streamer.username} />
+        <Avatar username={user.display_name} />
         <div className="min-w-0 flex-1">
-          <p className="font-semibold text-primary">{stream.streamer.username}</p>
+          <p className="font-semibold text-primary">{user.display_name}</p>
           <h1 className="truncate text-lg font-semibold">{stream.title}</h1>
           <p className="text-sm text-muted-foreground">{stream.game}</p>
         </div>
