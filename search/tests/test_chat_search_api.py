@@ -293,3 +293,123 @@ async def test_chat_session_is_closed_before_publishing(client, session, fake_mq
     await search_chat(client, q="gg")
 
     assert closed_when_publishing == [True]
+
+
+# Recherche dans le chat de tous les lives (#150)
+
+ALL_CHAT_SEARCH_URL = "/search/messages"
+
+
+async def search_all_chat(client, **params):
+    response = await client.get(ALL_CHAT_SEARCH_URL, params=params)
+    assert response.status_code == 200, response.text
+    return response.json()
+
+
+@pytest.mark.anyio
+@pytest.mark.parametrize(
+    "params",
+    [
+        {},
+        {"q": "g"},
+        {"q": "   "},
+        {"q": "x" * 101},
+        {"q": "́́"},
+        {"q": "g\x00"},
+    ],
+    ids=[
+        "missing",
+        "one-character",
+        "spaces-only",
+        "too-long",
+        "combining-marks-only",
+        "null-character",
+    ],
+)
+async def test_all_chat_invalid_query_returns_422(client, session, fake_mqtt, params):
+    await post_message(session, 1, "gg")
+
+    response = await client.get(ALL_CHAT_SEARCH_URL, params=params)
+
+    assert response.status_code == 422
+    assert published_hits(fake_mqtt) == []
+
+
+@pytest.mark.anyio
+async def test_all_chat_returns_messages_of_every_live(client, session):
+    first_live_id = await post_message(session, 1, "GG WP !", stream_id=1)
+    second_live_id = await post_message(session, 2, "gg", stream_id=2)
+
+    body = await search_all_chat(client, q="gg")
+
+    assert [(item["message_id"], item["stream_id"]) for item in body] == [
+        (str(second_live_id), 2),
+        (str(first_live_id), 1),
+    ]
+
+
+@pytest.mark.anyio
+async def test_all_chat_returns_ten_most_recent_messages_across_lives(client, session):
+    message_ids = [
+        await post_message(session, rank, "gg", stream_id=rank % 3 + 1)
+        for rank in range(12)
+    ]
+
+    body = await search_all_chat(client, q="gg")
+
+    expected_ids = [str(message_id) for message_id in reversed(message_ids)][:10]
+    assert [item["message_id"] for item in body] == expected_ids
+
+
+@pytest.mark.anyio
+async def test_all_chat_query_is_normalized(client, session):
+    # Majuscules accentuées : SQLite ignore déjà la casse ASCII.
+    message_id = await post_message(session, 1, "Célèste", stream_id=4)
+
+    body = await search_all_chat(client, q="CÉLÈSTE")
+
+    assert [item["message_id"] for item in body] == [str(message_id)]
+
+
+@pytest.mark.anyio
+async def test_all_chat_no_match_returns_empty_list_and_publishes_nothing(
+    client, session, fake_mqtt
+):
+    await post_message(session, 1, "salut")
+
+    assert await search_all_chat(client, q="gg") == []
+    assert published_hits(fake_mqtt) == []
+
+
+@pytest.mark.anyio
+async def test_all_chat_each_message_found_is_published(client, session, fake_mqtt):
+    await post_message(session, 1, "gg", stream_id=1)
+    await post_message(session, 2, "gg wp", stream_id=2)
+
+    body = await search_all_chat(client, q="gg")
+
+    hits = published_hits(fake_mqtt)
+    assert [hit.item_id for hit in hits] == [item["message_id"] for item in body]
+    assert [hit.item_type for hit in hits] == [ItemType.MESSAGE, ItemType.MESSAGE]
+    assert [hit.query for hit in hits] == ["gg", "gg"]
+
+
+@pytest.mark.anyio
+async def test_all_chat_session_is_closed_before_publishing(client, session, fake_mqtt):
+    await post_message(session, 1, "gg")
+    session_state = {"closed": False}
+    closed_when_publishing = []
+
+    async def tracked_get_session():
+        yield session
+        session_state["closed"] = True
+
+    # Remplace l'override de la fixture client, vidé à la fin du test.
+    app.dependency_overrides[get_session] = tracked_get_session
+    fake_mqtt.publish.side_effect = lambda topic, event: closed_when_publishing.append(
+        session_state["closed"]
+    )
+
+    await search_all_chat(client, q="gg")
+
+    assert closed_when_publishing == [True]

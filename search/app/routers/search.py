@@ -1,4 +1,3 @@
-from datetime import UTC, datetime
 from typing import Annotated
 
 from common.events import ItemType
@@ -9,7 +8,7 @@ from pydantic import AfterValidator, StringConstraints
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.helpers.text import normalize
-from app.hits import build_hits, publish_hits
+from app.hits import schedule_hits
 from app.infra.db import get_session
 from app.infra.repository import search_chat_messages, search_streamers
 from app.mqtt import get_mqtt
@@ -57,14 +56,13 @@ async def search_streamers_route(
     size: Annotated[int, Query(ge=1, le=50)] = 20,
 ) -> Page[StreamerResult]:
     results, total = await search_streamers(session, search_query, page, size)
-    if results:
-        hits = build_hits(
-            ItemType.STREAMER,
-            (result.streamer_id for result in results),
-            search_query,
-            datetime.now(UTC),
-        )
-        background_tasks.add_task(publish_hits, mqtt, hits)
+    schedule_hits(
+        background_tasks,
+        mqtt,
+        ItemType.STREAMER,
+        [result.streamer_id for result in results],
+        search_query,
+    )
     return Page[StreamerResult](items=results, total=total, page=page, size=size)
 
 
@@ -81,13 +79,35 @@ async def search_chat_messages_route(
     search_query: Annotated[ChatSearchQuery, Query(alias="q")],
 ) -> list[MessageResult]:
     results = await search_chat_messages(session, stream_id, search_query)
-    if results:
-        hits = build_hits(
-            ItemType.MESSAGE,
-            (result.message_id for result in results),
-            search_query,
-            datetime.now(UTC),
-        )
-        # Lancé après l'envoi de la réponse : la publication ne la retarde pas.
-        background_tasks.add_task(publish_hits, mqtt, hits)
+    schedule_hits(
+        background_tasks,
+        mqtt,
+        ItemType.MESSAGE,
+        [result.message_id for result in results],
+        search_query,
+    )
+    return results
+
+
+@router.get(
+    "/messages",
+    summary="Search the 10 most recent chat messages of every live that contain q",
+    responses={422: {"description": "Invalid q"}},
+)
+async def search_all_chat_messages_route(
+    session: Annotated[AsyncSession, Depends(get_session, scope="function")],
+    mqtt: Annotated[MqttClient, Depends(get_mqtt)],
+    background_tasks: BackgroundTasks,
+    search_query: Annotated[SearchQuery, Query(alias="q")],
+) -> list[MessageResult]:
+    results = await search_chat_messages(
+        session, stream_id=None, search_query=search_query
+    )
+    schedule_hits(
+        background_tasks,
+        mqtt,
+        ItemType.MESSAGE,
+        [result.message_id for result in results],
+        search_query,
+    )
     return results

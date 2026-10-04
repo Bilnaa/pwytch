@@ -1,11 +1,12 @@
 import logging
 from collections.abc import Iterable
-from datetime import datetime
+from datetime import UTC, datetime
 from uuid import UUID
 
 from common.events import ItemType, SearchHit
 from common.mqtt import MqttClient, NotConnectedError
 from common.topics import SEARCH_HIT
+from fastapi import BackgroundTasks
 
 logger = logging.getLogger(__name__)
 
@@ -25,6 +26,20 @@ def build_hits(
         )
         for item_id in item_ids
     ]
+
+
+def schedule_hits(
+    background_tasks: BackgroundTasks,
+    mqtt: MqttClient,
+    item_type: ItemType,
+    item_ids: list[int] | list[UUID],
+    search_query: str,
+) -> None:
+    """Programme la publication d'un hit par id, lancée après l'envoi de la réponse."""
+    if not item_ids:
+        return
+    hits = build_hits(item_type, item_ids, search_query, datetime.now(UTC))
+    background_tasks.add_task(publish_hits, mqtt, hits)
 
 
 async def publish_hits(mqtt: MqttClient, hits: list[SearchHit]) -> None:

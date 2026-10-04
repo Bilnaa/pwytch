@@ -71,6 +71,15 @@ async def test_chat_messages_has_index_on_stream_sent_at_message_id(engine):
 
 
 @pytest.mark.anyio
+async def test_chat_messages_has_index_on_sent_at_message_id(engine):
+    indexes = await inspect_database(
+        engine, lambda inspector: inspector.get_indexes("chat_messages")
+    )
+
+    assert ["sent_at", "message_id"] in [index["column_names"] for index in indexes]
+
+
+@pytest.mark.anyio
 async def test_chat_message_round_trip(session):
     session.add(
         IndexedChatMessage(

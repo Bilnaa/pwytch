@@ -5,8 +5,9 @@ import pytest
 from common.events import ItemType
 from common.mqtt import MqttClient, NotConnectedError
 from common.topics import SEARCH_HIT
+from fastapi import BackgroundTasks
 
-from app.hits import build_hits, publish_hits
+from app.hits import build_hits, publish_hits, schedule_hits
 from tests.factories import FIRST_START, MESSAGE_ID
 
 HIT_AT = FIRST_START
@@ -43,6 +44,36 @@ def test_message_uuid_becomes_a_text_item_id():
 
 def test_no_id_gives_no_hit():
     assert build_hits(ItemType.STREAMER, [], "zera", HIT_AT) == []
+
+
+# Programmation
+
+
+def test_schedule_hits_adds_one_publish_task_with_every_hit():
+    background_tasks = BackgroundTasks()
+    fake_mqtt = AsyncMock(spec=MqttClient)
+
+    schedule_hits(background_tasks, fake_mqtt, ItemType.STREAMER, [42, 7], "zera")
+
+    [task] = background_tasks.tasks
+    assert task.func is publish_hits
+    published_mqtt, hits = task.args
+    assert published_mqtt is fake_mqtt
+    assert [hit.item_id for hit in hits] == ["42", "7"]
+    assert [hit.item_type for hit in hits] == [ItemType.STREAMER, ItemType.STREAMER]
+    assert [hit.query for hit in hits] == ["zera", "zera"]
+    assert hits[0].hit_at.tzinfo is not None
+    assert len({hit.hit_at for hit in hits}) == 1
+
+
+def test_schedule_hits_without_id_adds_no_task():
+    background_tasks = BackgroundTasks()
+
+    schedule_hits(
+        background_tasks, AsyncMock(spec=MqttClient), ItemType.MESSAGE, [], "gg"
+    )
+
+    assert background_tasks.tasks == []
 
 
 # Publication

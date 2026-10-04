@@ -1,6 +1,6 @@
 # search
 
-Recherche de streamers (US-SE1, #23) et recherche dans le chat d'un live (US-SE2, #87, #88). `search` construit son propre index à partir des events MQTT `stream/started`, `stream/ended` et `chat/message`, puis expose `GET /search/streamers` et `GET /search/streams/{stream_id}/messages`. Chaque élément renvoyé est publié sur `search/hit` pour `stats` (#101). La recherche ignore la casse et les accents, et trouve une sous-chaîne n'importe où : nom du streamer, titre ou jeu de son dernier live pour les streamers, contenu du message pour le chat.
+Recherche de streamers (US-SE1, #23), recherche dans le chat d'un live (US-SE2, #87, #88) et dans le chat de tous les lives (#150). `search` construit son propre index à partir des events MQTT `stream/started`, `stream/ended` et `chat/message`, puis expose `GET /search/streamers`, `GET /search/streams/{stream_id}/messages` et `GET /search/messages`. Chaque élément renvoyé est publié sur `search/hit` pour `stats` (#101). La recherche ignore la casse et les accents, et trouve une sous-chaîne n'importe où : nom du streamer, titre ou jeu de son dernier live pour les streamers, contenu du message pour le chat.
 
 ```
 stream ────MQTT stream/started, stream/ended──> search (consumer) ──> Postgres, schéma search
@@ -51,6 +51,7 @@ Les tests n'ont besoin ni de Postgres ni de Mosquitto : ils tournent sur SQLite 
 | `/health`            | GET     | Renvoie `{"status": "ok"}`  |
 | `/search/streamers`  | GET     | Recherche de streamers      |
 | `/search/streams/{stream_id}/messages` | GET | Recherche dans le chat d'un live |
+| `/search/messages`   | GET     | Recherche dans le chat de tous les lives |
 
 ### `GET /search/streamers`
 
@@ -89,7 +90,7 @@ Tri : streamers en live d'abord, puis nom sans tenir compte de la casse, puis `s
 
 Chaque streamer de la page renvoyée est publié sur `search/hit` (voir « Topics publiés »).
 
-422 quand un paramètre est invalide (`q` absent, trop court, trop long ou vide après normalisation, `page` ou `size` hors bornes), au format par défaut de FastAPI :
+422 quand un paramètre est invalide (`q` absent, trop court, trop long, vide après normalisation ou contenant le caractère nul, `page` ou `size` hors bornes), au format par défaut de FastAPI :
 
 ```json
 {"detail": [{"type": "string_too_short", "loc": ["query", "q"], "msg": "String should have at least 2 characters", "...": "..."}]}
@@ -124,9 +125,21 @@ Un seul caractère suffit (`?`, un emoji), alors que `/search/streamers` en dema
 
 Chaque message renvoyé est publié sur `search/hit` (voir « Topics publiés »).
 
-422 : `q` absent, vide, fait d'espaces, de plus de 100 caractères, ou vide après normalisation ; `stream_id` non entier, nul ou au-delà de 2 147 483 647.
+422 : `q` absent, vide, fait d'espaces, de plus de 100 caractères, vide après normalisation ou contenant le caractère nul ; `stream_id` non entier, nul ou au-delà de 2 147 483 647.
 
-Sur les deux routes, « vide après normalisation » vise un `q` fait seulement de diacritiques combinants (U+0301 par exemple) : sans ce contrôle, la requête correspondrait à tout.
+### `GET /search/messages`
+
+Renvoie les 10 messages les plus récents qui contiennent `q`, tous lives confondus (terminés compris). Chaque message porte son `stream_id`. La route par live reste disponible.
+
+| Paramètre | Règle                                                                              |
+|-----------|------------------------------------------------------------------------------------|
+| `q`       | obligatoire, entre 2 et 100 caractères après `strip`, non vide après normalisation |
+
+Même validation que `/search/streamers` : 2 caractères au minimum, car un seul caractère ferait parcourir le chat de tous les lives. Même tri, même format de réponse et même publication sur `search/hit` que la route par live.
+
+200 `[]` : aucune correspondance. 422 : `q` absent, de moins de 2 ou de plus de 100 caractères après `strip`, vide après normalisation ou contenant le caractère nul.
+
+Sur toutes les routes, « vide après normalisation » vise un `q` fait seulement de diacritiques combinants (U+0301 par exemple) : sans ce contrôle, la requête correspondrait à tout.
 
 ## Topics consommés
 
@@ -150,7 +163,7 @@ Le consumer est le `MqttClient` de `common.mqtt`, créé dans `app/mqtt.py` et d
 
 | Topic        | Event       | Quand                                                                  |
 |--------------|-------------|------------------------------------------------------------------------|
-| `search/hit` | `SearchHit` | Un event par élément renvoyé par `/search/streamers` ou la recherche dans le chat |
+| `search/hit` | `SearchHit` | Un event par élément renvoyé par `/search/streamers` ou une recherche dans le chat |
 
 Exemple :
 
@@ -204,6 +217,8 @@ ORDER BY sent_at DESC, message_id DESC LIMIT 10;
 
 Attendu : `Index Scan Backward` sur `ix_chat_messages_stream_id_sent_at_message_id`, sans nœud `Sort` ni `Incremental Sort`. Sans `enable_bitmapscan = off`, Postgres choisit sur une petite table un `Bitmap Index Scan` suivi d'un `Sort` (vérifié avec 2 messages). Ces deux réglages prouvent que l'index peut servir à cette requête, pas que Postgres le choisit : avec peu de lignes, un autre plan est normal. Ce n'est pas une mesure de performance.
 
+Même vérification pour `/search/messages`, sans `WHERE stream_id = 1` : attendu `Index Scan Backward` sur `ix_chat_messages_sent_at_message_id`, sans `Sort`.
+
 ## Vérifications manuelles de `search/hit`
 
 Depuis la racine, avec `docker compose up -d postgres mqtt`, puis `make search`.
@@ -231,6 +246,8 @@ docker compose exec mqtt mosquitto_pub -q 1 -t stream/started -m '{"stream_id": 
 - **Faux messages possibles** : le broker accepte les connexions anonymes, n'importe quel conteneur peut publier un `chat/message` avec un faux `author_name`. Les ACL du broker sont hors périmètre.
 - **Base indisponible : 500** sur les deux routes. Viser 503, dans un ticket transverse. Attention : asyncpg lève alors `ConnectionRefusedError` (un `OSError`), pas `OperationalError`.
 - **Recherche littérale** : sous-chaîne exacte du texte normalisé, sans tolérance aux fautes ni recherche par mots.
+- **Index `ix_chat_messages_sent_at_message_id` absent d'une base existante** : ajouté pour #150, il n'est pas créé par `create_all` sur une table `chat_messages` déjà présente. En local : `DROP SCHEMA search CASCADE;`. Ailleurs : `CREATE INDEX ix_chat_messages_sent_at_message_id ON search.chat_messages (sent_at, message_id);`. Sans lui, `/search/messages` marche mais lit et trie toute la table.
+- **Terme absent dans `/search/messages`** : l'index sert le tri, pas le filtre `LIKE`. Un terme fréquent s'arrête vite, un terme absent parcourt tous les messages de tous les lives.
 - **Pas d'index GIN sur les messages** : mesuré, il ne sert ni aux requêtes de 1 ou 2 caractères ni aux termes fréquents ; le pire cas (terme absent, 300 000 messages sur un live) reste autour de 50 ms. Pour l'ajouter plus tard : `create_all` n'ajoute pas d'index à une table existante, il faudra un `CREATE INDEX` à la main ou Alembic.
 - **Deux instances avec le même `client_id`** : le broker déconnecte la première quand la seconde se connecte, et elles se volent la session en boucle. Une seule instance de `search` à la fois, ou un `client_id` par instance (avec une session chacune).
 - **Hits perdus si le broker est coupé** : `search/hit` n'est pas renvoyé plus tard. La session persistante (`client_id` `search`) protège seulement la consommation, pas la publication.
