@@ -3,6 +3,12 @@ const API_URL = import.meta.env.VITE_API_URL ?? ''
 
 const TOKEN_KEY = 'token'
 
+// ws:// or wss:// version of main's URL, for the WebSocket routes (ingest, chat)
+export function wsUrl(path: string): string {
+  const base = API_URL || window.location.origin
+  return `${base.replace(/^http/, 'ws')}/api${path}`
+}
+
 export function getToken(): string | null {
   return localStorage.getItem(TOKEN_KEY)
 }

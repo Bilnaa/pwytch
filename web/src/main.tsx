@@ -3,7 +3,9 @@ import { createRoot } from 'react-dom/client'
 import { createBrowserRouter, RouterProvider } from 'react-router'
 
 import { Layout } from '@/components/layout'
+import { RequireAuth } from '@/components/require-auth'
 import { AuthProvider } from '@/lib/auth'
+import { GoLivePage } from '@/pages/go-live'
 import { HomePage } from '@/pages/home'
 import { LoginPage } from '@/pages/login'
 import { RegisterPage } from '@/pages/register'
@@ -17,6 +19,10 @@ const router = createBrowserRouter([
       { path: '/', element: <HomePage /> },
       { path: '/login', element: <LoginPage /> },
       { path: '/register', element: <RegisterPage /> },
+      {
+        element: <RequireAuth />,
+        children: [{ path: '/go-live', element: <GoLivePage /> }],
+      },
       { path: '*', element: <NotFoundPage /> },
     ],
   },

@@ -71,6 +71,8 @@ function UserMenu() {
 }
 
 export function Layout() {
+  const { user } = useAuth()
+
   return (
     <div className="flex min-h-svh flex-col">
       <header className="sticky top-0 z-10 border-b bg-card shadow-sm">
@@ -85,6 +87,11 @@ export function Layout() {
             <NavLink to="/" end className={navClass}>
               Lives
             </NavLink>
+            {user && (
+              <NavLink to="/go-live" className={navClass}>
+                Go live
+              </NavLink>
+            )}
           </nav>
           <div className="ml-auto flex items-center gap-2">
             <ThemeButton />
