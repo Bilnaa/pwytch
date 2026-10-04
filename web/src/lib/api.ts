@@ -17,10 +17,13 @@ export function clearToken(): void {
 
 export class ApiError extends Error {
   status: number
+  // FastAPI's detail: a string, or a list of errors on a 422
+  detail: unknown
 
-  constructor(status: number, message: string) {
-    super(message)
+  constructor(status: number, detail: unknown) {
+    super(typeof detail === 'string' ? detail : `Request failed with status ${status}`)
     this.status = status
+    this.detail = detail
   }
 }
 
@@ -30,7 +33,8 @@ export async function api<T>(path: string, init: RequestInit = {}): Promise<T> {
   if (token) {
     headers.set('Authorization', `Bearer ${token}`)
   }
-  if (init.body && !(init.body instanceof FormData) && !headers.has('Content-Type')) {
+  // only JSON strings: fetch sets the type itself for FormData and URLSearchParams
+  if (typeof init.body === 'string' && !headers.has('Content-Type')) {
     headers.set('Content-Type', 'application/json')
   }
 
