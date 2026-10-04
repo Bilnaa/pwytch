@@ -21,6 +21,7 @@ async def live_chat(websocket: WebSocket, stream_id: int, user_id: int | None = 
     try:
         while True:
             ws_text = await websocket.receive_text()
+
             # Not sending any message if the user_id isn't in the QueryParams
             if user_id is None or not username:
                 await websocket.send_json({"type": "error", "code": "READ_ONLY", "detail": "Utilisateur non identifié"})
@@ -55,6 +56,12 @@ async def live_chat(websocket: WebSocket, stream_id: int, user_id: int | None = 
             # Checking if json is too long
             if len(message) > 500:
                 await websocket.send_json({"type": "error", "code": "CONTENT_TOO_LONG", "detail": "Le message est trop long"})
+                continue
+
+            # Checking if a certain amount of seconds passed before sending a new message
+            if not connectionManager.can_send_message(user_id, stream_id):
+                await websocket.send_json(
+                    {"type": "error", "code": "RATE_LIMITED", "detail": "Veuillez attendre une seconde."})
                 continue
 
             final_message = MessageModel(stream_id=stream_id, author=Author(id=user_id, username=username), content=message)

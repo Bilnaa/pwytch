@@ -6,7 +6,15 @@ os.environ.setdefault("DATABASE_URL", "postgresql+psycopg_async://postgres:postg
 import pytest
 from sqlalchemy.exc import OperationalError
 
+from app.connection_manager import connectionManager
 from app.routers import live_chat
+
+
+@pytest.fixture(autouse=True)
+def reset_rate_limit(monkeypatch):
+    # connectionManager is a singleton: without this, the last message of a
+    # test would rate limit the first message of the next one
+    monkeypatch.setattr(connectionManager, "last_sent", {})
 
 
 @pytest.fixture

@@ -67,3 +67,17 @@ def test_live_chat_database_down(database_down, monkeypatch):
         author.send_json({"content": ""})
         assert author.receive_json()["code"] == "EMPTY_MESSAGE"
     assert broadcasts == []
+
+
+def test_live_chat_rate_limited(saved_messages):
+    with client.websocket_connect("/streams/1/chat?user_id=1&username=author") as author:
+        author.send_json({"content": "first"})
+        assert author.receive_json()["content"] == "first"
+
+        # an invalid message doesn't count against the rate limit
+        author.send_json({"content": ""})
+        assert author.receive_json()["code"] == "EMPTY_MESSAGE"
+
+        author.send_json({"content": "second"})
+        assert author.receive_json() == {"type": "error", "code": "RATE_LIMITED", "detail": "Veuillez attendre une seconde."}
+    assert [m.content for m in saved_messages] == ["first"]
