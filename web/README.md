@@ -38,6 +38,9 @@ Elle est lue au build : la changer demande de relancer `npm run dev` ou de rebui
 | `src/lib/api.ts`         | Client d'API |
 | `src/lib/auth.tsx`       | `useAuth()` : utilisateur connecté, login, register, logout |
 | `src/lib/theme.ts`       | Thème clair / sombre |
+| `src/lib/streams.ts`     | Type `Stream` et appels à `/streams` |
+| `src/hooks/`             | Hooks : webcam (`use-webcam`), envoi du flux à `main` (`use-broadcast`) |
+| `src/components/require-auth.tsx` | Routes réservées aux utilisateurs connectés, renvoie vers `/login` sinon |
 | `src/pages/`             | Une page par fichier |
 
 ## Client d'API
@@ -52,6 +55,12 @@ Elle est lue au build : la changer demande de relancer `npm run dev` ou de rebui
 ## Thème
 
 Bleu et jaune de Python (`#3776AB`, `#FFD43B`), fond sombre comme Twitch. Les couleurs sont dans `src/index.css`. Sombre par défaut, le bouton du header passe en clair (gardé dans le `localStorage`).
+
+## Go live
+
+`/go-live` : aperçu de la webcam, titre et jeu, puis « Go live » crée une session (`POST /streams`) et ouvre `wsUrl('/streams/{id}/ingest?token=')`. Le `MediaRecorder` ne démarre qu'une fois la WebSocket ouverte et envoie un morceau WebM par seconde. Les codes de fermeture de `main` sont traduits en message dans `use-broadcast.ts`.
+
+Le navigateur doit savoir enregistrer du WebM (Chrome, Firefox). Pour tester sans webcam, lancer Chrome avec `--use-fake-device-for-media-stream`.
 
 ## Pages et routes de l'API
 
