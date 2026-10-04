@@ -3,9 +3,10 @@ from contextlib import asynccontextmanager
 
 import httpx
 from fastapi import FastAPI
+from fastapi.middleware.cors import CORSMiddleware
 
 from app import models  # noqa: F401  (registers tables on Base.metadata)
-from app.config import stream_settings
+from app.config import cors_settings, stream_settings
 from app.db import Base, engine
 from app.mqtt import create_mqtt_client
 from app.routers import auth, health, ingest, lives, streams
@@ -29,6 +30,13 @@ async def lifespan(app: FastAPI):
 
 
 app = FastAPI(title="main", lifespan=lifespan)
+
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=[cors_settings.frontend_origin],
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
 
 app.include_router(auth.router)
 app.include_router(health.router)
