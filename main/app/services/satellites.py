@@ -68,7 +68,7 @@ async def send(
     if stream:
         await response.aread()
         await response.aclose()
-    if response.is_client_error:
+    if response.is_client_error and response.status_code != 401:
         raise SatelliteRejectedError(response)
     logger.warning("%s %s answered %s", method, request.url, response.status_code)
     raise InvalidSatelliteResponseError("Invalid answer from service")
