@@ -7,7 +7,7 @@ from sqlalchemy.ext.asyncio import create_async_engine
 
 from app.infra import db
 from app.infra.db import try_init_db
-from app.infra.models import Mp4Status
+from app.infra.models import Mp4Status, Replay
 from tests.factories import FIRST_END, add_replay, reload
 
 
@@ -30,6 +30,12 @@ async def test_replays_has_index_on_ended_at_stream_id(engine):
     indexes = await inspect_database(engine, lambda inspector: inspector.get_indexes("replays"))
 
     assert ["ended_at", "stream_id"] in [index["column_names"] for index in indexes]
+
+
+@pytest.mark.parametrize("column_name", ["started_at", "ended_at"])
+def test_datetimes_keep_their_time_zone(column_name):
+    # SQLite ne montre pas la différence : sans timezone=True, Postgres refuserait les events.
+    assert Replay.__table__.c[column_name].type.timezone is True
 
 
 @pytest.mark.anyio

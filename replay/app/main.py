@@ -7,7 +7,7 @@ from fastapi import FastAPI
 from app.infra.config import settings
 from app.infra.db import engine, session_factory, try_init_db
 from app.mqtt import create_mqtt_client
-from app.routers import health
+from app.routers import health, replays
 
 
 @asynccontextmanager
@@ -32,6 +32,7 @@ async def lifespan(app: FastAPI):
 app = FastAPI(title="replay", lifespan=lifespan)
 
 app.include_router(health.router)
+app.include_router(replays.router)
 
 
 @app.get("/")

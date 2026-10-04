@@ -58,6 +58,65 @@ Une table, `replays`, une ligne par live. `stream_id` est la clé et l'identifia
 | `ended_at`, `duration_s`             | Nuls tant que le live tourne : la ligne est alors invisible |
 | `mp4_status`                         | `none`, `processing`, `ready` ou `failed`, défaut `none` |
 
+## Endpoints
+
+| Chemin                  | Méthode | Rôle                                   |
+|-------------------------|---------|----------------------------------------|
+| `/health`               | GET     | Renvoie `{"status": "ok"}`             |
+| `/replays`              | GET     | Liste des replays, paginée             |
+| `/replays/{stream_id}`  | GET     | Détail d'un replay                     |
+
+Un replay est un live terminé (`ended_at` et `duration_s` renseignés) : un live en cours n'apparaît dans aucune route. Son identifiant est le `stream_id` du live.
+
+### `GET /replays`
+
+Renvoie une `Page[ReplayResult]` (`common.pagination`), du replay le plus récemment terminé au plus ancien (`ended_at` décroissant, puis `stream_id` décroissant).
+
+| Paramètre     | Règle                                                  |
+|---------------|--------------------------------------------------------|
+| `page`        | entier entre 1 et 2 147 483 647, défaut 1              |
+| `size`        | entier entre 1 et 50, défaut 20                        |
+| `streamer_id` | optionnel, entier entre 1 et 2 147 483 647             |
+
+`total` compte tous les replays qui passent le filtre. Une page au-delà de la fin renvoie `items: []`.
+
+200, `GET /replays?size=1` :
+
+```json
+{
+  "items": [
+    {
+      "stream_id": 42,
+      "streamer_id": 7,
+      "streamer_name": "Célèste",
+      "title": "Speedrun Any%",
+      "game": "Celeste",
+      "started_at": "2026-10-04T20:00:00Z",
+      "ended_at": "2026-10-04T21:30:00Z",
+      "duration_s": 5400.0,
+      "mp4_status": "none",
+      "playback_url": "/lives/42/index.m3u8"
+    }
+  ],
+  "total": 3,
+  "page": 1,
+  "size": 1
+}
+```
+
+- `playback_url` est relatif à la racine de l'API de `main` (`/api`), qui relaie la playlist de `stream`. URL complète : `{origine de main}/api/lives/42/index.m3u8` ; côté front, `apiUrl(playback_url)`. Sans le `/api`, `main` renvoie la page du front et le lecteur reçoit un 404.
+- `streamer_name`, `title`, `game` et `started_at` peuvent valoir `null` (voir « Dettes connues »).
+- `mp4_status` : `none`, `processing`, `ready` ou `failed`, l'état de la conversion en `.mp4`.
+
+422 : `page`, `size` ou `streamer_id` hors bornes.
+
+### `GET /replays/{stream_id}`
+
+Renvoie un `ReplayResult`, même format qu'un élément de la liste.
+
+- 404 `{"detail": "Replay not found"}` : replay inconnu ou live encore en cours.
+- 422 : `stream_id` non numérique, ≤ 0 ou au-delà de 2 147 483 647. Comme partout avec FastAPI, une chaîne numérique est convertie : `42.0` ou `+42` donnent le replay 42.
+
 ## Topics consommés
 
 Souscrits en QoS 1 avec le `client_id` fixe `replay` : la session est persistante, le broker garde les messages publiés pendant que `replay` est arrêté. Un message en cours de traitement au moment de l'arrêt est perdu (voir « Dettes connues »). Les modèles viennent de `common.events`.
@@ -104,4 +163,6 @@ Les tests n'ont besoin ni de Postgres ni de Mosquitto : ils tournent sur SQLite 
 - **Event perdu à l'arrêt** : `mqtt.stop()` annule le handler en cours, par exemple un `stream/ended` qui attend le `HEAD` vers `stream` (jusqu'à `STREAM_TIMEOUT_S`). Le message QoS 1 est acquitté dès sa réception, le broker ne le renvoie pas : le live reste invisible. Même cause que la ligne précédente (acquittement avant traitement, dans `common.mqtt`), à traiter avec #11.
 - **Deux instances avec le même `client_id`** : le broker déconnecte la première quand la seconde se connecte, et elles se volent la session en boucle ; des events partent vers la mauvaise instance ou se perdent. Une seule instance de `replay` à la fois : ne pas lancer `make replay` pendant que le conteneur tourne.
 - **Ligne invisible pour toujours** : un `stream/ended` en erreur, sans playlist, reçu avant son `stream/started` ne supprime rien ; la ligne créée ensuite par `stream/started` n'a jamais de `ended_at`. Sans effet pour l'utilisateur.
+- **Identifiants de live réutilisés en dev** : si la base de `main` est recréée, les `stream_id` repartent de 1 alors que celle de `replay` garde ses lignes. Le nouveau live 1 reprend la ligne de l'ancien replay 1 : il est listé comme terminé pendant qu'il tourne, et son vrai `stream/ended` est ignoré comme doublon. Recréer la base de `replay` en même temps que celle de `main` (`DROP TABLE replays;`).
+- **Pagination par décalage** : `page` et `size` se traduisent en `OFFSET`. Si un live se termine entre deux appels, la liste se décale d'un cran et un replay apparaît sur deux pages ; `total` et `items` sont lus par deux requêtes séparées. Le client dédoublonne par `stream_id` ; une pagination par curseur sera nécessaire pour un défilement infini.
 - **Pas de migration** : `create_all` crée les tables absentes mais ne modifie pas une table existante. Après un changement de colonne, supprimer la table en local : `DROP TABLE replays;`. Alembic sera nécessaire au premier changement de schéma sur une base qui a des données à garder.
