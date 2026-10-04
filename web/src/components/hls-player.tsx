@@ -4,7 +4,8 @@ import Hls from 'hls.js/light'
 
 const RETRY_MS = 3000
 
-export function HlsPlayer({ src }: { src: string }) {
+// onEnded: the playlist is over (#EXT-X-ENDLIST reached), the live has ended
+export function HlsPlayer({ src, onEnded }: { src: string; onEnded?: () => void }) {
   const videoRef = useRef<HTMLVideoElement>(null)
   const [waiting, setWaiting] = useState(true)
 
@@ -62,6 +63,7 @@ export function HlsPlayer({ src }: { src: string }) {
         playsInline
         className="size-full object-contain"
         onPlaying={() => setWaiting(false)}
+        onEnded={onEnded}
       />
       {waiting && (
         <p className="pointer-events-none absolute inset-0 flex items-center justify-center text-sm text-white/70">
