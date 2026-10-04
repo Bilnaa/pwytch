@@ -20,6 +20,11 @@ const router = createBrowserRouter([
       { path: '/login', element: <LoginPage /> },
       { path: '/register', element: <RegisterPage /> },
       {
+        path: '/live/:streamId',
+        // hls.js is heavy, it's only loaded when someone opens a live
+        lazy: async () => ({ Component: (await import('@/pages/live')).LivePage }),
+      },
+      {
         element: <RequireAuth />,
         children: [{ path: '/go-live', element: <GoLivePage /> }],
       },

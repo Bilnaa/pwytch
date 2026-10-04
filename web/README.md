@@ -62,6 +62,12 @@ Bleu et jaune de Python (`#3776AB`, `#FFD43B`), fond sombre comme Twitch. Les co
 
 Le navigateur doit savoir enregistrer du WebM (Chrome, Firefox). Pour tester sans webcam, lancer Chrome avec `--use-fake-device-for-media-stream`.
 
+## Page viewer
+
+`/live/{id}` : player HLS (`components/hls-player.tsx`) sur `/api/lives/{id}/index.m3u8`, avec le streamer, le titre, le jeu et le badge LIVE (`GET /streams/{id}`). Pas besoin d'être connecté. hls.js (build `light`) n'est chargé qu'à l'ouverture d'un live (`lazy` dans `main.tsx`), Safari lit le HLS sans lui. Tant que la playlist n'existe pas (début du live), le player réessaie toutes les 3 s.
+
+Pour avoir un live à regarder sans webcam : `uv run python scripts/channels.py` depuis `stream/` (voir `stream/README.md`).
+
 ## Pages et routes de l'API
 
 Comme l'API est sous `/api`, une page peut avoir le même chemin qu'une route de l'API (`/search` côté front, `/api/search` côté API). Recharger une page renvoie toujours le front.
