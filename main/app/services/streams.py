@@ -1,19 +1,26 @@
+import asyncio
 import logging
 from datetime import datetime, timedelta
+from email.utils import parsedate_to_datetime
 
+import httpx
 from common.events import StreamEnded, StreamStarted
+from pydantic import TypeAdapter
 from sqlalchemy import func, select
 from sqlalchemy.exc import IntegrityError
-from sqlalchemy.orm import Session, joinedload
+from sqlalchemy.orm import Session, joinedload, sessionmaker
 
 from app.models import Stream, User
 from app.models.stream import Status, utcnow
+from app.services import satellites
 
 logger = logging.getLogger(__name__)
 
 # A session that nobody started streaming into after this long is abandoned
 CREATED_TIMEOUT = timedelta(minutes=10)
 ACTIVE_STATUSES = (Status.CREATED, Status.LIVE)
+MISSED_END_CHECK_SECONDS = 30
+STREAM_LIVES = TypeAdapter(list[int])
 
 
 class ActiveStreamExistsError(Exception):
@@ -146,3 +153,59 @@ def on_stream_ended(db: Session, event: StreamEnded) -> None:
         logger.warning("Ignored stream/ended for the unknown stream %s", event.stream_id)
         return
     logger.info("Stream %s is %s (%s)", stream.id, stream.status, event.reason)
+
+
+def list_live_ids(db: Session) -> list[int]:
+    return list(db.scalars(select(Stream.id).where(Stream.status == Status.LIVE)))
+
+
+async def get_playlist_end(client: httpx.AsyncClient, stream_id: int) -> datetime | None:
+    try:
+        response = await satellites.send(client, "GET", f"/lives/{stream_id}/index.m3u8")
+    except satellites.SatelliteRejectedError:
+        return None
+    if "#EXT-X-ENDLIST" not in response.text:
+        return None
+    last_modified = response.headers.get("last-modified")
+    if last_modified is None:
+        return utcnow()
+    return parsedate_to_datetime(last_modified)
+
+
+async def end_missed_lives(
+    client: httpx.AsyncClient, session_factory: sessionmaker[Session]
+) -> None:
+    def read_live_ids() -> list[int]:
+        with session_factory() as db:
+            return list_live_ids(db)
+
+    def end(stream_id: int, ended_at: datetime) -> Stream:
+        with session_factory() as db:
+            return mark_ended(db, stream_id, ended_at)
+
+    live_ids = await asyncio.to_thread(read_live_ids)
+    if not live_ids:
+        return
+    response = await satellites.send(client, "GET", "/streams")
+    running = set(satellites.parse(response, STREAM_LIVES))
+    for stream_id in live_ids:
+        if stream_id in running:
+            continue
+        ended_at = await get_playlist_end(client, stream_id)
+        if ended_at is None:
+            continue
+        stream = await asyncio.to_thread(end, stream_id, ended_at)
+        logger.info("Stream %s is %s (stream/ended missed)", stream.id, stream.status)
+
+
+async def watch_missed_ends(
+    client: httpx.AsyncClient, session_factory: sessionmaker[Session]
+) -> None:
+    while True:
+        try:
+            await end_missed_lives(client, session_factory)
+        except satellites.SatelliteError:
+            pass
+        except Exception:
+            logger.exception("Checking the lives with stream failed")
+        await asyncio.sleep(MISSED_END_CHECK_SECONDS)

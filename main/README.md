@@ -357,6 +357,16 @@ Les handlers sont dans `app/services/streams.py`. Chaque event ouvre sa propre s
 
 Le client est aussi dans `app.state.mqtt` pour publier depuis une route.
 
+### `stream/ended` manqué
+
+Si `main` est arrêté ou si le broker est coupé quand `stream` publie `stream/ended`, l'event est perdu et la session resterait `live` pour toujours (et sur l'accueil du front). `main` rattrape donc ces fins lui-même : toutes les 30 s (`end_missed_lives` dans `app/services/streams.py`, lancé dans le `lifespan`), s'il a des sessions `live` :
+
+1. il demande à `stream` les lives en cours (`GET /streams`) : une session qui y est n'est pas touchée
+2. pour les autres, il lit la playlist (`GET /lives/{stream_id}/index.m3u8`). Si elle se termine par `#EXT-X-ENDLIST`, la session passe en `ended` via `mark_ended`
+3. `ended_at` est le `Last-Modified` de la playlist, c'est-à-dire l'heure du dernier segment écrit, pas l'heure du rattrapage (même valeur que le `stream/ended` envoyé par `stream` après un redémarrage). Sans ce header, c'est l'heure du rattrapage
+
+Une playlist sans `#EXT-X-ENDLIST` (live en train de se terminer) ou absente (`404`, live coupé avant son premier segment) ne change rien : la session est revue au passage suivant. Si `stream` ne répond pas, le passage est abandonné (l'erreur est journalisée par `satellites.send`) et refait 30 s plus tard. Un `stream/ended` reçu en retard après le rattrapage est ignoré, la session n'étant plus `live`.
+
 ## Base de données
 
 Table `users` :
@@ -412,6 +422,7 @@ Avec le service lancé :
 - Pas de limite sur le nombre de tentatives de connexion (pas de protection contre le brute force).
 - `require_admin` n'est branché sur aucune route : les routes `/stats` n'existent pas encore.
 - Pas de route pour retirer le rôle `admin` : il faut modifier la colonne `role` en base.
+- Une session dont le `stream/ended` a été perdu reste `live` jusqu'à 30 s de plus, le temps du prochain rattrapage (voir « `stream/ended` manqué »).
 - Pas de migrations : les tables sont créées au démarrage, un changement de modèle demande de recréer la table.
 - Si PostgreSQL n'est pas prêt quand l'API démarre, le `create_all` échoue et l'API plante : il faut la relancer.
 - Seuls `stream` (ingest et HLS), `search` et le chat de `live-chat` sont relayés : le relais vers `replay`, ... n'est pas encore implémenté.
