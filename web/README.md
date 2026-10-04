@@ -62,9 +62,13 @@ Bleu et jaune de Python (`#3776AB`, `#FFD43B`), fond sombre comme Twitch. Les co
 
 Le navigateur doit savoir enregistrer du WebM (Chrome, Firefox). Pour tester sans webcam, lancer Chrome avec `--use-fake-device-for-media-stream`.
 
-## Page viewer
+## Page d'une chaîne
 
-`/live/{id}` : player HLS (`components/hls-player.tsx`) sur `/api/lives/{id}/index.m3u8`, avec le streamer, le titre, le jeu et le badge LIVE (`GET /streams/{id}`). Pas besoin d'être connecté. hls.js (build `light`) n'est chargé qu'à l'ouverture d'un live (`lazy` dans `main.tsx`), Safari lit le HLS sans lui. Tant que la playlist n'existe pas (début du live), le player réessaie toutes les 3 s.
+`/{username}`, comme sur Twitch (`/aespa_radio`) : player HLS (`components/hls-player.tsx`) sur `/api/lives/{id}/index.m3u8`, avec le streamer, le titre, le jeu et le badge LIVE. Pas besoin d'être connecté. Les chemins fixes (`/login`, `/go-live`...) passent avant : un compte nommé `login` n'aurait pas de page.
+
+`main` ne filtre pas `/streams` par streamer : la page cherche le nom dans `GET /streams?status=live&size=100` (`findLive()` dans `lib/streams.ts`). Pas en live, ou nom inconnu : « {username} is offline ».
+
+hls.js (build `light`) n'est chargé qu'à l'ouverture d'une chaîne (`lazy` dans `main.tsx`), Safari lit le HLS sans lui. Tant que la playlist n'existe pas (début du live), le player réessaie toutes les 3 s.
 
 Pour avoir un live à regarder sans webcam : `uv run python scripts/channels.py` depuis `stream/` (voir `stream/README.md`).
 

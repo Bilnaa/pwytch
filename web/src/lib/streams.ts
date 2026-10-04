@@ -41,8 +41,17 @@ export async function findMyOpenStream(userId: number): Promise<Stream | null> {
   return null
 }
 
-export function getStream(id: number): Promise<Stream> {
-  return api<Stream>(`/streams/${id}`)
+// main can't filter /streams by streamer, so we look in the current lives.
+// 100 is the max page size, enough for us
+export async function findLive(username: string): Promise<Stream | null> {
+  const page = await api<StreamPage>('/streams?status=live&size=100')
+  for (const stream of page.items) {
+    // twitch urls don't care about case: /Aespa_Radio works too
+    if (stream.streamer.username.toLowerCase() === username.toLowerCase()) {
+      return stream
+    }
+  }
+  return null
 }
 
 // HLS playlist of a live, relayed by main from stream

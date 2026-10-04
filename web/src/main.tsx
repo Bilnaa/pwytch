@@ -20,9 +20,10 @@ const router = createBrowserRouter([
       { path: '/login', element: <LoginPage /> },
       { path: '/register', element: <RegisterPage /> },
       {
-        path: '/live/:streamId',
-        // hls.js is heavy, it's only loaded when someone opens a live
-        lazy: async () => ({ Component: (await import('@/pages/live')).LivePage }),
+        // channel of a streamer, like twitch. The fixed paths above (/login...) win over it
+        path: '/:username',
+        // hls.js is heavy, it's only loaded when someone opens a channel
+        lazy: async () => ({ Component: (await import('@/pages/channel')).ChannelPage }),
       },
       {
         element: <RequireAuth />,
