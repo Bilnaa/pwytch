@@ -1,14 +1,14 @@
-# Usage: make init name=<service-name>
-# Example: make init name=users
+# Usage: make help
 
 TEMPLATE := cookiecutter-fastapi
+SERVICES := $(patsubst %/pyproject.toml,%,$(wildcard */pyproject.toml))
 
-.PHONY: init help main stream live-chat replay search bookmarks stats
+.PHONY: help init dev infra-up infra-down test clear main stream live-chat replay search bookmarks stats
 
-help:
-	@echo "Usage: make init name=<service-name>"
+help: ## Show this help
+	@grep -E '^[a-zA-Z_-]+:.*## ' $(MAKEFILE_LIST) | awk 'BEGIN {FS = ":.*## "}; {printf "  %-12s %s\n", $$1, $$2}'
 
-init:
+init: ## Create a service from the template: make init name=<service-name>
 ifndef name
 	$(error name is required. Usage: make init name=<service-name>)
 endif
@@ -18,25 +18,52 @@ endif
 	@echo "Service '$(name)' created. Next:"
 	@echo "  cd $(name) && uv run fastapi dev"
 
+dev: ## Copy each .env.example to .env (if missing) and install every service
+	@for service in $(SERVICES); do \
+		if [ -f $$service/.env.example ] && [ ! -f $$service/.env ]; then \
+			cp $$service/.env.example $$service/.env; \
+			echo "$$service: .env created"; \
+		fi; \
+		uv sync --directory $$service || exit 1; \
+	done
 
-main:
+infra-up: ## Start postgres, redis and mosquitto
+	docker compose up -d
+
+infra-down: ## Stop the infra
+	docker compose down
+
+test: ## Run the tests of every service, fails if one of them fails
+	@failed=""; \
+	for service in $(SERVICES); do \
+		echo "=== $$service"; \
+		uv run --directory $$service pytest -q || failed="$$failed $$service"; \
+	done; \
+	if [ -n "$$failed" ]; then \
+		echo "Failed:$$failed"; \
+		exit 1; \
+	fi
+
+clear: ## Delete the local .db files
+	find . -name "*.db" -not -path "*/.venv/*" -print -delete
+
+main: ## Run main on port 8000
 	uv run --directory main fastapi dev --port 8000
 
-stream:
+stream: ## Run stream on port 8001
 	uv run --directory stream fastapi dev --port 8001
 
-live-chat:
+live-chat: ## Run live-chat on port 8002
 	uv run --directory live-chat fastapi dev --port 8002
 
-replay:
+replay: ## Run replay on port 8003
 	uv run --directory replay fastapi dev --port 8003
 
-search:
+search: ## Run search on port 8004
 	uv run --directory search fastapi dev --port 8004
 
-bookmarks:
+bookmarks: ## Run bookmarks on port 8005
 	uv run --directory bookmarks fastapi dev --port 8005
 
-stats:
+stats: ## Run stats on port 8006
 	uv run --directory stats fastapi dev --port 8006
-
