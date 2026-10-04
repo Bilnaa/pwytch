@@ -21,7 +21,10 @@ class BinaryFrameError(Exception):
 
 
 def authorize(db: Session, token: str | None, stream_id: int) -> User | None:
-    user = None if token is None else auth_service.get_user_from_token(db, token)
+    if token is None:
+        user = None
+    else:
+        user = auth_service.get_user_from_token(db, token)
     streams_service.get_stream(db, stream_id)
     return user
 
@@ -59,6 +62,8 @@ async def relay(websocket: WebSocket, url: str) -> None:
             done, pending = await asyncio.wait(tasks, return_when=asyncio.FIRST_COMPLETED)
             for task in pending:
                 task.cancel()
+            if pending:
+                await asyncio.wait(pending)
             for task in done:
                 error = task.exception()
                 if error is not None:
