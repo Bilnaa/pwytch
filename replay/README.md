@@ -58,6 +58,65 @@ Une table, `replays`, une ligne par live. `stream_id` est la clé et l'identifia
 | `ended_at`, `duration_s`             | Nuls tant que le live tourne : la ligne est alors invisible |
 | `mp4_status`                         | `none`, `processing`, `ready` ou `failed`, défaut `none` |
 
+## Endpoints
+
+| Chemin                  | Méthode | Rôle                                   |
+|-------------------------|---------|----------------------------------------|
+| `/health`               | GET     | Renvoie `{"status": "ok"}`             |
+| `/replays`              | GET     | Liste des replays, paginée             |
+| `/replays/{stream_id}`  | GET     | Détail d'un replay                     |
+
+Un replay est un live terminé : un live en cours n'apparaît dans aucune route. Son identifiant est le `stream_id` du live.
+
+### `GET /replays`
+
+Renvoie une `Page[ReplayResult]` (`common.pagination`), du replay le plus récemment terminé au plus ancien (`ended_at` décroissant, puis `stream_id` décroissant).
+
+| Paramètre     | Règle                                                  |
+|---------------|--------------------------------------------------------|
+| `page`        | entier ≥ 1, défaut 1                                   |
+| `size`        | entier entre 1 et 50, défaut 20                        |
+| `streamer_id` | optionnel, entier entre 1 et 2 147 483 647             |
+
+`total` compte tous les replays qui passent le filtre. Une page au-delà de la fin renvoie `items: []`.
+
+200, `GET /replays?size=1` :
+
+```json
+{
+  "items": [
+    {
+      "stream_id": 42,
+      "streamer_id": 7,
+      "streamer_name": "Célèste",
+      "title": "Speedrun Any%",
+      "game": "Celeste",
+      "started_at": "2026-10-04T20:00:00Z",
+      "ended_at": "2026-10-04T21:30:00Z",
+      "duration_s": 5400.0,
+      "mp4_status": "none",
+      "playback_url": "/lives/42/index.m3u8"
+    }
+  ],
+  "total": 3,
+  "page": 1,
+  "size": 1
+}
+```
+
+- `playback_url` est relatif à `main`, qui relaie la playlist de `stream` ; le front ajoute l'origine.
+- `streamer_name`, `title`, `game` et `started_at` peuvent valoir `null` (voir « Dettes connues »).
+- `mp4_status` : `none`, `processing`, `ready` ou `failed`, l'état de la conversion en `.mp4`.
+
+422 : `page`, `size` ou `streamer_id` hors bornes.
+
+### `GET /replays/{stream_id}`
+
+Renvoie un `ReplayResult`, même format qu'un élément de la liste.
+
+- 404 `{"detail": "Replay not found"}` : replay inconnu ou live encore en cours.
+- 422 : `stream_id` non entier, nul ou au-delà de 2 147 483 647.
+
 ## Topics consommés
 
 Souscrits en QoS 1 avec le `client_id` fixe `replay` : la session est persistante, le broker garde les messages publiés pendant que `replay` est arrêté. Un message en cours de traitement au moment de l'arrêt est perdu (voir « Dettes connues »). Les modèles viennent de `common.events`.
