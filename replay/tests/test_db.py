@@ -1,6 +1,12 @@
-import pytest
-from sqlalchemy import inspect
+import logging
 
+import pytest
+from sqlalchemy import inspect, text
+from sqlalchemy.exc import IntegrityError
+from sqlalchemy.ext.asyncio import create_async_engine
+
+from app.infra import db
+from app.infra.db import try_init_db
 from app.infra.models import Mp4Status
 from tests.factories import FIRST_END, add_replay, reload
 
@@ -46,3 +52,51 @@ async def test_live_in_progress_keeps_null_end(session):
 
     assert stored_replay.ended_at is None
     assert stored_replay.duration_s is None
+
+
+@pytest.mark.anyio
+async def test_row_inserted_without_orm_gets_status_none(session):
+    await session.execute(text("INSERT INTO replays (stream_id, streamer_id) VALUES (44, 7)"))
+    await session.commit()
+
+    assert (await reload(session, 44)).mp4_status is Mp4Status.NONE
+
+
+@pytest.mark.anyio
+async def test_unknown_status_is_refused_by_the_database(session):
+    with pytest.raises(IntegrityError):
+        await session.execute(
+            text("INSERT INTO replays (stream_id, streamer_id, mp4_status) VALUES (45, 7, 'done')")
+        )
+
+
+# Démarrage sans base
+
+
+@pytest.mark.anyio
+async def test_try_init_db_creates_the_tables_when_the_database_is_up(engine):
+    assert await try_init_db(engine) is True
+
+
+@pytest.mark.anyio
+async def test_try_init_db_logs_a_warning_when_the_database_is_down(tmp_path, caplog):
+    # Dossier inexistant : SQLite ne peut pas ouvrir le fichier, comme une base injoignable.
+    unreachable_engine = create_async_engine(f"sqlite+aiosqlite:///{tmp_path}/missing/replay.db")
+
+    assert await try_init_db(unreachable_engine) is False
+
+    warnings = [record for record in caplog.records if record.levelno == logging.WARNING]
+    assert len(warnings) == 1
+    await unreachable_engine.dispose()
+
+
+@pytest.mark.anyio
+async def test_try_init_db_catches_a_refused_connection(engine, monkeypatch, caplog):
+    # asyncpg lève un ConnectionRefusedError brut (un OSError), pas une erreur SQLAlchemy.
+    async def refuse_connection(_engine):
+        raise ConnectionRefusedError("connection refused")
+
+    monkeypatch.setattr(db, "init_db", refuse_connection)
+
+    assert await try_init_db(engine) is False
+    assert "connection refused" in caplog.text

@@ -3,7 +3,7 @@ from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
 
-from app.infra.db import engine, init_db
+from app.infra.db import engine, try_init_db
 from app.routers import health
 
 
@@ -12,7 +12,8 @@ async def lifespan(app: FastAPI):
     logging.basicConfig(
         level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s: %(message)s"
     )
-    await init_db(engine)
+    # Base coupée : le service démarre quand même, les tables seront créées au redémarrage.
+    await try_init_db(engine)
     yield
     await engine.dispose()
 

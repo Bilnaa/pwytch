@@ -24,7 +24,7 @@ En image Docker, le build se lance depuis la racine du repo, car l'image embarqu
 
     docker build -f replay/Dockerfile -t replay .
 
-Au démarrage, le service crée ses tables si elles n'existent pas. La base `replay` est créée par `infra/postgres/init.sql`, qui ne s'exécute que sur un volume Postgres vide : sur un volume plus ancien, la créer à la main avec `docker compose exec postgres createdb -U postgres replay`.
+Au démarrage, le service crée ses tables si elles n'existent pas. Si Postgres est injoignable, il démarre quand même et journalise un `WARNING` (même comportement que `stats`) ; les tables seront créées au prochain redémarrage. La base `replay` est créée par `infra/postgres/init.sql`, qui ne s'exécute que sur un volume Postgres vide : sur un volume plus ancien, la créer à la main avec `docker compose exec postgres createdb -U postgres replay`.
 
 ## Configuration
 
@@ -60,4 +60,5 @@ Les tests n'ont besoin ni de Postgres ni de Mosquitto : ils tournent sur SQLite 
 
 ## Dettes connues
 
+- **Tables absentes si la base était coupée au démarrage** : le service tourne, mais les requêtes échouent tant qu'il n'a pas été redémarré avec la base disponible.
 - **Pas de migration** : `create_all` crée les tables absentes mais ne modifie pas une table existante. Après un changement de colonne, supprimer la table en local : `DROP TABLE replays;`. Alembic sera nécessaire au premier changement de schéma sur une base qui a des données à garder.

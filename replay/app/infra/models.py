@@ -32,13 +32,17 @@ class Replay(Base):
     # NULL = live en cours : jamais exposé par les routes.
     ended_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     duration_s: Mapped[float | None]
-    # Stocke les valeurs ("none", ...) et non les noms de l'enum.
+    # Stocke les valeurs ("none", ...) et non les noms de l'enum ; la contrainte CHECK refuse
+    # toute autre chaîne, et server_default couvre une ligne insérée hors ORM.
     mp4_status: Mapped[Mp4Status] = mapped_column(
         Enum(
             Mp4Status,
             native_enum=False,
+            create_constraint=True,
+            name="mp4_status",
             length=16,
             values_callable=lambda statuses: [status.value for status in statuses],
         ),
         default=Mp4Status.NONE,
+        server_default=Mp4Status.NONE.value,
     )

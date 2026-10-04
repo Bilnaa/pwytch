@@ -4,7 +4,14 @@ from app.infra.config import Settings
 
 
 def test_defaults_point_to_the_local_stack(monkeypatch):
-    for name in ["DATABASE_URL", "STREAM_URL", "REPLAYS_DIR", "CONVERSION_TIMEOUT_S"]:
+    # Toutes les variables vérifiées : une seule définie dans l'environnement casserait le test.
+    for name in [
+        "DATABASE_URL",
+        "STREAM_URL",
+        "REPLAYS_DIR",
+        "STREAM_TIMEOUT_S",
+        "CONVERSION_TIMEOUT_S",
+    ]:
         monkeypatch.delenv(name, raising=False)
 
     app_settings = Settings(_env_file=None)
