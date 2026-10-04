@@ -4,7 +4,7 @@ Point d'entrée unique du front. `main` gère les comptes utilisateurs et sert d
 
 ```
 front ──HTTP──> main ──> PostgreSQL (users)
-                  └────> stream, live-chat, replay, ...
+                  └────> stream, search, live-chat, replay, ...
 ```
 
 ## Lancer
@@ -29,6 +29,8 @@ ou depuis `main/` :
 | `ACCESS_TOKEN_EXPIRE_MINUTES` | `30` | Durée de validité d'un jeton, en minutes |
 | `STREAM_URL` | `http://localhost:8001` | URL du service `stream`, utilisée pour relayer le HLS |
 | `STREAM_TIMEOUT_SECONDS` | `5` | Délai maximum d'attente d'une réponse de `stream`, en secondes |
+| `SEARCH_URL` | `http://localhost:8004` | URL du service `search`, utilisée pour relayer la recherche |
+| `SEARCH_TIMEOUT_SECONDS` | `5` | Délai maximum d'attente d'une réponse de `search`, en secondes |
 | `MQTT_HOST` | `localhost` | Hôte du broker MQTT (`mqtt` dans le docker-compose) |
 | `MQTT_PORT` | `1883` | Port du broker MQTT |
 | `FRONTEND_ORIGIN` | `http://localhost:5173` | Origine du front autorisée à appeler `main` depuis le navigateur (CORS), ex. `https://app.example.com`, sans `/` final |
@@ -55,6 +57,7 @@ Les tables sont créées au démarrage (`Base.metadata.create_all`) si elles n'e
 | `/streams/{id}`  | HTTP GET  | Renvoie le détail d'une session       |
 | `/streams/{stream_id}/ingest` | WebSocket | Reçoit le flux vidéo du streamer et le relaie à `stream` (jeton en query) |
 | `/lives/{stream_id}/{filename}` | HTTP GET | Relaie la playlist ou un segment HLS d'un live depuis `stream` |
+| `/search` | HTTP GET | Cherche des streamers et des messages du chat de tous les lives via `search` |
 
 La doc interactive est sur `http://localhost:8000/docs`.
 
@@ -225,6 +228,35 @@ Dès le premier morceau relayé à `stream`, la session passe de `created` à `l
 | 503  | `stream` est injoignable |
 | 504  | `stream` n'a pas répondu à temps |
 
+### `GET /search?q=`
+
+Une seule barre de recherche, une seule route : `main` interroge `search` (voir `search/README.md`) et assemble la réponse. Pas besoin d'être connecté.
+
+`q` est obligatoire et fait 2 à 100 caractères une fois les espaces du début et de la fin retirés. Sinon `main` répond 422 sans appeler `search`.
+
+Les deux appels à `search` partent en parallèle :
+
+| Section     | Appel à `search`            | Contenu |
+|-------------|-----------------------------|---------|
+| `streamers` | `GET /search/streamers?q=`  | Les 20 premiers streamers trouvés, en live d'abord |
+| `messages`  | `GET /search/messages?q=`   | Les messages du chat de tous les lives qui contiennent `q` (#150) |
+
+```json
+{
+  "streamers": [{"streamer_id": 42, "streamer_name": "Célèste", "last_title": "Speedrun any%", "last_game": "Celeste", "is_live": true, "live_stream_id": 7}],
+  "messages": [{"message_id": "3f2b8d6a-7c1e-4a95-b0d4-6e8f1a2c5b97", "stream_id": 7, "author_name": "Célèste", "content": "GG WP !", "sent_at": "2026-10-02T20:14:03Z"}]
+}
+```
+
+| Code | Cas |
+|------|-----|
+| 200  | Toujours, dès que `q` est valide. Une section dont l'appel échoue (`search` injoignable, trop lent, code autre que 200, réponse invalide) revient vide et l'erreur est journalisée ; l'autre section est quand même renvoyée |
+| 422  | `q` absent, ou de moins de 2 ou plus de 100 caractères après retrait des espaces. `search` n'est pas appelé |
+
+Tant que #150 n'est pas mergé, `search` répond 404 sur `/search/messages` : `messages` est toujours vide, et se remplira sans changement côté `main` après le merge.
+
+Un `q` que `search` refuse alors que `main` l'accepte (vide après normalisation, par exemple des accents seuls) donne aussi des sections vides.
+
 ### Protéger une route
 
 La dépendance `get_current_user` (`app/dependencies.py`) lit le jeton, le vérifie et renvoie le `User` correspondant, ou répond `401`. Pour protéger une route :
@@ -331,5 +363,5 @@ Avec le service lancé :
 - Pas de route pour retirer le rôle `admin` : il faut modifier la colonne `role` en base.
 - Pas de migrations : les tables sont créées au démarrage, un changement de modèle demande de recréer la table.
 - Si PostgreSQL n'est pas prêt quand l'API démarre, le `create_all` échoue et l'API plante : il faut la relancer.
-- Seul `stream` est relayé (ingest et HLS) : le relais vers `live-chat`, `replay`, ... n'est pas encore implémenté.
+- Seuls `stream` (ingest et HLS) et `search` sont relayés : le relais vers `live-chat`, `replay`, ... n'est pas encore implémenté.
 - Les ids de session viennent de l'auto-incrément PostgreSQL, et `stream` refuse un id dont le dossier `lives/{stream_id}/` existe déjà (`Stream id already used`). Si la base est vidée (volume `postgres-data` supprimé) sans vider `stream/lives/`, les nouvelles sessions reprennent à 1 et leurs lives sont refusés : il faut vider les deux ensemble.
