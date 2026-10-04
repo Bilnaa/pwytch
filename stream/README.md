@@ -272,7 +272,7 @@ Le dossier d'une chaîne est relu à chaque passage : un fichier ajouté pendant
 
 Le script envoie du 1080p. Pour que les viewers le reçoivent tel quel, lancer `stream` avec `VIDEO_HEIGHT=1080` (et `VIDEO_CRF=18` pour une image plus nette) ; sinon il est réduit en 720p. Le script agrandit lui-même les fichiers plus petits : tous les morceaux d'une chaîne doivent sortir à la même taille.
 
-Le script affiche l'URL de la playlist de chaque chaîne et le morceau en cours. `--help` liste les options (`--api`, `--password`, un autre dossier que `channels/`).
+Le script affiche l'URL de la playlist de chaque chaîne et le morceau en cours. `--help` liste les options (`--api`, `--password`, un autre dossier que `channels/`). `--api` est l'URL de l'API de `main`, `http://localhost:8000/api` par défaut.
 
 `Ctrl+C` arrête les chaînes : les viewers voient l'écran « Signal lost », puis les lives se terminent. Relancé avant `RECONNECT_SECONDS`, le script reprend les mêmes lives ; après, il en crée de nouveaux. Si `main` ou `stream` tombe, il réessaie toutes les 5 s.
 
