@@ -1,18 +1,11 @@
 import { useEffect, useState } from 'react'
 import { useParams } from 'react-router'
 
+import { Avatar } from '@/components/avatar'
 import { HlsPlayer } from '@/components/hls-player'
 import { Badge } from '@/components/ui/badge'
 import { errorMessage } from '@/lib/api'
 import { findLive, playlistUrl, type Stream } from '@/lib/streams'
-
-function Avatar({ username }: { username: string }) {
-  return (
-    <div className="flex size-12 shrink-0 items-center justify-center rounded-full bg-primary text-lg font-bold text-primary-foreground uppercase">
-      {username[0]}
-    </div>
-  )
-}
 
 // /:username, like twitch.tv/<name>: the live of this streamer if there is one
 export function ChannelPage() {
