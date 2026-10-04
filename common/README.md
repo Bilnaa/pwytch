@@ -7,7 +7,7 @@ Bibliothèque partagée entre les services : les contrats que plusieurs services
 | Module               | Contenu                                                                     |
 |----------------------|-----------------------------------------------------------------------------|
 | `common.topics`      | Noms des topics MQTT (`STREAM_STARTED = "stream/started"`, …)               |
-| `common.events`      | Modèles Pydantic des events : `BaseEvent`, `StreamStarted`, `StreamEnded`, `PlayerEvent`, `ChatMessage` |
+| `common.events`      | Modèles Pydantic des events : `BaseEvent`, `StreamStarted`, `StreamEnded`, `PlayerEvent`, `ChatMessage`, `SearchHit`, `ItemType` |
 | `common.mqtt`        | `MqttClient` : client asynchrone avec reconnexion, `publish` et `subscribe` |
 | `common.pagination`  | `Page[T]` : réponse paginée (`items`, `total`, `page`, `size`)              |
 | `common.identity`    | `UserIdentity`, `to_headers` et la dépendance FastAPI `CurrentUser`         |
@@ -31,6 +31,14 @@ event = StreamStarted.model_validate_json(payload)      # côté consommateur
 - `content` : `strip`, puis entre 1 et 500 caractères, sinon `ValidationError` ;
 - `author_name` : non vide ;
 - `sent_at` : date avec fuseau obligatoire (UTC conseillé), une date sans fuseau est refusée.
+
+`SearchHit` (topic `search/hit`) :
+
+- publié par `search`, consommé par `stats` ; un event par élément renvoyé par une recherche ;
+- `item_type` : `ItemType`, un `StrEnum` (`"streamer"` ou `"message"`). Contrairement aux autres champs à valeurs fixes, il s'importe (`from common.events import ItemType`) pour typer les routes de `stats` ;
+- `item_id` : identifiant en texte, `"42"` pour un streamer, l'UUID du message pour un message ;
+- `query` : le `q` tapé, après `strip`, non normalisé ;
+- `hit_at` : date avec fuseau obligatoire, instant de la recherche (même valeur pour tous les events d'une recherche).
 
 ## Client MQTT
 
