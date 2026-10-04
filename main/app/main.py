@@ -17,7 +17,7 @@ from app.config import (
 )
 from app.db import Base, engine
 from app.mqtt import create_mqtt_client
-from app.routers import auth, health, ingest, lives, search, streams
+from app.routers import auth, chat, health, ingest, lives, search, streams
 from app.services.satellites import SatelliteError, SatelliteRejectedError
 
 logging.basicConfig(level=logging.INFO)
@@ -82,6 +82,7 @@ async def satellite_error(request: Request, exc: SatelliteError):
 app.include_router(auth.router)
 app.include_router(health.router)
 app.include_router(ingest.router)
+app.include_router(chat.router)
 app.include_router(streams.router)
 app.include_router(lives.router)
 app.include_router(search.router)

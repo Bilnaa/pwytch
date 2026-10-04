@@ -50,6 +50,10 @@ class LiveChatSettings(BaseSettings):
     live_chat_url: str = "http://localhost:8002"
     live_chat_timeout_seconds: float = 5
 
+    @property
+    def live_chat_ws_url(self) -> str:
+        return self.live_chat_url.replace("http", "ws", 1).rstrip("/")
+
 class MqttSettings(BaseSettings):
     model_config = SettingsConfigDict(env_file=".env", extra="ignore")
     mqtt_host: str = "localhost"
