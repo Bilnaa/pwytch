@@ -20,7 +20,13 @@ ou depuis `replay/` :
 
     uv run fastapi dev --port 8003
 
-En image Docker, le build se lance depuis la racine du repo, car l'image embarque `common` :
+ou en conteneur, avec le docker-compose (profil `apps`, pas lancé par `make infra-up`) :
+
+    docker compose --profile apps up -d --build replay
+
+Le conteneur écoute sur le port 8003, parle à `postgres`, `mqtt` et `stream` par leurs noms de service, et garde les `.mp4` dans le volume `replays-data`. Arrêter `make replay` avant : une seule instance à la fois (voir « Dettes connues »).
+
+En image Docker seule, le build se lance depuis la racine du repo, car l'image embarque `common` :
 
     docker build -f replay/Dockerfile -t replay .
 
@@ -93,6 +99,8 @@ Les tests n'ont besoin ni de Postgres ni de Mosquitto : ils tournent sur SQLite 
 
 - **Tables absentes si la base était coupée au démarrage** : le service tourne, mais les requêtes échouent tant qu'il n'a pas été redémarré avec la base disponible.
 - **Event perdu si un handler échoue** (base indisponible par exemple) : `MqttClient` le journalise en `ERROR` puis l'abandonne. À traiter avec #11.
+- **Events en attente pendant le `HEAD` vers `stream`** : `MqttClient` traite les messages un par un et le `HEAD` est fait dans le handler de `stream/ended`. Si `stream` ne répond pas, tous les events suivants attendent jusqu'à `STREAM_TIMEOUT_S` (5 s). Acceptable avec notre volume ; sinon, sortir la vérification du handler.
+- **Replay visible sans titre** : si `stream/ended` arrive avant `stream/started`, le replay est visible tout de suite avec `streamer_name`, `title`, `game` et `started_at` à `null`, et le reste si `stream/started` est perdu. Choix assumé : on préfère montrer le replay que le cacher ; les routes de #95 renvoient donc ces champs en nullable.
 - **Event perdu à l'arrêt** : `mqtt.stop()` annule le handler en cours, par exemple un `stream/ended` qui attend le `HEAD` vers `stream` (jusqu'à `STREAM_TIMEOUT_S`). Le message QoS 1 est acquitté dès sa réception, le broker ne le renvoie pas : le live reste invisible. Même cause que la ligne précédente (acquittement avant traitement, dans `common.mqtt`), à traiter avec #11.
 - **Deux instances avec le même `client_id`** : le broker déconnecte la première quand la seconde se connecte, et elles se volent la session en boucle ; des events partent vers la mauvaise instance ou se perdent. Une seule instance de `replay` à la fois : ne pas lancer `make replay` pendant que le conteneur tourne.
 - **Ligne invisible pour toujours** : un `stream/ended` en erreur, sans playlist, reçu avant son `stream/started` ne supprime rien ; la ligne créée ensuite par `stream/started` n'a jamais de `ended_at`. Sans effet pour l'utilisateur.

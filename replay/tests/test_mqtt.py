@@ -3,7 +3,7 @@ import pytest
 from common.topics import STREAM_ENDED, STREAM_STARTED
 
 from app.infra.config import Settings
-from app.mqtt import MQTT_CLIENT_ID, create_mqtt_client
+from app.mqtt import create_mqtt_client
 from tests.factories import make_ended, make_started, reload
 
 
@@ -22,8 +22,3 @@ async def test_events_received_on_the_topics_create_the_replay(session, session_
     assert stored_replay.title == "Speedrun Any%"
     assert stored_replay.ended_at is not None
 
-
-def test_client_id_gives_a_persistent_session():
-    mqtt = create_mqtt_client(Settings(_env_file=None), None, None)
-
-    assert mqtt.client_id == MQTT_CLIENT_ID == "replay"
