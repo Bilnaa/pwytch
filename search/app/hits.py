@@ -1,40 +1,29 @@
 import logging
+from collections.abc import Iterable
 from datetime import datetime
+from uuid import UUID
 
 from common.events import ItemType, SearchHit
 from common.mqtt import MqttClient, NotConnectedError
 from common.topics import SEARCH_HIT
 
-from app.schemas import MessageResult, StreamerResult
-
 logger = logging.getLogger(__name__)
 
 
-def streamer_hits(
-    results: list[StreamerResult], search_query: str, hit_at: datetime
+def build_hits(
+    item_type: ItemType,
+    item_ids: Iterable[int | UUID],
+    search_query: str,
+    hit_at: datetime,
 ) -> list[SearchHit]:
     return [
         SearchHit(
-            item_type=ItemType.STREAMER,
-            item_id=str(result.streamer_id),
+            item_type=item_type,
+            item_id=str(item_id),
             query=search_query,
             hit_at=hit_at,
         )
-        for result in results
-    ]
-
-
-def message_hits(
-    results: list[MessageResult], search_query: str, hit_at: datetime
-) -> list[SearchHit]:
-    return [
-        SearchHit(
-            item_type=ItemType.MESSAGE,
-            item_id=str(result.message_id),
-            query=search_query,
-            hit_at=hit_at,
-        )
-        for result in results
+        for item_id in item_ids
     ]
 
 

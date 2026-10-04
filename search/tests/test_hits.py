@@ -2,8 +2,7 @@ import logging
 from unittest.mock import AsyncMock, call
 
 import pytest
-from app.hits import message_hits, publish_hits, streamer_hits
-from app.schemas import MessageResult, StreamerResult
+from app.hits import build_hits, publish_hits
 from common.events import ItemType
 from common.mqtt import MqttClient, NotConnectedError
 from common.topics import SEARCH_HIT
@@ -17,39 +16,15 @@ def error_records(caplog):
     return [record for record in caplog.records if record.levelno == logging.ERROR]
 
 
-def make_streamer_result(streamer_id: int) -> StreamerResult:
-    return StreamerResult(
-        streamer_id=streamer_id,
-        streamer_name=f"Zera {streamer_id}",
-        last_title=None,
-        last_game=None,
-        is_live=False,
-        live_stream_id=None,
-    )
-
-
-def make_message_result() -> MessageResult:
-    return MessageResult(
-        message_id=MESSAGE_ID,
-        stream_id=1,
-        author_name="Célèste",
-        content="GG WP !",
-        sent_at=FIRST_START,
-    )
-
-
 def make_hits(count: int):
-    results = [make_streamer_result(streamer_id) for streamer_id in range(1, count + 1)]
-    return streamer_hits(results, "zera", HIT_AT)
+    return build_hits(ItemType.STREAMER, range(1, count + 1), "zera", HIT_AT)
 
 
 # Construction des hits
 
 
-def test_streamer_hits_keep_the_order_of_the_results():
-    results = [make_streamer_result(42), make_streamer_result(7)]
-
-    hits = streamer_hits(results, "zera", HIT_AT)
+def test_hits_keep_the_order_of_the_ids():
+    hits = build_hits(ItemType.STREAMER, [42, 7], "zera", HIT_AT)
 
     assert [hit.item_id for hit in hits] == ["42", "7"]
     assert [hit.item_type for hit in hits] == [ItemType.STREAMER, ItemType.STREAMER]
@@ -57,8 +32,8 @@ def test_streamer_hits_keep_the_order_of_the_results():
     assert [hit.hit_at for hit in hits] == [HIT_AT, HIT_AT]
 
 
-def test_message_hits_use_the_message_id_as_text():
-    [hit] = message_hits([make_message_result()], "gg", HIT_AT)
+def test_message_uuid_becomes_a_text_item_id():
+    [hit] = build_hits(ItemType.MESSAGE, [MESSAGE_ID], "gg", HIT_AT)
 
     assert hit.item_type is ItemType.MESSAGE
     assert hit.item_id == str(MESSAGE_ID)
@@ -66,9 +41,8 @@ def test_message_hits_use_the_message_id_as_text():
     assert hit.hit_at == HIT_AT
 
 
-def test_no_result_gives_no_hit():
-    assert streamer_hits([], "zera", HIT_AT) == []
-    assert message_hits([], "gg", HIT_AT) == []
+def test_no_id_gives_no_hit():
+    assert build_hits(ItemType.STREAMER, [], "zera", HIT_AT) == []
 
 
 # Publication
