@@ -69,6 +69,7 @@ Toute l'API est sous `/api` (ex. `/api/auth/login`, `ws://localhost:8000/api/str
 | `/streams/{stream_id}/ingest` | WebSocket | Reçoit le flux vidéo du streamer et le relaie à `stream` (jeton en query) |
 | `/streams/{stream_id}/chat` | WebSocket | Relaie le chat du live avec `live-chat` dans les deux sens (jeton facultatif en query, sans jeton : lecture seule) |
 | `/lives/{stream_id}/{filename}` | HTTP GET | Relaie la playlist ou un segment HLS d'un live depuis `stream` |
+| `/users/{username}` | HTTP GET | Profil public d'un utilisateur (`id`, `username`, `display_name`), 404 s'il n'existe pas |
 | `/search` | HTTP GET | Cherche des streamers et des messages du chat de tous les lives via `search` |
 
 La doc interactive est sur `http://localhost:8000/api/docs`.
@@ -245,6 +246,10 @@ Dès le premier morceau relayé à `stream`, la session passe de `created` à `l
 | 504  | `stream` n'a pas répondu à temps |
 
 Les erreurs viennent du helper commun, voir « Appeler un satellite ».
+
+### `GET /users/{username}`
+
+Pas besoin d'être connecté. Renvoie `{"id", "username", "display_name"}` (pas le rôle), ou `404` (`User not found`). La casse ne compte pas : `/users/Alice` trouve `alice`. Le front s'en sert pour la page d'une chaîne (`/{username}`) : 404 si le compte n'existe pas, « hors ligne » s'il existe sans live.
 
 ### `GET /search?q=`
 
