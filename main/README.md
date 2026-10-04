@@ -379,25 +379,25 @@ Les tests utilisent une base SQLite en mémoire, recréée pour chaque test : il
 Avec le service lancé :
 
     # créer un compte : username "john_doe", display_name "John_Doe"
-    curl -i -X POST http://localhost:8000/auth/register \
+    curl -i -X POST http://localhost:8000/api/auth/register \
       -H 'Content-Type: application/json' \
       -d '{"username": "John_Doe", "password": "MyPassword123"}'
 
     # le même pseudo, même avec une autre casse, renvoie 409
-    curl -i -X POST http://localhost:8000/auth/register \
+    curl -i -X POST http://localhost:8000/api/auth/register \
       -H 'Content-Type: application/json' \
       -d '{"username": "john_doe", "password": "MyPassword123"}'
 
     # se connecter (formulaire, pas JSON) et garder le jeton
-    TOKEN=$(curl -s -X POST http://localhost:8000/auth/login \
+    TOKEN=$(curl -s -X POST http://localhost:8000/api/auth/login \
       -d 'username=john_doe&password=MyPassword123' | jq -r .access_token)
 
     # route protégée : 200 avec le jeton, 401 sans
-    curl -i http://localhost:8000/auth/me -H "Authorization: Bearer $TOKEN"
-    curl -i http://localhost:8000/auth/me
+    curl -i http://localhost:8000/api/auth/me -H "Authorization: Bearer $TOKEN"
+    curl -i http://localhost:8000/api/auth/me
 
     # mauvais mot de passe : 401
-    curl -i -X POST http://localhost:8000/auth/login \
+    curl -i -X POST http://localhost:8000/api/auth/login \
       -d 'username=john_doe&password=wrong-password'
 
 ## Limites
