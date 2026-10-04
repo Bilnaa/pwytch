@@ -48,6 +48,10 @@ def get_stream_client(request: Request) -> httpx.AsyncClient:
     return request.app.state.stream_client
 
 
+def get_search_client(request: Request) -> httpx.AsyncClient:
+    return request.app.state.search_client
+
+
 async def get_ingest_stream(
     websocket: WebSocket,
     stream_id: int,
