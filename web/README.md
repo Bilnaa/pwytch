@@ -62,6 +62,10 @@ Bleu et jaune de Python (`#3776AB`, `#FFD43B`), fond sombre comme Twitch. Les co
 
 Le navigateur doit savoir enregistrer du WebM (Chrome, Firefox). Pour tester sans webcam, lancer Chrome avec `--use-fake-device-for-media-stream`.
 
+## Accueil
+
+`/` : une carte par live en cours (`GET /streams?status=live`), rafraîchie toutes les 15 s. Un clic ouvre la chaîne (`/{username}`). Pas encore de miniature dans l'API : la carte a un dégradé bleu / jaune avec l'initiale du streamer.
+
 ## Page d'une chaîne
 
 `/{username}`, comme sur Twitch (`/aespa_radio`) : player HLS (`components/hls-player.tsx`) sur `/api/lives/{id}/index.m3u8`, avec le streamer, le titre, le jeu et le badge LIVE. Pas besoin d'être connecté. Les chemins fixes (`/login`, `/go-live`...) passent avant : un compte nommé `login` n'aurait pas de page.
