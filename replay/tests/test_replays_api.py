@@ -62,6 +62,29 @@ async def test_pagination_returns_the_requested_page(client, session):
 
 
 @pytest.mark.anyio
+async def test_last_allowed_page_is_empty_without_error(client, session):
+    await add_replay(session, 1)
+
+    body = await get_replays(client, page=2147483647, size=50)
+
+    assert body["items"] == []
+    assert body["total"] == 1
+
+
+@pytest.mark.anyio
+async def test_ended_replay_without_duration_is_hidden(client, session):
+    # Écriture hors handler : ended_at sans duration_s ne doit pas faire planter la page.
+    await add_replay(session, 1)
+    await add_replay(session, 2, duration_s=None)
+
+    body = await get_replays(client)
+
+    assert stream_ids(body) == [1]
+    assert body["total"] == 1
+    assert (await client.get("/replays/2")).status_code == 404
+
+
+@pytest.mark.anyio
 async def test_page_after_the_end_is_empty(client, session):
     await add_replay(session, 1)
 
@@ -75,6 +98,8 @@ async def test_page_after_the_end_is_empty(client, session):
 async def test_filter_by_streamer(client, session):
     await add_replay(session, 1, streamer_id=7)
     await add_replay(session, 2, streamer_id=8)
+    # Live en cours du même streamer : le filtre ne doit pas lever FINISHED.
+    await add_replay(session, 3, streamer_id=8, ended_at=None, duration_s=None)
 
     body = await get_replays(client, streamer_id=8)
 
@@ -85,8 +110,24 @@ async def test_filter_by_streamer(client, session):
 @pytest.mark.anyio
 @pytest.mark.parametrize(
     "params",
-    [{"page": 0}, {"size": 0}, {"size": 51}, {"streamer_id": 0}, {"streamer_id": 2147483648}],
-    ids=["page-zero", "size-zero", "size-too-big", "streamer-zero", "streamer-above-int32"],
+    [
+        {"page": 0},
+        {"page": 2147483648},
+        {"page": 461168601842738792},
+        {"size": 0},
+        {"size": 51},
+        {"streamer_id": 0},
+        {"streamer_id": 2147483648},
+    ],
+    ids=[
+        "page-zero",
+        "page-above-int32",
+        "page-offset-above-int64",
+        "size-zero",
+        "size-too-big",
+        "streamer-zero",
+        "streamer-above-int32",
+    ],
 )
 async def test_invalid_list_params_return_422(client, params):
     response = await client.get("/replays", params=params)
@@ -130,12 +171,8 @@ async def test_replay_without_started_has_null_infos(client, session):
 
     body = (await client.get("/replays/42")).json()
 
-    assert [body[field] for field in ["streamer_name", "title", "game", "started_at"]] == [
-        None,
-        None,
-        None,
-        None,
-    ]
+    nullable_fields = ["streamer_name", "title", "game", "started_at"]
+    assert {field: body[field] for field in nullable_fields} == dict.fromkeys(nullable_fields)
 
 
 @pytest.mark.anyio

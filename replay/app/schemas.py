@@ -20,5 +20,6 @@ class ReplayResult(BaseModel):
     @computed_field
     @property
     def playback_url(self) -> str:
-        # Relatif à main, qui relaie la playlist de stream ; le front ajoute l'origine.
+        # Relatif à la racine de l'API de main (/api), qui relaie la playlist de stream :
+        # le front le passe à apiUrl(), qui ajoute l'origine et /api.
         return f"/lives/{self.stream_id}/index.m3u8"

@@ -21,7 +21,8 @@ SessionDep = Annotated[AsyncSession, Depends(get_session, scope="function")]
 @router.get("", summary="List the replays, from the most recent end")
 async def list_replays_route(
     session: SessionDep,
-    page: Annotated[int, Query(ge=1)] = 1,
+    # Borné comme les ids : une page énorme ferait dépasser l'OFFSET des entiers 64 bits (500).
+    page: Annotated[int, Query(ge=1, le=MAX_POSTGRES_INTEGER)] = 1,
     size: Annotated[int, Query(ge=1, le=50)] = 20,
     streamer_id: Annotated[int | None, Query(ge=1, le=MAX_POSTGRES_INTEGER)] = None,
 ) -> Page[ReplayResult]:
