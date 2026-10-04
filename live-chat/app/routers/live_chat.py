@@ -87,7 +87,12 @@ async def live_chat(
             # Checking if a certain amount of seconds passed before sending a new message
             if not connectionManager.can_send_message(user_id, stream_id):
                 await websocket.send_json(
-                    {"type": "error", "code": "RATE_LIMITED", "detail": "Veuillez attendre une seconde."})
+                    {
+                        "type": "error",
+                        "code": "RATE_LIMITED",
+                        "detail": "Veuillez attendre une seconde.",
+                    }
+                )
                 continue
 
             author = Author(id=user_id, username=username)

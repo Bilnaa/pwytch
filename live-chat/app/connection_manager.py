@@ -1,6 +1,7 @@
+import time
+
 from fastapi import WebSocket
 from starlette.websockets import WebSocketDisconnect
-import time
 
 from app.models.message_model import MessageModel
 
