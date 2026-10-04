@@ -31,7 +31,7 @@ def db_session():
 @pytest.fixture
 def client(db_session):
     app.dependency_overrides[get_db] = lambda: db_session
-    yield TestClient(app)
+    yield TestClient(app, base_url="http://testserver/api")
     app.dependency_overrides.clear()
 
 

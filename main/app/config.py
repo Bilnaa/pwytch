@@ -66,6 +66,13 @@ class CorsSettings(BaseSettings):
     frontend_origin: str = "http://localhost:5173"
 
 
+class FrontendSettings(BaseSettings):
+    model_config = SettingsConfigDict(env_file=".env", extra="ignore")
+
+    # build of the web folder (npm run build), relative to main/
+    frontend_dir: str = "../web/dist"
+
+
 db_settings = DbSettings.model_validate({})
 auth_settings = AuthSettings.model_validate({})
 stream_settings = StreamSettings()
@@ -75,3 +82,4 @@ stats_settings = StatsSettings()
 live_chat_settings = LiveChatSettings()
 mqtt_settings = MqttSettings()
 cors_settings = CorsSettings()
+frontend_settings = FrontendSettings()

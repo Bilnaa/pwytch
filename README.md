@@ -13,6 +13,7 @@ Plateforme de live streaming découpée en microservices FastAPI. Un dossier par
 | `search`    | Recherche de streamers et dans le chat d'un live                     | 8004 | ArKZbeb      |
 | `bookmarks` | Bookmarks des utilisateurs                                           | 8005 | Railas9      |
 | `stats`     | Compteurs (recherche, chat, player, bookmarks)                       | 8006 | Railas9      |
+| `web`       | Front React, servi par `main` une fois buildé (`make web` en dev)      | 5173 | -            |
 | `common`    | Bibliothèque partagée : modèles des events MQTT, topics, client MQTT | -    | -            |
 
 Le front ne parle qu'à `main`. Aucun service n'importe le code d'un autre, seul `common` est partagé, et aucun service ne lit la base d'un autre.
@@ -33,7 +34,10 @@ make main
 make stream
 make search
 # ...
+make web       # front en dev sur http://localhost:5173
 ```
+
+Pour le front servi par `main` sur http://localhost:8000 : `make web-build`, puis redémarrer `main`. Il faut [Node.js](https://nodejs.org/) 22 ou plus.
 
 Autres commandes (`make help` pour la liste complète) :
 
@@ -72,7 +76,7 @@ Par défaut, un service prévient les autres avec un event MQTT : le producteur 
 
 - `main` : ce qui est rendu. Seules `develop` et les branches `hotfix/*` peuvent y être mergées.
 - `develop` : branche de travail, toutes les PR la visent.
-- Les branches commencent par `feature/`, `fix/`, `chore/`, `docs/`, `hotfix/` ou `microservice/`. La CI le vérifie, lance ruff et les tests de chaque service.
+- Les branches commencent par `feature/`, `fix/`, `chore/`, `docs/`, `hotfix/` ou `microservice/`. La CI le vérifie, lance ruff et les tests de chaque service, et lint puis build le front.
 - Un ticket = un dossier de service. La PR a le label `ms:<service>` du dossier touché.
 - Comme les PR visent `develop`, `Closes #N` ne ferme rien : on met un commentaire `Ticket : #N` sur la PR et `PR : #N` sur le ticket, et la carte passe en « In review ».
 - Une fois mergée : cases cochées, ticket fermé, carte en « Done ».

@@ -3,7 +3,7 @@ from fastapi.testclient import TestClient
 from app.config import cors_settings
 from app.main import app
 
-client = TestClient(app)
+client = TestClient(app, base_url="http://testserver/api")
 
 
 def test_cors_allows_frontend_origin():

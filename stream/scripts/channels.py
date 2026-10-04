@@ -242,7 +242,7 @@ if __name__ == "__main__":
         "channels_dir", type=Path, nargs="?", default=Path("channels"),
         help="folder with one subfolder per channel (default: channels)",
     )
-    parser.add_argument("--api", default="http://localhost:8000", help="URL of main")
+    parser.add_argument("--api", default="http://localhost:8000/api", help="URL of main's API")
     parser.add_argument(
         "--password", default="radio-password", help="password of the channel accounts"
     )

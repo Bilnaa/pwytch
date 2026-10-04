@@ -1,6 +1,6 @@
 # main
 
-Point d'entrée unique du front. `main` gère les comptes utilisateurs et sert de passerelle vers les autres services (`stream`, `live-chat`, `replay`, ...), qui ne sont jamais exposés directement. Les données sont stockées dans PostgreSQL.
+Point d'entrée unique du front. `main` sert aussi le build du front (`web/`). `main` gère les comptes utilisateurs et sert de passerelle vers les autres services (`stream`, `live-chat`, `replay`, ...), qui ne sont jamais exposés directement. Les données sont stockées dans PostgreSQL.
 
 ```
 front ──HTTP──> main ──> PostgreSQL (users)
@@ -39,6 +39,7 @@ ou depuis `main/` :
 | `LIVE_CHAT_TIMEOUT_SECONDS` | `5` | Délai maximum d'attente d'une réponse de `live-chat`, en secondes |
 | `MQTT_HOST` | `localhost` | Hôte du broker MQTT (`mqtt` dans le docker-compose) |
 | `MQTT_PORT` | `1883` | Port du broker MQTT |
+| `FRONTEND_DIR` | `../web/dist` | Dossier du build du front servi par `main`, relatif à `main/`. S'il n'existe pas, `main` démarre sans front |
 | `FRONTEND_ORIGIN` | `http://localhost:5173` | Origine du front autorisée à appeler `main` depuis le navigateur (CORS), ex. `https://app.example.com`, sans `/` final |
 
 Les variables se mettent dans `main/.env` (copier `.env.example`). Les valeurs de `.env.example` correspondent à celles par défaut du `docker-compose.yml`. Remplacer `JWT_SECRET_KEY=change-me` par une vraie clé : quiconque la connaît peut fabriquer un jeton valide pour n'importe quel compte.
@@ -47,13 +48,17 @@ En image Docker, le build se lance depuis la racine du repo, car l'image embarqu
 
     docker build -f main/Dockerfile -t main .
 
+L'image build aussi le front (`web/`) dans une première étape Node et le copie dans `/web/dist`, là où `FRONTEND_DIR` pointe par défaut.
+
 Les tables sont créées au démarrage (`Base.metadata.create_all`) si elles n'existent pas. Il n'y a pas encore de migrations : une table existante n'est jamais modifiée, il faut la supprimer à la main si son modèle change.
 
 ## Endpoints
 
+Toute l'API est sous `/api` (ex. `/api/auth/login`, `ws://localhost:8000/api/streams/{stream_id}/ingest`). Les chemins de cette section sont donnés sans ce préfixe. Les autres URL sont celles du front : `app.frontend()` de FastAPI sert les fichiers de `FRONTEND_DIR`, et renvoie `index.html` à une navigation du navigateur sur une URL inconnue (pour react-router). Une requête `fetch` vers une route inconnue reçoit toujours un `404` JSON.
+
 | Chemin           | Protocole | Rôle                                  |
 |------------------|-----------|---------------------------------------|
-| `/`              | HTTP GET  | Renvoie `{"service": "main"}`         |
+| `/` (soit `/api`) | HTTP GET  | Renvoie `{"service": "main"}`         |
 | `/health`        | HTTP GET  | Renvoie `{"status": "ok"}`            |
 | `/auth/register` | HTTP POST | Crée un compte utilisateur            |
 | `/auth/login`    | HTTP POST | Connecte un utilisateur, renvoie un jeton JWT |
@@ -66,7 +71,7 @@ Les tables sont créées au démarrage (`Base.metadata.create_all`) si elles n'e
 | `/lives/{stream_id}/{filename}` | HTTP GET | Relaie la playlist ou un segment HLS d'un live depuis `stream` |
 | `/search` | HTTP GET | Cherche des streamers et des messages du chat de tous les lives via `search` |
 
-La doc interactive est sur `http://localhost:8000/docs`.
+La doc interactive est sur `http://localhost:8000/api/docs`.
 
 ### `POST /auth/register`
 
@@ -376,25 +381,25 @@ Les tests utilisent une base SQLite en mémoire, recréée pour chaque test : il
 Avec le service lancé :
 
     # créer un compte : username "john_doe", display_name "John_Doe"
-    curl -i -X POST http://localhost:8000/auth/register \
+    curl -i -X POST http://localhost:8000/api/auth/register \
       -H 'Content-Type: application/json' \
       -d '{"username": "John_Doe", "password": "MyPassword123"}'
 
     # le même pseudo, même avec une autre casse, renvoie 409
-    curl -i -X POST http://localhost:8000/auth/register \
+    curl -i -X POST http://localhost:8000/api/auth/register \
       -H 'Content-Type: application/json' \
       -d '{"username": "john_doe", "password": "MyPassword123"}'
 
     # se connecter (formulaire, pas JSON) et garder le jeton
-    TOKEN=$(curl -s -X POST http://localhost:8000/auth/login \
+    TOKEN=$(curl -s -X POST http://localhost:8000/api/auth/login \
       -d 'username=john_doe&password=MyPassword123' | jq -r .access_token)
 
     # route protégée : 200 avec le jeton, 401 sans
-    curl -i http://localhost:8000/auth/me -H "Authorization: Bearer $TOKEN"
-    curl -i http://localhost:8000/auth/me
+    curl -i http://localhost:8000/api/auth/me -H "Authorization: Bearer $TOKEN"
+    curl -i http://localhost:8000/api/auth/me
 
     # mauvais mot de passe : 401
-    curl -i -X POST http://localhost:8000/auth/login \
+    curl -i -X POST http://localhost:8000/api/auth/login \
       -d 'username=john_doe&password=wrong-password'
 
 ## Limites
