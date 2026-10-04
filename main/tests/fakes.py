@@ -27,6 +27,7 @@ class FakeUpstream:
         self.connect_error = connect_error
         self.entered = False
         self.exited = False
+        self.sent_close = None
         self._closed = None
 
     def __call__(self, url, **kwargs):
@@ -53,6 +54,10 @@ class FakeUpstream:
 
     async def wait_closed(self):
         await self._closed.wait()
+
+    async def close(self, code=1000, reason=""):
+        self.sent_close = (code, reason)
+        self._closed.set()
 
 
 class FakeChat:

@@ -208,6 +208,8 @@ Les refus sont envoyés après l'ouverture de la connexion : avant, le navigateu
 
 Quand le streamer se déconnecte, la connexion vers `stream` est fermée proprement. Une session `live` peut être rouverte : c'est la reconnexion du streamer pendant la période de grâce de `stream`.
 
+Pour terminer son live (« Stop »), le front ferme la WebSocket avec le code `4000` (`Live ended`). `main` ferme alors la connexion vers `stream` avec `4000` aussi : pas d'écran « Signal lost », le live se termine tout de suite. La session passe en `ended` (`cancelled` si elle était encore `created`) sans attendre `stream/ended`, le streamer peut donc relancer un live aussitôt (pas de `409`). Toute autre fermeture (onglet fermé, coupure) reste une coupure.
+
 `main` traduit les codes de fermeture de `stream` (voir `stream/README.md`) :
 
 | `stream` envoie | `main` envoie | Effet sur la session |
