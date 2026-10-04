@@ -119,6 +119,16 @@ def test_unexpected_status_returns_502(client, use_satellite, status_code):
     assert response.json() == {"detail": "Invalid answer from service"}
 
 
+def test_unauthorized_satellite_returns_502(client, use_satellite, caplog):
+    use_satellite(lambda request: httpx.Response(401, json={"detail": "Not authenticated"}))
+
+    response = client.get("/relay")
+
+    assert response.status_code == 502
+    assert response.json() == {"detail": "Invalid answer from service"}
+    assert "answered 401" in caplog.text
+
+
 def test_unreachable_satellite_returns_503(client, use_satellite):
     def handler(request):
         raise httpx.ConnectError("refused")
