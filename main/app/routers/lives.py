@@ -1,7 +1,7 @@
 from typing import Annotated
 
 import httpx
-from fastapi import APIRouter, Depends, HTTPException, Path, status
+from fastapi import APIRouter, Depends, Path
 from fastapi.responses import StreamingResponse
 from starlette.background import BackgroundTask
 
@@ -32,19 +32,7 @@ async def get_live_file(
     filename: Annotated[str, Path(pattern=r"^index\d*\.(m3u8|ts)$")],
     client: Annotated[httpx.AsyncClient, Depends(get_stream_client)],
 ):
-    try:
-        live_file = await lives_service.open_live_file(client, stream_id, filename)
-    except lives_service.LiveFileNotFoundError as exc:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc)) from exc
-    except lives_service.InvalidStreamResponseError as exc:
-        raise HTTPException(status_code=status.HTTP_502_BAD_GATEWAY, detail=str(exc)) from exc
-    except lives_service.StreamUnavailableError as exc:
-        raise HTTPException(
-            status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail=str(exc)
-        ) from exc
-    except lives_service.StreamTimeoutError as exc:
-        raise HTTPException(status_code=status.HTTP_504_GATEWAY_TIMEOUT, detail=str(exc)) from exc
-
+    live_file = await lives_service.open_live_file(client, stream_id, filename)
     return StreamingResponse(
         live_file.content,
         media_type=live_file.media_type,

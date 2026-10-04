@@ -3,9 +3,10 @@ import logging
 
 import httpx
 from common.pagination import Page
-from pydantic import TypeAdapter, ValidationError
+from pydantic import TypeAdapter
 
 from app.schemas.search import MessageResult, SearchResults, StreamerResult
+from app.services import satellites
 
 logger = logging.getLogger(__name__)
 
@@ -13,24 +14,9 @@ STREAMER_PAGE = TypeAdapter(Page[StreamerResult])
 MESSAGE_LIST = TypeAdapter(list[MessageResult])
 
 
-class SearchSectionError(Exception):
-    pass
-
-
 async def _get(client: httpx.AsyncClient, path: str, query: str, adapter: TypeAdapter):
-    try:
-        response = await client.get(path, params={"q": query})
-    except httpx.TimeoutException as exc:
-        raise SearchSectionError("search timed out") from exc
-    except httpx.HTTPError as exc:
-        raise SearchSectionError("search is unavailable") from exc
-
-    if response.status_code != 200:
-        raise SearchSectionError(f"search answered {response.status_code}")
-    try:
-        return adapter.validate_json(response.content)
-    except ValidationError as exc:
-        raise SearchSectionError("Invalid answer from search") from exc
+    response = await satellites.send(client, "GET", path, params={"q": query})
+    return satellites.parse(response, adapter)
 
 
 async def search_streamers(client: httpx.AsyncClient, query: str) -> list[StreamerResult]:
@@ -45,7 +31,7 @@ async def search_messages(client: httpx.AsyncClient, query: str) -> list[Message
 async def _or_empty(section: str, search) -> list:
     try:
         return await search
-    except SearchSectionError as exc:
+    except satellites.SatelliteError as exc:
         logger.warning("Search section %s left empty: %s", section, exc)
         return []
 

@@ -3,21 +3,7 @@ from dataclasses import dataclass
 
 import httpx
 
-
-class LiveFileNotFoundError(Exception):
-    pass
-
-
-class StreamTimeoutError(Exception):
-    pass
-
-
-class StreamUnavailableError(Exception):
-    pass
-
-
-class InvalidStreamResponseError(Exception):
-    pass
+from app.services import satellites
 
 
 @dataclass
@@ -38,20 +24,9 @@ def get_cache_control(filename: str) -> str:
 async def open_live_file(
     client: httpx.AsyncClient, stream_id: int, filename: str
 ) -> LiveFile:
-    request = client.build_request("GET", f"/lives/{stream_id}/{filename}")
-    try:
-        upstream = await client.send(request, stream=True)
-    except httpx.TimeoutException as exc:
-        raise StreamTimeoutError("stream timed out") from exc
-    except httpx.HTTPError as exc:
-        raise StreamUnavailableError("stream is unavailable") from exc
-
-    if upstream.status_code != 200:
-        await upstream.aclose()
-        if upstream.status_code == 404:
-            raise LiveFileNotFoundError("Live or file not found")
-        raise InvalidStreamResponseError("Invalid answer from stream")
-
+    upstream = await satellites.send(
+        client, "GET", f"/lives/{stream_id}/{filename}", stream=True
+    )
     return LiveFile(
         content=upstream.aiter_bytes(),
         media_type=upstream.headers.get("content-type"),

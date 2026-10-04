@@ -13,6 +13,7 @@ from app.services import ingest as ingest_service
 from app.services import streams as streams_service
 
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="auth/login")
+optional_oauth2_scheme = OAuth2PasswordBearer(tokenUrl="auth/login", auto_error=False)
 
 UNAUTHENTICATED = 4401
 FORBIDDEN = 4403
@@ -34,6 +35,15 @@ def get_current_user(
         ) from exc
 
 
+def get_optional_user(
+    token: Annotated[str | None, Depends(optional_oauth2_scheme)],
+    db: Annotated[Session, Depends(get_db)],
+) -> User | None:
+    if token is None:
+        return None
+    return get_current_user(token, db)
+
+
 def require_admin(
     current_user: Annotated[User, Depends(get_current_user)],
 ) -> User:
@@ -50,6 +60,14 @@ def get_stream_client(request: Request) -> httpx.AsyncClient:
 
 def get_search_client(request: Request) -> httpx.AsyncClient:
     return request.app.state.search_client
+
+
+def get_replay_client(request: Request) -> httpx.AsyncClient:
+    return request.app.state.replay_client
+
+
+def get_stats_client(request: Request) -> httpx.AsyncClient:
+    return request.app.state.stats_client
 
 
 async def get_ingest_stream(

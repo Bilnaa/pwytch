@@ -31,6 +31,10 @@ ou depuis `main/` :
 | `STREAM_TIMEOUT_SECONDS` | `5` | Délai maximum d'attente d'une réponse de `stream`, en secondes |
 | `SEARCH_URL` | `http://localhost:8004` | URL du service `search`, utilisée pour relayer la recherche |
 | `SEARCH_TIMEOUT_SECONDS` | `5` | Délai maximum d'attente d'une réponse de `search`, en secondes |
+| `REPLAY_URL` | `http://localhost:8003` | URL du service `replay` |
+| `REPLAY_TIMEOUT_SECONDS` | `5` | Délai maximum d'attente d'une réponse de `replay`, en secondes |
+| `STATS_URL` | `http://localhost:8006` | URL du service `stats` |
+| `STATS_TIMEOUT_SECONDS` | `5` | Délai maximum d'attente d'une réponse de `stats`, en secondes |
 | `MQTT_HOST` | `localhost` | Hôte du broker MQTT (`mqtt` dans le docker-compose) |
 | `MQTT_PORT` | `1883` | Port du broker MQTT |
 | `FRONTEND_ORIGIN` | `http://localhost:5173` | Origine du front autorisée à appeler `main` depuis le navigateur (CORS), ex. `https://app.example.com`, sans `/` final |
@@ -222,11 +226,13 @@ Dès le premier morceau relayé à `stream`, la session passe de `created` à `l
 | Code | Cas |
 |------|-----|
 | 200  | Fichier relayé |
-| 404  | Live ou fichier inexistant |
+| 404  | Live ou fichier inexistant (réponse de `stream` renvoyée telle quelle) |
 | 422  | `stream_id` ou `filename` invalide |
 | 502  | `stream` a renvoyé une réponse inattendue |
 | 503  | `stream` est injoignable |
 | 504  | `stream` n'a pas répondu à temps |
+
+Les erreurs viennent du helper commun, voir « Appeler un satellite ».
 
 ### `GET /search?q=`
 
@@ -256,6 +262,39 @@ Les deux appels à `search` partent en parallèle :
 Tant que #150 n'est pas mergé, `search` répond 404 sur `/search/messages` : `messages` est toujours vide, et se remplira sans changement côté `main` après le merge.
 
 Un `q` que `search` refuse alors que `main` l'accepte (vide après normalisation, par exemple des accents seuls) donne aussi des sections vides.
+
+### Appeler un satellite
+
+Chaque satellite a son `httpx.AsyncClient`, créé dans le `lifespan` avec l'URL et le timeout de `.env`, et sa dépendance : `get_stream_client`, `get_search_client`, `get_replay_client`, `get_stats_client` (`app/dependencies.py`).
+
+`app/services/satellites.py` fait l'appel et traite les erreurs une seule fois pour toutes les routes :
+
+```python
+from app.dependencies import get_optional_user, get_replay_client
+from app.services import satellites
+
+REPLAYS = TypeAdapter(list[Replay])
+
+async def list_replays(client: httpx.AsyncClient, user: User | None) -> list[Replay]:
+    response = await satellites.send(client, "GET", "/replays", user=user)
+    return satellites.parse(response, REPLAYS)
+```
+
+- `send(client, method, path, *, user=None, params=None, json=None, stream=False)` renvoie la réponse si son code est 2xx. Avec `stream=True`, le corps n'est pas chargé en mémoire (relais HLS) : penser à fermer la réponse
+- `parse(response, adapter)` valide le corps JSON avec un `TypeAdapter`
+- Avec un `user`, les headers `X-User-Id`, `X-User-Name` (`username`, en minuscules) et `X-User-Role` de `common.identity` sont ajoutés. Pour une route publique qui veut quand même les envoyer quand l'utilisateur est connecté, la dépendance `get_optional_user` renvoie le `User`, ou `None` sans jeton (un jeton invalide reste un `401`)
+
+Les erreurs sont des exceptions, transformées en réponse par les handlers de `app/main.py` : la route n'a rien à attraper.
+
+| Le satellite                         | Exception                       | `main` renvoie |
+|--------------------------------------|---------------------------------|----------------|
+| répond 4xx                           | `SatelliteRejectedError`        | La même réponse : code, corps et `Content-Type` (Starlette ajoute `; charset=utf-8` à un type `text/*` qui n'a pas de charset) |
+| répond un autre code (3xx, 5xx)      | `InvalidSatelliteResponseError` | `502 {"detail": "Invalid answer from service"}` |
+| renvoie un corps refusé par `parse`  | `InvalidSatelliteResponseError` | `502 {"detail": "Invalid answer from service"}` |
+| est injoignable                      | `SatelliteUnavailableError`     | `503 {"detail": "Service is unavailable"}` |
+| ne répond pas avant le timeout       | `SatelliteTimeoutError`         | `504 {"detail": "Service timed out"}` |
+
+Toutes héritent de `SatelliteError`, pour une route qui veut les traiter elle-même (la recherche renvoie une section vide, par exemple). Le détail (URL, code reçu) est journalisé, il n'est pas renvoyé au front.
 
 ### Protéger une route
 
