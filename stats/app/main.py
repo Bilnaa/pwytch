@@ -6,6 +6,8 @@ from fastapi import FastAPI
 from contextlib import asynccontextmanager
 
 from sqlalchemy import text
+from sqlalchemy.exc import SQLAlchemyError
+from sqlalchemy.schema import CreateSchema
 
 from app.routers import health
 from app.database import engine
@@ -14,22 +16,26 @@ from app.config import settings
 
 
 logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI) -> AsyncIterator[None]:
-    async with engine.begin() as connection:
-        if engine.dialect.name == "postgresql":
-            await connection.execute(text(f"CREATE SCHEMA IF NOT EXISTS {SCHEMA_NAME}"))
-        await connection.run_sync(Base.metadata.create_all)
-
+    try:
+        async with engine.begin() as connection:
+            if engine.dialect.name == "postgresql":
+                await connection.execute(CreateSchema(SCHEMA_NAME, if_not_exists=True))
+            await connection.run_sync(Base.metadata.create_all)
+    except SQLAlchemyError:
+        logger.warning("Database unavailable at startup, live_chat schema not created yet")
     client = MqttClient(host=settings.mqtt_host, port=settings.mqtt_port, client_id="stats")
 
     await client.start()
-    yield
-
-    await client.stop()
-    await engine.dispose()
+    try:
+        yield
+    finally:
+        await client.stop()
+        await engine.dispose()
 
     
 app = FastAPI(title="stats", lifespan=lifespan)
