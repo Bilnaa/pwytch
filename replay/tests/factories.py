@@ -1,4 +1,7 @@
 from datetime import UTC, datetime, timedelta
+from uuid import uuid4
+
+from common.events import StreamEnded, StreamStarted
 
 from app.infra.models import Replay
 
@@ -29,3 +32,28 @@ async def reload(session, stream_id: int) -> Replay | None:
     # expire_on_commit=False garde les objets en mémoire : force une vraie relecture.
     session.expunge_all()
     return await session.get(Replay, stream_id)
+
+
+def make_started(**overrides) -> StreamStarted:
+    defaults = {
+        "event_id": uuid4(),
+        "stream_id": 42,
+        "streamer_id": STREAMER_ID,
+        "streamer_name": "Célèste",
+        "title": "Speedrun Any%",
+        "game": "Celeste",
+        "started_at": FIRST_START,
+    }
+    return StreamStarted(**(defaults | overrides))
+
+
+def make_ended(**overrides) -> StreamEnded:
+    defaults = {
+        "event_id": uuid4(),
+        "stream_id": 42,
+        "streamer_id": STREAMER_ID,
+        "ended_at": FIRST_END,
+        "duration_s": 5400.0,
+        "reason": "normal",
+    }
+    return StreamEnded(**(defaults | overrides))
