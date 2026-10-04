@@ -10,10 +10,12 @@ USER_ROLE_HEADER = "X-User-Role"
 
 # pydantic alone would also accept "42.0", "+42" or "4_2"
 USER_ID_PATTERN = re.compile(r"[0-9]+")
+# ids are stored in postgres integer columns
+MAX_USER_ID = 2**31 - 1
 
 
 class UserIdentity(BaseModel):
-    id: int = Field(gt=0)
+    id: int = Field(gt=0, le=MAX_USER_ID)
     name: str = Field(min_length=1)
     role: str = Field(min_length=1)
 

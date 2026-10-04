@@ -44,6 +44,8 @@ class IndexedChatMessage(Base):
             "sent_at",
             "message_id",
         ),
+        # Même rôle pour la recherche tous lives confondus, sans filtre par live.
+        Index("ix_chat_messages_sent_at_message_id", "sent_at", "message_id"),
     )
 
     # uuid4 généré par live-chat : type UUID natif sur Postgres, CHAR(32) sur SQLite.

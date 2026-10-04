@@ -10,7 +10,7 @@ from tests.fakes import FakeUpstream, close_code, create_stream
 def test_chunks_are_forwarded_unchanged(client, upstream):
     stream_id, token = create_stream(client)
 
-    with client.websocket_connect(f"/streams/{stream_id}/ingest?token={token}") as ws:
+    with client.websocket_connect(f"/api/streams/{stream_id}/ingest?token={token}") as ws:
         ws.send_bytes(b"\x1a\x45\xdf\xa3")
         ws.send_bytes(b"second chunk")
 
@@ -21,7 +21,7 @@ def test_chunks_are_forwarded_unchanged(client, upstream):
 def test_stream_receives_the_metadata(client, upstream):
     stream_id, token = create_stream(client)
 
-    with client.websocket_connect(f"/streams/{stream_id}/ingest?token={token}") as ws:
+    with client.websocket_connect(f"/api/streams/{stream_id}/ingest?token={token}") as ws:
         ws.send_bytes(b"x")
 
     url = upstream.urls[0]
@@ -38,7 +38,7 @@ def test_streamer_can_reconnect_to_a_live_stream(client, db_session, upstream):
     db_session.get(Stream, stream_id).status = "live"
     db_session.commit()
 
-    with client.websocket_connect(f"/streams/{stream_id}/ingest?token={token}") as ws:
+    with client.websocket_connect(f"/api/streams/{stream_id}/ingest?token={token}") as ws:
         ws.send_bytes(b"again")
 
     assert upstream.chunks == [b"again"]
@@ -48,7 +48,7 @@ def test_stream_down_closes_with_1011(client, monkeypatch):
     monkeypatch.setattr(ingest, "connect", FakeUpstream(connect_error=ConnectionRefusedError()))
     stream_id, token = create_stream(client)
 
-    assert close_code(client, f"/streams/{stream_id}/ingest?token={token}") == 1011
+    assert close_code(client, f"/api/streams/{stream_id}/ingest?token={token}") == 1011
 
 
 def closed_by_stream(client, monkeypatch, code, reason):
@@ -59,7 +59,7 @@ def closed_by_stream(client, monkeypatch, code, reason):
     )
     stream_id, token = create_stream(client)
 
-    with client.websocket_connect(f"/streams/{stream_id}/ingest?token={token}") as ws:
+    with client.websocket_connect(f"/api/streams/{stream_id}/ingest?token={token}") as ws:
         ws.send_bytes(b"x")
         with pytest.raises(WebSocketDisconnect) as exc:
             ws.receive_bytes()
@@ -105,7 +105,7 @@ def test_send_failure_closes_with_1011(client, monkeypatch):
     monkeypatch.setattr(ingest, "connect", fake)
     stream_id, token = create_stream(client)
 
-    with client.websocket_connect(f"/streams/{stream_id}/ingest?token={token}") as ws:
+    with client.websocket_connect(f"/api/streams/{stream_id}/ingest?token={token}") as ws:
         ws.send_bytes(b"x")
         with pytest.raises(WebSocketDisconnect) as exc:
             ws.receive_bytes()
@@ -116,7 +116,7 @@ def test_send_failure_closes_with_1011(client, monkeypatch):
 def test_first_chunk_marks_the_session_live(client, db_session, upstream):
     stream_id, token = create_stream(client)
 
-    with client.websocket_connect(f"/streams/{stream_id}/ingest?token={token}") as ws:
+    with client.websocket_connect(f"/api/streams/{stream_id}/ingest?token={token}") as ws:
         ws.send_bytes(b"x")
 
     assert db_session.get(Stream, stream_id).status == "live"
@@ -126,7 +126,7 @@ def test_first_chunk_marks_the_session_live(client, db_session, upstream):
 def test_session_stays_created_without_a_chunk(client, db_session, upstream):
     stream_id, token = create_stream(client)
 
-    with client.websocket_connect(f"/streams/{stream_id}/ingest?token={token}"):
+    with client.websocket_connect(f"/api/streams/{stream_id}/ingest?token={token}"):
         pass
 
     assert db_session.get(Stream, stream_id).status == "created"
@@ -135,9 +135,34 @@ def test_session_stays_created_without_a_chunk(client, db_session, upstream):
 def test_text_frame_closes_with_1003(client, upstream):
     stream_id, token = create_stream(client)
 
-    with client.websocket_connect(f"/streams/{stream_id}/ingest?token={token}") as ws:
+    with client.websocket_connect(f"/api/streams/{stream_id}/ingest?token={token}") as ws:
         ws.send_text("hello")
         with pytest.raises(WebSocketDisconnect) as exc:
             ws.receive_bytes()
 
     assert exc.value.code == 1003
+
+
+def test_stop_is_passed_on_and_ends_the_session(client, db_session, upstream):
+    stream_id, token = create_stream(client)
+
+    with client.websocket_connect(f"/api/streams/{stream_id}/ingest?token={token}") as ws:
+        ws.send_bytes(b"x")
+        ws.close(code=4000)
+
+    assert upstream.sent_close == (4000, "Live ended")
+    db_session.expire_all()
+    stream = db_session.get(Stream, stream_id)
+    assert stream.status == "ended"
+    assert stream.ended_at is not None
+
+
+def test_leaving_without_stop_keeps_the_session_live(client, db_session, upstream):
+    stream_id, token = create_stream(client)
+
+    with client.websocket_connect(f"/api/streams/{stream_id}/ingest?token={token}") as ws:
+        ws.send_bytes(b"x")
+        ws.close(code=1001)
+
+    assert upstream.sent_close is None
+    assert db_session.get(Stream, stream_id).status == "live"

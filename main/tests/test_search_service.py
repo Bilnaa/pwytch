@@ -1,12 +1,8 @@
 import httpx
 import pytest
 
-from app.services.search import (
-    SearchSectionError,
-    search_all,
-    search_messages,
-    search_streamers,
-)
+from app.services.satellites import SatelliteError
+from app.services.search import search_all, search_messages, search_streamers
 
 pytestmark = pytest.mark.anyio
 
@@ -66,19 +62,19 @@ async def test_search_messages_calls_the_global_route():
 )
 async def test_search_streamers_rejects_bad_answers(handler):
     async with search_client(handler) as client:
-        with pytest.raises(SearchSectionError):
+        with pytest.raises(SatelliteError):
             await search_streamers(client, "ali")
 
 
 @pytest.mark.parametrize(
     "exception", [httpx.ConnectError("refused"), httpx.ReadTimeout("too slow")]
 )
-async def test_transport_errors_become_section_errors(exception):
+async def test_transport_errors_are_raised(exception):
     def handler(request):
         raise exception
 
     async with search_client(handler) as client:
-        with pytest.raises(SearchSectionError):
+        with pytest.raises(SatelliteError):
             await search_streamers(client, "ali")
 
 

@@ -1,7 +1,8 @@
 import pytest
-from common.identity import CurrentUser, UserIdentity, to_headers
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
+
+from common.identity import CurrentUser, UserIdentity, to_headers
 
 app = FastAPI()
 
@@ -40,7 +41,7 @@ def test_missing_header_returns_401(missing):
     assert response.status_code == 401
 
 
-@pytest.mark.parametrize("user_id", ["abc", "42.0", "+42", "4_2", "-1", "0"])
+@pytest.mark.parametrize("user_id", ["abc", "42.0", "+42", "4_2", "-1", "0", "2147483648"])
 def test_invalid_id_returns_401(user_id):
     response = client.get("/me", headers={**to_headers(user), "X-User-Id": user_id})
 

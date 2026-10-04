@@ -1,5 +1,9 @@
+from datetime import UTC, datetime
+
+import httpx
 import pytest
 from sqlalchemy.exc import IntegrityError
+from sqlalchemy.orm import sessionmaker
 
 from app.models import Stream, User
 from app.models.stream import utcnow
@@ -108,3 +112,123 @@ def test_second_active_stream_is_rejected_by_the_database(db_session, streamer):
 
     with pytest.raises(IntegrityError):
         db_session.commit()
+
+
+ENDED_PLAYLIST = "#EXTM3U\n#EXTINF:4.000000,\nindex0.ts\n#EXT-X-ENDLIST\n"
+LAST_SEGMENT = "Sun, 04 Oct 2026 10:15:30 GMT"
+
+
+def stream_client(running=(), playlists=None, last_modified=LAST_SEGMENT):
+    playlists = playlists or {}
+    calls = []
+
+    def handler(request):
+        calls.append(request.url.path)
+        if request.url.path == "/streams":
+            return httpx.Response(200, json=list(running))
+        stream_id = int(request.url.path.split("/")[2])
+        if stream_id not in playlists:
+            return httpx.Response(404)
+        headers = {"last-modified": last_modified} if last_modified else {}
+        return httpx.Response(200, text=playlists[stream_id], headers=headers)
+
+    client = httpx.AsyncClient(transport=httpx.MockTransport(handler), base_url="http://stream")
+    return client, calls
+
+
+@pytest.fixture
+def live_stream(db_session, streamer):
+    stream = streams_service.create_stream(db_session, streamer, "Title", "Game")
+    streams_service.mark_started(db_session, stream.id, datetime(2026, 10, 4, 10, tzinfo=UTC))
+    return stream
+
+
+@pytest.fixture
+def session_factory(db_session):
+    return sessionmaker(bind=db_session.get_bind(), expire_on_commit=False)
+
+
+def status_of(db_session, stream):
+    db_session.expire_all()
+    return db_session.get(Stream, stream.id)
+
+
+@pytest.mark.anyio
+async def test_end_missed_lives_ends_a_finished_playlist_at_its_last_segment(
+    db_session, live_stream, session_factory
+):
+    client, _ = stream_client(playlists={live_stream.id: ENDED_PLAYLIST})
+
+    async with client:
+        await streams_service.end_missed_lives(client, session_factory)
+
+    stream = status_of(db_session, live_stream)
+    assert stream.status == "ended"
+    assert stream.ended_at.replace(tzinfo=UTC) == datetime(2026, 10, 4, 10, 15, 30, tzinfo=UTC)
+
+
+@pytest.mark.anyio
+async def test_end_missed_lives_skips_a_live_still_running_on_stream(
+    db_session, live_stream, session_factory
+):
+    client, calls = stream_client(
+        running=[live_stream.id], playlists={live_stream.id: ENDED_PLAYLIST}
+    )
+
+    async with client:
+        await streams_service.end_missed_lives(client, session_factory)
+
+    assert status_of(db_session, live_stream).status == "live"
+    assert calls == ["/streams"]
+
+
+@pytest.mark.anyio
+async def test_end_missed_lives_keeps_a_playlist_without_endlist(
+    db_session, live_stream, session_factory
+):
+    client, _ = stream_client(playlists={live_stream.id: "#EXTM3U\n"})
+
+    async with client:
+        await streams_service.end_missed_lives(client, session_factory)
+
+    assert status_of(db_session, live_stream).status == "live"
+
+
+@pytest.mark.anyio
+async def test_end_missed_lives_ends_a_live_without_playlist_at_the_catch_up(
+    db_session, live_stream, session_factory
+):
+    client, _ = stream_client()
+    before = utcnow()
+
+    async with client:
+        await streams_service.end_missed_lives(client, session_factory)
+
+    stream = status_of(db_session, live_stream)
+    assert stream.status == "ended"
+    assert stream.ended_at.replace(tzinfo=UTC) >= before
+
+
+@pytest.mark.anyio
+async def test_end_missed_lives_uses_now_without_last_modified(
+    db_session, live_stream, session_factory
+):
+    client, _ = stream_client(playlists={live_stream.id: ENDED_PLAYLIST}, last_modified=None)
+    before = utcnow()
+
+    async with client:
+        await streams_service.end_missed_lives(client, session_factory)
+
+    stream = status_of(db_session, live_stream)
+    assert stream.status == "ended"
+    assert stream.ended_at.replace(tzinfo=UTC) >= before.replace(microsecond=0)
+
+
+@pytest.mark.anyio
+async def test_end_missed_lives_does_not_call_stream_without_live(db_session, session_factory):
+    client, calls = stream_client()
+
+    async with client:
+        await streams_service.end_missed_lives(client, session_factory)
+
+    assert calls == []

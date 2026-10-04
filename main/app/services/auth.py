@@ -1,5 +1,5 @@
 import re
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 
 import jwt
 from jwt.exceptions import InvalidTokenError
@@ -77,7 +77,7 @@ def authenticate(db: Session, username: str, password: str) -> User:
 
 
 def create_access_token(user: User) -> str:
-    expire = datetime.now(timezone.utc) + timedelta(
+    expire = datetime.now(UTC) + timedelta(
         minutes=auth_settings.access_token_expire_minutes
     )
     payload = {"sub": user.username, "exp": expire}
@@ -102,10 +102,16 @@ def get_user_from_token(db: Session, token: str) -> User:
     return user
 
 
-def make_admin(db: Session, username: str) -> User:
+def get_user_by_username(db: Session, username: str) -> User:
+    # usernames are stored in lowercase
     user = db.scalar(select(User).where(User.username == username.lower()))
     if user is None:
         raise UserNotFoundError(f"User {username!r} not found")
+    return user
+
+
+def make_admin(db: Session, username: str) -> User:
+    user = get_user_by_username(db, username)
     user.role = ADMIN_ROLE
     db.commit()
     return user

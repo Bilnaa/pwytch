@@ -1,6 +1,6 @@
 import os
 import time
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
 import pytest
 from common.events import StreamStarted
@@ -11,7 +11,7 @@ from app.config import settings
 from app.main import app
 from tests.helpers import INFO, ingest_url, wait_until, wait_until_finished
 
-STARTED_AT = datetime(2026, 10, 2, 12, 0, tzinfo=timezone.utc)
+STARTED_AT = datetime(2026, 10, 2, 12, 0, tzinfo=UTC)
 OPEN = "#EXTM3U\n#EXTINF:4.000000,\nindex0.ts\n"
 
 

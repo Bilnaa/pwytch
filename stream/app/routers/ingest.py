@@ -9,6 +9,10 @@ from app.live import Live, LiveInfo, lives
 
 router = APIRouter(tags=["ingest"])
 
+# sent by the client when the streamer clicks Stop. Any other close is a cut: the
+# streamer may come back (closed tab, network, Ctrl+C on channels.py)
+LIVE_ENDED = 4000
+
 
 class Refused(Exception):
     pass
@@ -20,7 +24,7 @@ def get_live(stream_id: int, info: LiveInfo) -> Live:
         try:
             return Live.create(stream_id, settings.lives_dir, info)
         except FileExistsError:
-            raise Refused("Stream id already used")
+            raise Refused("Stream id already used") from None
     if live.ending:
         raise Refused("Stream id already used")
     if live.connected:
@@ -47,6 +51,7 @@ async def ingest(
         return
 
     pipeline = await live.connect()
+    stopped = False
     try:
         await websocket.accept()
         while True:
@@ -55,14 +60,19 @@ async def ingest(
                 websocket.receive_bytes(), settings.signal_timeout_seconds
             )
             await pipeline.write(chunk)
-    except WebSocketDisconnect:
-        pass
+    except WebSocketDisconnect as exc:
+        stopped = exc.code == LIVE_ENDED
     except TimeoutError:
         await websocket.close(code=status.WS_1013_TRY_AGAIN_LATER, reason="No data received")
     except HlsError:
         await websocket.close(code=status.WS_1011_INTERNAL_ERROR, reason="Transcoding failed")
     finally:
-        await asyncio.shield(live.disconnect(settings.reconnect_seconds))
+        disconnecting = live.disconnect(settings.reconnect_seconds)
+        if stopped:
+            # set before the slate starts: _disconnect sees the live is ending and skips it
+            await asyncio.shield(live.end())
+        else:
+            await asyncio.shield(disconnecting)
 
 
 # dev only: same live and same ffmpeg as the WebSocket, main never exposes it
@@ -83,7 +93,7 @@ async def ingest_http(
     try:
         live = get_live(stream_id, LiveInfo(streamer_id, streamer_name, title, game))
     except Refused as exc:
-        raise HTTPException(status.HTTP_409_CONFLICT, str(exc))
+        raise HTTPException(status.HTTP_409_CONFLICT, str(exc)) from None
 
     pipeline = await live.connect()
     try:
@@ -92,7 +102,7 @@ async def ingest_http(
                 await pipeline.write(chunk)
     except ClientDisconnect:
         pass
-    except HlsError:
-        raise HTTPException(status.HTTP_500_INTERNAL_SERVER_ERROR, "Transcoding failed")
+    except HlsError as exc:
+        raise HTTPException(status.HTTP_500_INTERNAL_SERVER_ERROR, "Transcoding failed") from exc
     finally:
         await asyncio.shield(live.disconnect(settings.reconnect_seconds))

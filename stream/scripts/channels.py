@@ -16,11 +16,15 @@ RETRY_SECONDS = 5
 VIDEO = {".mp4", ".mkv", ".mov", ".webm"}
 AUDIO = {".mp3", ".m4a", ".flac", ".wav", ".ogg", ".opus"}
 IMAGE = {".jpg", ".jpeg", ".png", ".webp"}
-FIT = "scale=1920:1080:force_original_aspect_ratio=decrease,pad=1920:1080:(ow-iw)/2:(oh-ih)/2,setsar=1"
+FIT = (
+    "scale=1920:1080:force_original_aspect_ratio=decrease,"
+    "pad=1920:1080:(ow-iw)/2:(oh-ih)/2,setsar=1"
+)
 # every track comes out the same way, so stream reads the whole channel as one MPEG-TS
 # sent in 1080p with little loss: stream encodes it again, at its own VIDEO_HEIGHT
 ENCODING = [
-    "-c:v", "libx264", "-preset", "veryfast", "-crf", "18", "-pix_fmt", "yuv420p", "-r", "30", "-g", "60",
+    "-c:v", "libx264", "-preset", "veryfast", "-crf", "18",
+    "-pix_fmt", "yuv420p", "-r", "30", "-g", "60",
     "-c:a", "aac", "-ar", "48000", "-ac", "2",
 ]
 
@@ -78,7 +82,8 @@ async def render(track: Path, work: Path) -> bool:
     cover = work / "cover.jpg"
     if not await ffmpeg("-i", str(track), "-an", "-frames:v", "1", str(cover), quiet=True):
         images = [f for f in track.parent.iterdir() if f.suffix.lower() in IMAGE]
-        named = [f for f in images if f.stem == track.stem] + [f for f in images if f.stem == "cover"]
+        named = [f for f in images if f.stem == track.stem]
+        named += [f for f in images if f.stem == "cover"]
         cover = named[0] if named else None
     backdrop = work / "backdrop.png"
     if cover:
@@ -193,7 +198,7 @@ async def run(folder: Path, api: str, password: str, work: Path) -> None:
     work = work / name
     work.mkdir()
     # kept in a variable: a task that nothing holds can be dropped before it ends
-    converting = asyncio.create_task(convert(folder, work))
+    _converting = asyncio.create_task(convert(folder, work))
 
     track = None
     while True:
@@ -237,7 +242,7 @@ if __name__ == "__main__":
         "channels_dir", type=Path, nargs="?", default=Path("channels"),
         help="folder with one subfolder per channel (default: channels)",
     )
-    parser.add_argument("--api", default="http://localhost:8000", help="URL of main")
+    parser.add_argument("--api", default="http://localhost:8000/api", help="URL of main's API")
     parser.add_argument(
         "--password", default="radio-password", help="password of the channel accounts"
     )

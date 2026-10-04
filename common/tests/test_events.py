@@ -2,8 +2,16 @@ from datetime import datetime
 from uuid import UUID
 
 import pytest
-from common.events import ChatMessage, PlayerEvent, StreamEnded, StreamStarted
 from pydantic import ValidationError
+
+from common.events import (
+    ChatMessage,
+    ItemType,
+    PlayerEvent,
+    SearchHit,
+    StreamEnded,
+    StreamStarted,
+)
 
 
 def make_stream_started_payload(**overrides):
@@ -193,3 +201,61 @@ def test_chat_message_without_content_is_rejected():
 def test_chat_message_with_invalid_field_is_rejected(overrides):
     with pytest.raises(ValidationError):
         ChatMessage.model_validate(make_chat_message_payload(**overrides))
+
+
+def make_search_hit_payload(**overrides):
+    base = {
+        "event_id": "8c1f5e2a-6b3d-4f7a-9e0c-2d4b6a8f1c35",
+        "item_type": "streamer",
+        "item_id": "42",
+        "query": "zera",
+        "hit_at": "2026-10-03T14:02:11Z",
+    }
+    return {**base, **overrides}
+
+
+def test_search_hit_is_built_from_valid_payload():
+    event = SearchHit.model_validate(make_search_hit_payload())
+
+    assert event.item_type is ItemType.STREAMER
+    assert event.item_id == "42"
+    assert event.query == "zera"
+    assert event.hit_at.tzinfo is not None
+
+
+def test_search_hit_accepts_message_type():
+    event = SearchHit.model_validate(make_search_hit_payload(item_type="message"))
+
+    assert event.item_type is ItemType.MESSAGE
+
+
+def test_search_hit_serializes_item_type_as_its_value():
+    event = SearchHit.model_validate(make_search_hit_payload())
+
+    assert '"item_type":"streamer"' in event.model_dump_json()
+
+
+def test_search_hit_round_trips_through_json():
+    event = SearchHit.model_validate(make_search_hit_payload())
+
+    assert SearchHit.model_validate_json(event.model_dump_json()) == event
+
+
+@pytest.mark.parametrize(
+    "overrides",
+    [
+        {"item_type": "video"},
+        {"item_id": ""},
+        {"query": ""},
+        {"hit_at": "2026-10-03T14:02:11"},
+    ],
+    ids=[
+        "unknown-item-type",
+        "empty-item-id",
+        "empty-query",
+        "hit-at-without-timezone",
+    ],
+)
+def test_search_hit_with_invalid_field_is_rejected(overrides):
+    with pytest.raises(ValidationError):
+        SearchHit.model_validate(make_search_hit_payload(**overrides))

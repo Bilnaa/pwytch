@@ -1,4 +1,4 @@
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
 import pytest
 from common import topics
@@ -11,8 +11,8 @@ from app.services import streams as streams_service
 
 pytestmark = pytest.mark.anyio
 
-STARTED_AT = datetime(2026, 10, 2, 12, tzinfo=timezone.utc)
-ENDED_AT = datetime(2026, 10, 2, 13, tzinfo=timezone.utc)
+STARTED_AT = datetime(2026, 10, 2, 12, tzinfo=UTC)
+ENDED_AT = datetime(2026, 10, 2, 13, tzinfo=UTC)
 
 
 @pytest.fixture
@@ -54,7 +54,7 @@ async def test_stream_started_marks_the_stream_live(mqtt, db_session, stream):
 
     db_session.refresh(stream)
     assert stream.status == "live"
-    assert stream.started_at.replace(tzinfo=timezone.utc) == STARTED_AT
+    assert stream.started_at.replace(tzinfo=UTC) == STARTED_AT
 
 
 async def test_stream_started_corrects_the_time_of_main(mqtt, db_session, stream):
@@ -64,7 +64,7 @@ async def test_stream_started_corrects_the_time_of_main(mqtt, db_session, stream
 
     db_session.refresh(stream)
     assert stream.status == "live"
-    assert stream.started_at.replace(tzinfo=timezone.utc) == STARTED_AT
+    assert stream.started_at.replace(tzinfo=UTC) == STARTED_AT
 
 
 async def test_stream_ended_marks_the_stream_ended(mqtt, db_session, stream):
@@ -73,7 +73,7 @@ async def test_stream_ended_marks_the_stream_ended(mqtt, db_session, stream):
 
     db_session.refresh(stream)
     assert stream.status == "ended"
-    assert stream.ended_at.replace(tzinfo=timezone.utc) == ENDED_AT
+    assert stream.ended_at.replace(tzinfo=UTC) == ENDED_AT
 
 
 async def test_unknown_stream_is_ignored(mqtt, caplog):

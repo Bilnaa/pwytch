@@ -1,14 +1,8 @@
 import httpx
 import pytest
 
-from app.services.lives import (
-    InvalidStreamResponseError,
-    LiveFileNotFoundError,
-    StreamTimeoutError,
-    StreamUnavailableError,
-    get_cache_control,
-    open_live_file,
-)
+from app.services.lives import get_cache_control, open_live_file
+from app.services.satellites import SatelliteRejectedError
 
 pytestmark = pytest.mark.anyio
 
@@ -42,30 +36,7 @@ async def test_open_live_file_relays_content():
     assert live_file.cache_control == "no-cache"
 
 
-@pytest.mark.parametrize(
-    ("handler", "error"),
-    [
-        (lambda request: httpx.Response(404), LiveFileNotFoundError),
-        (lambda request: httpx.Response(500), InvalidStreamResponseError),
-    ],
-)
-async def test_open_live_file_rejects_bad_status(handler, error):
-    async with stream_client(handler) as client:
-        with pytest.raises(error):
-            await open_live_file(client, 3, "index.m3u8")
-
-
-@pytest.mark.parametrize(
-    ("exception", "error"),
-    [
-        (httpx.ConnectError("refused"), StreamUnavailableError),
-        (httpx.ReadTimeout("too slow"), StreamTimeoutError),
-    ],
-)
-async def test_open_live_file_wraps_transport_errors(exception, error):
-    def handler(request):
-        raise exception
-
-    async with stream_client(handler) as client:
-        with pytest.raises(error):
+async def test_open_live_file_rejects_missing_file():
+    async with stream_client(lambda request: httpx.Response(404)) as client:
+        with pytest.raises(SatelliteRejectedError):
             await open_live_file(client, 3, "index.m3u8")

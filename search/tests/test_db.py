@@ -2,10 +2,10 @@ from datetime import UTC, datetime
 from uuid import UUID
 
 import pytest
-from app.infra.config import Settings
-from app.infra.models import IndexedChatMessage, Stream, Streamer
 from sqlalchemy import inspect
 
+from app.infra.config import Settings
+from app.infra.models import IndexedChatMessage, Stream, Streamer
 from tests.factories import FIRST_START, as_utc, reload
 
 MESSAGE_ID = UUID("3f2b8d6a-7c1e-4a95-b0d4-6e8f1a2c5b97")
@@ -68,6 +68,15 @@ async def test_chat_messages_has_index_on_stream_sent_at_message_id(engine):
     assert ["stream_id", "sent_at", "message_id"] in [
         index["column_names"] for index in indexes
     ]
+
+
+@pytest.mark.anyio
+async def test_chat_messages_has_index_on_sent_at_message_id(engine):
+    indexes = await inspect_database(
+        engine, lambda inspector: inspector.get_indexes("chat_messages")
+    )
+
+    assert ["sent_at", "message_id"] in [index["column_names"] for index in indexes]
 
 
 @pytest.mark.anyio

@@ -1,6 +1,6 @@
 import asyncio
 import logging
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
 
 from common import topics
@@ -23,7 +23,7 @@ def end_interrupted_lives(lives_dir: Path) -> list[StreamEnded]:
         if "#EXT-X-ENDLIST" in playlist.read_text():
             continue
         # last write of ffmpeg, the closest we have to the real end of the live
-        ended_at = datetime.fromtimestamp(playlist.stat().st_mtime, timezone.utc)
+        ended_at = datetime.fromtimestamp(playlist.stat().st_mtime, UTC)
         with playlist.open("a") as f:
             f.write("#EXT-X-ENDLIST\n")
         try:

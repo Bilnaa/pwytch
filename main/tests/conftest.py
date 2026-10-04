@@ -11,8 +11,8 @@ from sqlalchemy.pool import StaticPool
 
 from app.db import Base, get_db
 from app.main import app
-from app.services import ingest
-from tests.fakes import FakeUpstream
+from app.services import chat, ingest
+from tests.fakes import FakeChat, FakeUpstream
 
 
 @pytest.fixture
@@ -31,7 +31,7 @@ def db_session():
 @pytest.fixture
 def client(db_session):
     app.dependency_overrides[get_db] = lambda: db_session
-    yield TestClient(app)
+    yield TestClient(app, base_url="http://testserver/api")
     app.dependency_overrides.clear()
 
 
@@ -39,4 +39,11 @@ def client(db_session):
 def upstream(monkeypatch):
     fake = FakeUpstream()
     monkeypatch.setattr(ingest, "connect", fake)
+    return fake
+
+
+@pytest.fixture
+def live_chat(monkeypatch):
+    fake = FakeChat()
+    monkeypatch.setattr(chat, "connect", fake)
     return fake

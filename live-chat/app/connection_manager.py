@@ -6,7 +6,7 @@ from app.models.message_model import MessageModel
 
 WAITING_TIME = 1
 
-class ConnectionManager():
+class ConnectionManager:
     def __init__(self):
         self.rooms : dict[int, set[WebSocket]] = {}
         # A dict of the user, the stream_id associated with it and the time

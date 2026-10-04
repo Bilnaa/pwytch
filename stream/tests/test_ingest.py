@@ -100,6 +100,19 @@ def test_live_ends_after_grace_period(procs, tmp_path):
     assert len(streamer(procs)) == 1
 
 
+def test_stop_ends_the_live_without_the_slate(procs, tmp_path):
+    with TestClient(app) as client:
+        with client.websocket_connect(ingest_url(12)) as ws:
+            (tmp_path / "12" / "index.m3u8").write_text("#EXTM3U\n")
+            ws.send_bytes(b"chunk")
+            ws.close(code=4000)
+        wait_until_finished(12)
+
+    assert (tmp_path / "12" / "index.m3u8").read_text() == "#EXTM3U\n#EXT-X-ENDLIST\n"
+    assert slate(procs) == []
+    assert written(streamer(procs)[0]) == [b"chunk"]
+
+
 def test_http_ingest_goes_through_the_same_live(procs):
     with TestClient(app) as client:
         assert client.post("/streams/6/ingest", content=b"video").status_code == 204

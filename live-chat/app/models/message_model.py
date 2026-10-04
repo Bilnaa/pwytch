@@ -1,7 +1,8 @@
-from datetime import datetime, UTC
+from datetime import UTC, datetime
 from uuid import UUID, uuid4
 
 from pydantic import BaseModel, Field
+
 
 class Author(BaseModel):
     id : int

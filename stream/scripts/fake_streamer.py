@@ -21,7 +21,8 @@ async def main(path: Path, url: str, delay: float) -> None:
                 sent += len(chunk)
                 await asyncio.sleep(delay)
     except ConnectionClosed as exc:
-        print(f"connection closed by the server ({exc.rcvd.code if exc.rcvd else '?'}) after {sent} bytes")
+        code = exc.rcvd.code if exc.rcvd else "?"
+        print(f"connection closed by the server ({code}) after {sent} bytes")
         return
     print(f"sent {sent} bytes to {url}")
 

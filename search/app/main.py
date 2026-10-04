@@ -16,9 +16,7 @@ async def lifespan(app: FastAPI):
     )
     # Même engine et même fabrique de sessions que get_session : un seul pool.
     await init_db(engine)
-    # Gardé dans app.state pour publier plus tard (#101).
     app.state.mqtt = create_mqtt_client(settings, session_factory)
-    # Connexion en tâche de fond : l'API démarre même si le broker est coupé.
     await app.state.mqtt.start()
     yield
     await app.state.mqtt.stop()

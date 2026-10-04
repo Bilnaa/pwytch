@@ -1,6 +1,6 @@
 # main
 
-Point d'entrée unique du front. `main` gère les comptes utilisateurs et sert de passerelle vers les autres services (`stream`, `live-chat`, `replay`, ...), qui ne sont jamais exposés directement. Les données sont stockées dans PostgreSQL.
+Point d'entrée unique du front. `main` sert aussi le build du front (`web/`). `main` gère les comptes utilisateurs et sert de passerelle vers les autres services (`stream`, `live-chat`, `replay`, ...), qui ne sont jamais exposés directement. Les données sont stockées dans PostgreSQL.
 
 ```
 front ──HTTP──> main ──> PostgreSQL (users)
@@ -31,8 +31,15 @@ ou depuis `main/` :
 | `STREAM_TIMEOUT_SECONDS` | `5` | Délai maximum d'attente d'une réponse de `stream`, en secondes |
 | `SEARCH_URL` | `http://localhost:8004` | URL du service `search`, utilisée pour relayer la recherche |
 | `SEARCH_TIMEOUT_SECONDS` | `5` | Délai maximum d'attente d'une réponse de `search`, en secondes |
+| `REPLAY_URL` | `http://localhost:8003` | URL du service `replay` |
+| `REPLAY_TIMEOUT_SECONDS` | `5` | Délai maximum d'attente d'une réponse de `replay`, en secondes |
+| `STATS_URL` | `http://localhost:8006` | URL du service `stats` |
+| `STATS_TIMEOUT_SECONDS` | `5` | Délai maximum d'attente d'une réponse de `stats`, en secondes |
+| `LIVE_CHAT_URL` | `http://localhost:8002` | URL du service `live-chat`, utilisée pour relayer le chat |
+| `LIVE_CHAT_TIMEOUT_SECONDS` | `5` | Délai maximum d'attente d'une réponse de `live-chat`, en secondes |
 | `MQTT_HOST` | `localhost` | Hôte du broker MQTT (`mqtt` dans le docker-compose) |
 | `MQTT_PORT` | `1883` | Port du broker MQTT |
+| `FRONTEND_DIR` | `../web/dist` | Dossier du build du front servi par `main`, relatif à `main/`. S'il n'existe pas, `main` démarre sans front |
 | `FRONTEND_ORIGIN` | `http://localhost:5173` | Origine du front autorisée à appeler `main` depuis le navigateur (CORS), ex. `https://app.example.com`, sans `/` final |
 
 Les variables se mettent dans `main/.env` (copier `.env.example`). Les valeurs de `.env.example` correspondent à celles par défaut du `docker-compose.yml`. Remplacer `JWT_SECRET_KEY=change-me` par une vraie clé : quiconque la connaît peut fabriquer un jeton valide pour n'importe quel compte.
@@ -41,13 +48,17 @@ En image Docker, le build se lance depuis la racine du repo, car l'image embarqu
 
     docker build -f main/Dockerfile -t main .
 
+L'image build aussi le front (`web/`) dans une première étape Node et le copie dans `/web/dist`, là où `FRONTEND_DIR` pointe par défaut.
+
 Les tables sont créées au démarrage (`Base.metadata.create_all`) si elles n'existent pas. Il n'y a pas encore de migrations : une table existante n'est jamais modifiée, il faut la supprimer à la main si son modèle change.
 
 ## Endpoints
 
+Toute l'API est sous `/api` (ex. `/api/auth/login`, `ws://localhost:8000/api/streams/{stream_id}/ingest`). Les chemins de cette section sont donnés sans ce préfixe. Les autres URL sont celles du front : `app.frontend()` de FastAPI sert les fichiers de `FRONTEND_DIR`, et renvoie `index.html` à une navigation du navigateur sur une URL inconnue (pour react-router). Une requête `fetch` vers une route inconnue reçoit toujours un `404` JSON.
+
 | Chemin           | Protocole | Rôle                                  |
 |------------------|-----------|---------------------------------------|
-| `/`              | HTTP GET  | Renvoie `{"service": "main"}`         |
+| `/` (soit `/api`) | HTTP GET  | Renvoie `{"service": "main"}`         |
 | `/health`        | HTTP GET  | Renvoie `{"status": "ok"}`            |
 | `/auth/register` | HTTP POST | Crée un compte utilisateur            |
 | `/auth/login`    | HTTP POST | Connecte un utilisateur, renvoie un jeton JWT |
@@ -56,10 +67,12 @@ Les tables sont créées au démarrage (`Base.metadata.create_all`) si elles n'e
 | `/streams`       | HTTP GET  | Liste les sessions, filtrable par statut |
 | `/streams/{id}`  | HTTP GET  | Renvoie le détail d'une session       |
 | `/streams/{stream_id}/ingest` | WebSocket | Reçoit le flux vidéo du streamer et le relaie à `stream` (jeton en query) |
+| `/streams/{stream_id}/chat` | WebSocket | Relaie le chat du live avec `live-chat` dans les deux sens (jeton facultatif en query, sans jeton : lecture seule) |
 | `/lives/{stream_id}/{filename}` | HTTP GET | Relaie la playlist ou un segment HLS d'un live depuis `stream` |
+| `/users/{username}` | HTTP GET | Profil public d'un utilisateur (`id`, `username`, `display_name`), 404 s'il n'existe pas |
 | `/search` | HTTP GET | Cherche des streamers et des messages du chat de tous les lives via `search` |
 
-La doc interactive est sur `http://localhost:8000/docs`.
+La doc interactive est sur `http://localhost:8000/api/docs`.
 
 ### `POST /auth/register`
 
@@ -80,13 +93,15 @@ Réponses :
 |-------|-----------------------------------------------------------------------|
 | `201` | Compte créé. Renvoie un `UserResponse` : `{"id": 1, "username": "john_doe", "display_name": "John_Doe", "role": "user"}` |
 | `409` | Le `username` est déjà pris, quelle que soit la casse (`Username already registered`) |
-| `422` | Corps invalide (champ manquant, trop court, caractère interdit, ...)  |
+| `422` | Corps invalide (champ manquant, trop court, caractère interdit, nom réservé, ...)  |
 
 Le mot de passe n'est jamais stocké en clair : il est haché avec Argon2id via [pwdlib](https://frankie567.github.io/pwdlib/) (`PasswordHash.recommended()`, comme dans le [tuto sécurité de FastAPI](https://fastapi.tiangolo.com/tutorial/security/oauth2-jwt/#hash-and-verify-the-passwords)). La chaîne stockée contient l'algorithme, les paramètres, le sel et le hash (ex. `$argon2id$v=19$m=65536,t=3,p=4$<sel>$<hash>`) : si on change les paramètres, les anciens mots de passe restent vérifiables. Tout nouveau compte a le rôle `user`.
 
 La réponse est filtrée par le schéma `UserResponse` (`response_model`) : seuls ses champs sont renvoyés, jamais `hashed_password`.
 
 Le `username` est l'identifiant : il est enregistré en minuscules, donc `alice` et `Alice` sont le même compte (le second reçoit `409`). L'orthographe saisie est gardée dans `display_name`, c'est elle qu'on affiche (chat, profil, ...).
+
+Le front met la chaîne d'un streamer à `/{username}`, comme Twitch. Les noms qui sont des pages du front (actuelles ou prévues) sont donc refusés avec un `422` (`This username is reserved`), quelle que soit la casse : `admin`, `api`, `assets`, `login`, `search`, `stats`, ... La liste est `RESERVED_USERNAMES` dans `app/schemas/auth.py` : y ajouter le nom d'une nouvelle page du front.
 
 ### `POST /auth/login`
 
@@ -194,6 +209,8 @@ Les refus sont envoyés après l'ouverture de la connexion : avant, le navigateu
 
 Quand le streamer se déconnecte, la connexion vers `stream` est fermée proprement. Une session `live` peut être rouverte : c'est la reconnexion du streamer pendant la période de grâce de `stream`.
 
+Pour terminer son live (« Stop »), le front ferme la WebSocket avec le code `4000` (`Live ended`). `main` ferme alors la connexion vers `stream` avec `4000` aussi : pas d'écran « Signal lost », le live se termine tout de suite. La session passe en `ended` (`cancelled` si elle était encore `created`) sans attendre `stream/ended`, le streamer peut donc relancer un live aussitôt (pas de `409`). Toute autre fermeture (onglet fermé, coupure) reste une coupure.
+
 `main` traduit les codes de fermeture de `stream` (voir `stream/README.md`) :
 
 | `stream` envoie | `main` envoie | Effet sur la session |
@@ -222,11 +239,17 @@ Dès le premier morceau relayé à `stream`, la session passe de `created` à `l
 | Code | Cas |
 |------|-----|
 | 200  | Fichier relayé |
-| 404  | Live ou fichier inexistant |
+| 404  | Live ou fichier inexistant (réponse de `stream` renvoyée telle quelle) |
 | 422  | `stream_id` ou `filename` invalide |
 | 502  | `stream` a renvoyé une réponse inattendue |
 | 503  | `stream` est injoignable |
 | 504  | `stream` n'a pas répondu à temps |
+
+Les erreurs viennent du helper commun, voir « Appeler un satellite ».
+
+### `GET /users/{username}`
+
+Pas besoin d'être connecté. Renvoie `{"id", "username", "display_name"}` (pas le rôle), ou `404` (`User not found`). La casse ne compte pas : `/users/Alice` trouve `alice`. Le front s'en sert pour la page d'une chaîne (`/{username}`) : 404 si le compte n'existe pas, « hors ligne » s'il existe sans live.
 
 ### `GET /search?q=`
 
@@ -256,6 +279,39 @@ Les deux appels à `search` partent en parallèle :
 Tant que #150 n'est pas mergé, `search` répond 404 sur `/search/messages` : `messages` est toujours vide, et se remplira sans changement côté `main` après le merge.
 
 Un `q` que `search` refuse alors que `main` l'accepte (vide après normalisation, par exemple des accents seuls) donne aussi des sections vides.
+
+### Appeler un satellite
+
+Chaque satellite a son `httpx.AsyncClient`, créé dans le `lifespan` avec l'URL et le timeout de `.env`, et sa dépendance : `get_stream_client`, `get_search_client`, `get_replay_client`, `get_stats_client` (`app/dependencies.py`).
+
+`app/services/satellites.py` fait l'appel et traite les erreurs une seule fois pour toutes les routes :
+
+```python
+from app.dependencies import get_optional_user, get_replay_client
+from app.services import satellites
+
+REPLAYS = TypeAdapter(list[Replay])
+
+async def list_replays(client: httpx.AsyncClient, user: User | None) -> list[Replay]:
+    response = await satellites.send(client, "GET", "/replays", user=user)
+    return satellites.parse(response, REPLAYS)
+```
+
+- `send(client, method, path, *, user=None, params=None, json=None, stream=False)` renvoie la réponse si son code est 2xx. Avec `stream=True`, le corps n'est pas chargé en mémoire (relais HLS) : penser à fermer la réponse
+- `parse(response, adapter)` valide le corps JSON avec un `TypeAdapter`
+- Avec un `user`, les headers `X-User-Id`, `X-User-Name` (`username`, en minuscules) et `X-User-Role` de `common.identity` sont ajoutés. Pour une route publique qui veut quand même les envoyer quand l'utilisateur est connecté, la dépendance `get_optional_user` renvoie le `User`, ou `None` sans jeton (un jeton invalide reste un `401`)
+
+Les erreurs sont des exceptions, transformées en réponse par les handlers de `app/main.py` : la route n'a rien à attraper.
+
+| Le satellite                         | Exception                       | `main` renvoie |
+|--------------------------------------|---------------------------------|----------------|
+| répond 4xx                           | `SatelliteRejectedError`        | La même réponse : code, corps et `Content-Type` (Starlette ajoute `; charset=utf-8` à un type `text/*` qui n'a pas de charset) |
+| répond un autre code (3xx, 5xx)      | `InvalidSatelliteResponseError` | `502 {"detail": "Invalid answer from service"}` |
+| renvoie un corps refusé par `parse`  | `InvalidSatelliteResponseError` | `502 {"detail": "Invalid answer from service"}` |
+| est injoignable                      | `SatelliteUnavailableError`     | `503 {"detail": "Service is unavailable"}` |
+| ne répond pas avant le timeout       | `SatelliteTimeoutError`         | `504 {"detail": "Service timed out"}` |
+
+Toutes héritent de `SatelliteError`, pour une route qui veut les traiter elle-même (la recherche renvoie une section vide, par exemple). Le détail (URL, code reçu) est journalisé, il n'est pas renvoyé au front.
 
 ### Protéger une route
 
@@ -306,6 +362,17 @@ Les handlers sont dans `app/services/streams.py`. Chaque event ouvre sa propre s
 
 Le client est aussi dans `app.state.mqtt` pour publier depuis une route.
 
+### `stream/ended` manqué
+
+Si `main` est arrêté ou si le broker est coupé quand `stream` publie `stream/ended`, l'event est perdu et la session resterait `live` pour toujours (et sur l'accueil du front). `main` rattrape donc ces fins lui-même : toutes les 30 s (`end_missed_lives` dans `app/services/streams.py`, lancé dans le `lifespan`), s'il a des sessions `live` :
+
+1. il demande à `stream` les lives en cours (`GET /streams`) : une session qui y est n'est pas touchée
+2. pour les autres, il lit la playlist (`GET /lives/{stream_id}/index.m3u8`). Si elle se termine par `#EXT-X-ENDLIST`, la session passe en `ended` via `mark_ended`
+3. `ended_at` est le `Last-Modified` de la playlist, c'est-à-dire l'heure du dernier segment écrit, pas l'heure du rattrapage (même valeur que le `stream/ended` envoyé par `stream` après un redémarrage). Sans ce header, c'est l'heure du rattrapage
+4. si la playlist n'existe pas (`404`), la session passe aussi en `ended`, avec l'heure du rattrapage. Le live n'est plus dans `GET /streams`, il est donc fini côté `stream`, mais avant son premier segment : par exemple `stream` tué juste après `stream/started`. Ce live n'a pas de playlist, `stream` ne le voit pas au redémarrage et n'envoie jamais `stream/ended`. Sans ce cas, la session resterait `live` et le streamer ne pourrait plus créer de live (`409`)
+
+Une playlist sans `#EXT-X-ENDLIST` (live en train de se terminer) ne change rien : la session est revue au passage suivant. Si `stream` ne répond pas, répond une erreur ou un autre code `4xx`, le passage est abandonné, l'erreur est journalisée, et il est refait 30 s plus tard. Un `stream/ended` reçu en retard après le rattrapage est ignoré, la session n'étant plus `live`.
+
 ## Base de données
 
 Table `users` :
@@ -334,25 +401,25 @@ Les tests utilisent une base SQLite en mémoire, recréée pour chaque test : il
 Avec le service lancé :
 
     # créer un compte : username "john_doe", display_name "John_Doe"
-    curl -i -X POST http://localhost:8000/auth/register \
+    curl -i -X POST http://localhost:8000/api/auth/register \
       -H 'Content-Type: application/json' \
       -d '{"username": "John_Doe", "password": "MyPassword123"}'
 
     # le même pseudo, même avec une autre casse, renvoie 409
-    curl -i -X POST http://localhost:8000/auth/register \
+    curl -i -X POST http://localhost:8000/api/auth/register \
       -H 'Content-Type: application/json' \
       -d '{"username": "john_doe", "password": "MyPassword123"}'
 
     # se connecter (formulaire, pas JSON) et garder le jeton
-    TOKEN=$(curl -s -X POST http://localhost:8000/auth/login \
+    TOKEN=$(curl -s -X POST http://localhost:8000/api/auth/login \
       -d 'username=john_doe&password=MyPassword123' | jq -r .access_token)
 
     # route protégée : 200 avec le jeton, 401 sans
-    curl -i http://localhost:8000/auth/me -H "Authorization: Bearer $TOKEN"
-    curl -i http://localhost:8000/auth/me
+    curl -i http://localhost:8000/api/auth/me -H "Authorization: Bearer $TOKEN"
+    curl -i http://localhost:8000/api/auth/me
 
     # mauvais mot de passe : 401
-    curl -i -X POST http://localhost:8000/auth/login \
+    curl -i -X POST http://localhost:8000/api/auth/login \
       -d 'username=john_doe&password=wrong-password'
 
 ## Limites
@@ -361,7 +428,8 @@ Avec le service lancé :
 - Pas de limite sur le nombre de tentatives de connexion (pas de protection contre le brute force).
 - `require_admin` n'est branché sur aucune route : les routes `/stats` n'existent pas encore.
 - Pas de route pour retirer le rôle `admin` : il faut modifier la colonne `role` en base.
+- Une session dont le `stream/ended` a été perdu reste `live` jusqu'à 30 s de plus, le temps du prochain rattrapage (voir « `stream/ended` manqué »).
 - Pas de migrations : les tables sont créées au démarrage, un changement de modèle demande de recréer la table.
 - Si PostgreSQL n'est pas prêt quand l'API démarre, le `create_all` échoue et l'API plante : il faut la relancer.
-- Seuls `stream` (ingest et HLS) et `search` sont relayés : le relais vers `live-chat`, `replay`, ... n'est pas encore implémenté.
+- Seuls `stream` (ingest et HLS), `search` et le chat de `live-chat` sont relayés : le relais vers `replay`, ... n'est pas encore implémenté.
 - Les ids de session viennent de l'auto-incrément PostgreSQL, et `stream` refuse un id dont le dossier `lives/{stream_id}/` existe déjà (`Stream id already used`). Si la base est vidée (volume `postgres-data` supprimé) sans vider `stream/lives/`, les nouvelles sessions reprennent à 1 et leurs lives sont refusés : il faut vider les deux ensemble.

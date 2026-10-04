@@ -1,6 +1,7 @@
 from typing import Annotated
 
 import httpx
+from common.mqtt import MqttClient
 from fastapi import Depends, HTTPException, Request, WebSocket, WebSocketException, status
 from fastapi.security import OAuth2PasswordBearer
 from sqlalchemy.orm import Session
@@ -9,10 +10,12 @@ from app.db import get_db
 from app.models import Stream, User
 from app.models.user import ADMIN_ROLE
 from app.services import auth as auth_service
+from app.services import chat as chat_service
 from app.services import ingest as ingest_service
 from app.services import streams as streams_service
 
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="auth/login")
+optional_oauth2_scheme = OAuth2PasswordBearer(tokenUrl="auth/login", auto_error=False)
 
 UNAUTHENTICATED = 4401
 FORBIDDEN = 4403
@@ -34,6 +37,15 @@ def get_current_user(
         ) from exc
 
 
+def get_optional_user(
+    token: Annotated[str | None, Depends(optional_oauth2_scheme)],
+    db: Annotated[Session, Depends(get_db)],
+) -> User | None:
+    if token is None:
+        return None
+    return get_current_user(token, db)
+
+
 def require_admin(
     current_user: Annotated[User, Depends(get_current_user)],
 ) -> User:
@@ -50,6 +62,22 @@ def get_stream_client(request: Request) -> httpx.AsyncClient:
 
 def get_search_client(request: Request) -> httpx.AsyncClient:
     return request.app.state.search_client
+
+
+def get_replay_client(request: Request) -> httpx.AsyncClient:
+    return request.app.state.replay_client
+
+
+def get_stats_client(request: Request) -> httpx.AsyncClient:
+    return request.app.state.stats_client
+
+
+def get_live_chat_client(request: Request) -> httpx.AsyncClient:
+    return request.app.state.live_chat_client
+
+
+def get_mqtt(request: Request) -> MqttClient:
+    return request.app.state.mqtt
 
 
 async def get_ingest_stream(
@@ -70,3 +98,18 @@ async def get_ingest_stream(
         raise WebSocketException(code=FORBIDDEN, reason=str(exc)) from exc
     except ingest_service.StreamOverError as exc:
         raise WebSocketException(code=ALREADY_ENDED, reason=str(exc)) from exc
+
+
+async def get_chat_user(
+    websocket: WebSocket,
+    stream_id: int,
+    db: Annotated[Session, Depends(get_db)],
+    token: str | None = None,
+) -> User | None:
+    await websocket.accept()
+    try:
+        return chat_service.authorize(db, token, stream_id)
+    except auth_service.InvalidCredentialsError as exc:
+        raise WebSocketException(code=UNAUTHENTICATED, reason="Not authenticated") from exc
+    except streams_service.StreamNotFoundError as exc:
+        raise WebSocketException(code=NOT_FOUND, reason=str(exc)) from exc
