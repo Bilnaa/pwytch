@@ -1,12 +1,12 @@
 import logging
 
 import pytest
-from app.indexer import on_stream_ended, on_stream_started
-from app.infra.db import get_session
-from app.main import app
 from common.events import ItemType
 from common.mqtt import NotConnectedError
 
+from app.indexer import on_stream_ended, on_stream_started
+from app.infra.db import get_session
+from app.main import app
 from tests.factories import (
     FIRST_START,
     SECOND_START,

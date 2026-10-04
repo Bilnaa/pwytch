@@ -11,11 +11,22 @@ services:
             - "5432:5432"
         volumes:
             - postgres-data:/var/lib/postgresql
+            - ./infra/postgres:/docker-entrypoint-initdb.d:ro
+        healthcheck:
+            test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER:-postgres}"]
+            interval: 5s
+            timeout: 3s
+            retries: 10
 
     redis:
         image: redis:8.10.2
         ports:
             - "6379:6379"
+        healthcheck:
+            test: ["CMD", "redis-cli", "ping"]
+            interval: 5s
+            timeout: 3s
+            retries: 10
 
     mqtt:
         image: eclipse-mosquitto:2.1.2-alpine
@@ -23,6 +34,11 @@ services:
             - "1883:1883"
         volumes:
             - ./infra/mosquitto:/mosquitto/config:ro
+        healthcheck:
+            test: ["CMD", "mosquitto_sub", "-t", "$$SYS/broker/uptime", "-C", "1", "-W", "3"]
+            interval: 5s
+            timeout: 5s
+            retries: 10
 
 volumes:
     postgres-data:

@@ -1,7 +1,7 @@
 import asyncio
 import logging
 from dataclasses import asdict, dataclass
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
 
 from common import topics
@@ -67,7 +67,7 @@ class Live:
         await self.pipeline.start(self.size)
         if self.started_at is None:
             # only the first ffmpeg starts the live, a reconnection doesn't
-            self.started_at = datetime.now(timezone.utc)
+            self.started_at = datetime.now(UTC)
             started = StreamStarted(
                 stream_id=self.stream_id, started_at=self.started_at, **asdict(self.info)
             )
@@ -116,7 +116,7 @@ class Live:
             with playlist.open("a") as f:
                 f.write("#EXT-X-ENDLIST\n")
         if self.started_at:
-            ended_at = datetime.now(timezone.utc)
+            ended_at = datetime.now(UTC)
             await events.publish(
                 topics.STREAM_ENDED,
                 StreamEnded(

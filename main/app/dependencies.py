@@ -1,6 +1,7 @@
 from typing import Annotated
 
 import httpx
+from common.mqtt import MqttClient
 from fastapi import Depends, HTTPException, Request, WebSocket, WebSocketException, status
 from fastapi.security import OAuth2PasswordBearer
 from sqlalchemy.orm import Session
@@ -68,6 +69,14 @@ def get_replay_client(request: Request) -> httpx.AsyncClient:
 
 def get_stats_client(request: Request) -> httpx.AsyncClient:
     return request.app.state.stats_client
+
+
+def get_live_chat_client(request: Request) -> httpx.AsyncClient:
+    return request.app.state.live_chat_client
+
+
+def get_mqtt(request: Request) -> MqttClient:
+    return request.app.state.mqtt
 
 
 async def get_ingest_stream(

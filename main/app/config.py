@@ -1,5 +1,6 @@
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
+
 class DbSettings(BaseSettings):
     model_config = SettingsConfigDict(env_file=".env", extra="ignore")
 
@@ -43,6 +44,13 @@ class StatsSettings(BaseSettings):
     stats_url: str = "http://localhost:8006"
     stats_timeout_seconds: float = 5
 
+
+class LiveChatSettings(BaseSettings):
+    model_config = SettingsConfigDict(env_file=".env", extra="ignore")
+
+    live_chat_url: str = "http://localhost:8002"
+    live_chat_timeout_seconds: float = 5
+
 class MqttSettings(BaseSettings):
     model_config = SettingsConfigDict(env_file=".env", extra="ignore")
     mqtt_host: str = "localhost"
@@ -60,5 +68,6 @@ stream_settings = StreamSettings()
 search_settings = SearchSettings()
 replay_settings = ReplaySettings()
 stats_settings = StatsSettings()
+live_chat_settings = LiveChatSettings()
 mqtt_settings = MqttSettings()
 cors_settings = CorsSettings()

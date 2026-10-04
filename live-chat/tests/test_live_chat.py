@@ -4,9 +4,8 @@ from fastapi.testclient import TestClient
 from starlette.websockets import WebSocketDisconnect
 
 from app.connection_manager import ConnectionManager, connectionManager
-from app.models.message_model import MessageModel, Author
-
 from app.main import app
+from app.models.message_model import Author, MessageModel
 
 client = TestClient(app)
 
@@ -24,12 +23,17 @@ def test_live_chat_fail_invalid_username():
     with client.websocket_connect("/streams/1/chat?user_id=1&username=%20%20") as ws:
         ws.send_json({"content":"test"})
         reply = ws.receive_json()
-        assert reply == {"type": "error", "code": "READ_ONLY", "detail": "Utilisateur non identifié"}
+        assert reply == {
+            "type": "error",
+            "code": "READ_ONLY",
+            "detail": "Utilisateur non identifié",
+        }
 
 def test_live_chat_fail_dead_socket():
     fake_socket = FakeSocket()
     dead_socket = DeadSocket()
-    message = MessageModel(stream_id=1, author=Author(id=1, username="user_test"), content="test_message")
+    author = Author(id=1, username="user_test")
+    message = MessageModel(stream_id=1, author=author, content="test_message")
     manager = ConnectionManager()
     manager.rooms = {1: {fake_socket, dead_socket}}
     asyncio.run(manager.broadcast(1, message))
@@ -61,7 +65,11 @@ def test_live_chat_database_down(database_down, monkeypatch):
     monkeypatch.setattr(connectionManager, "broadcast", spy_broadcast)
     with client.websocket_connect("/streams/1/chat?user_id=1&username=author") as author:
         author.send_json({"content": "hello"})
-        assert author.receive_json() == {"type": "error", "code": "MESSAGE_NOT_SAVED", "detail": "Le message n'a pas pu être enregistré"}
+        assert author.receive_json() == {
+            "type": "error",
+            "code": "MESSAGE_NOT_SAVED",
+            "detail": "Le message n'a pas pu être enregistré",
+        }
 
         # the WebSocket is still open: the author can keep sending
         author.send_json({"content": ""})

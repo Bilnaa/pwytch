@@ -9,6 +9,7 @@ from fastapi.responses import JSONResponse, Response
 from app import models  # noqa: F401  (registers tables on Base.metadata)
 from app.config import (
     cors_settings,
+    live_chat_settings,
     replay_settings,
     search_settings,
     stats_settings,
@@ -41,11 +42,16 @@ async def lifespan(app: FastAPI):
         base_url=stats_settings.stats_url,
         timeout=stats_settings.stats_timeout_seconds,
     )
+    app.state.live_chat_client = httpx.AsyncClient(
+        base_url=live_chat_settings.live_chat_url,
+        timeout=live_chat_settings.live_chat_timeout_seconds,
+    )
     app.state.mqtt = create_mqtt_client()
     # connects in the background: the API starts even if the broker is down
     await app.state.mqtt.start()
     yield
     await app.state.mqtt.stop()
+    await app.state.live_chat_client.aclose()
     await app.state.stats_client.aclose()
     await app.state.replay_client.aclose()
     await app.state.search_client.aclose()

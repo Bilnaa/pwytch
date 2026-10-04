@@ -1,11 +1,10 @@
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 
 import jwt
 import pytest
-from sqlalchemy import update
-
 from pwdlib import PasswordHash
 from pwdlib.hashers.argon2 import Argon2Hasher
+from sqlalchemy import update
 
 from app.config import auth_settings
 from app.models import User
@@ -141,8 +140,8 @@ def test_create_access_token_contains_username_and_expiry(db_session):
     )
 
     assert payload["sub"] == "alice"
-    expire = datetime.fromtimestamp(payload["exp"], timezone.utc)
-    expected = datetime.now(timezone.utc) + timedelta(
+    expire = datetime.fromtimestamp(payload["exp"], UTC)
+    expected = datetime.now(UTC) + timedelta(
         minutes=auth_settings.access_token_expire_minutes
     )
     assert abs(expire - expected) < timedelta(seconds=10)
@@ -157,7 +156,7 @@ def test_get_user_from_token(db_session):
 def test_get_user_from_token_rejects_expired_token(db_session):
     register(db_session, "alice", "s3cret-pass")
     token = jwt.encode(
-        {"sub": "alice", "exp": datetime.now(timezone.utc) - timedelta(minutes=1)},
+        {"sub": "alice", "exp": datetime.now(UTC) - timedelta(minutes=1)},
         auth_settings.jwt_secret_key,
         algorithm=auth_settings.jwt_algorithm,
     )
@@ -181,7 +180,7 @@ def test_get_user_from_token_rejects_token_without_exp(db_session):
 def test_get_user_from_token_rejects_other_secret(db_session):
     register(db_session, "alice", "s3cret-pass")
     token = jwt.encode(
-        {"sub": "alice", "exp": datetime.now(timezone.utc) + timedelta(minutes=1)},
+        {"sub": "alice", "exp": datetime.now(UTC) + timedelta(minutes=1)},
         "another-secret-key-at-least-32-bytes",
         algorithm="HS256",
     )
@@ -192,7 +191,7 @@ def test_get_user_from_token_rejects_other_secret(db_session):
 
 def test_get_user_from_token_rejects_token_without_sub(db_session):
     token = jwt.encode(
-        {"exp": datetime.now(timezone.utc) + timedelta(minutes=1)},
+        {"exp": datetime.now(UTC) + timedelta(minutes=1)},
         auth_settings.jwt_secret_key,
         algorithm=auth_settings.jwt_algorithm,
     )

@@ -1,5 +1,5 @@
 import re
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 
 import jwt
 from jwt.exceptions import InvalidTokenError
@@ -77,7 +77,7 @@ def authenticate(db: Session, username: str, password: str) -> User:
 
 
 def create_access_token(user: User) -> str:
-    expire = datetime.now(timezone.utc) + timedelta(
+    expire = datetime.now(UTC) + timedelta(
         minutes=auth_settings.access_token_expire_minutes
     )
     payload = {"sub": user.username, "exp": expire}

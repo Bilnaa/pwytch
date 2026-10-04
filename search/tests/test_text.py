@@ -1,4 +1,5 @@
 import pytest
+
 from app.helpers.text import normalize
 
 

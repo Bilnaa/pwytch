@@ -1,8 +1,8 @@
 import httpx
 import pytest
 
-from app.main import app
 from app.dependencies import get_stream_client
+from app.main import app
 
 
 def use_stream(handler):
