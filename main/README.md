@@ -57,7 +57,7 @@ Les tables sont créées au démarrage (`Base.metadata.create_all`) si elles n'e
 | `/streams/{id}`  | HTTP GET  | Renvoie le détail d'une session       |
 | `/streams/{stream_id}/ingest` | WebSocket | Reçoit le flux vidéo du streamer et le relaie à `stream` (jeton en query) |
 | `/lives/{stream_id}/{filename}` | HTTP GET | Relaie la playlist ou un segment HLS d'un live depuis `stream` |
-| `/search/streamers` | HTTP GET | Relaie la recherche de streamers vers `search` |
+| `/search` | HTTP GET | Cherche des streamers et des messages du chat d'un live via `search` |
 
 La doc interactive est sur `http://localhost:8000/docs`.
 
@@ -228,25 +228,35 @@ Dès le premier morceau relayé à `stream`, la session passe de `created` à `l
 | 503  | `stream` est injoignable |
 | 504  | `stream` n'a pas répondu à temps |
 
-### `GET /search/streamers?q=&page=&size=`
+### `GET /search?q=&stream_id=`
 
-`main` relaie la recherche vers `search` (voir `search/README.md`) et renvoie sa réponse, validée par le schéma `StreamerPage`. Pas besoin d'être connecté. Le diagramme de séquence est dans `docs/main-search-sequences.md`.
+Une seule barre de recherche, une seule route : `main` interroge `search` (voir `search/README.md`) et assemble la réponse. Pas besoin d'être connecté.
 
-| Paramètre | Règle                          | Défaut |
-|-----------|--------------------------------|--------|
-| `q`       | obligatoire, 2 à 100 caractères | —      |
-| `page`    | entier ≥ 1                     | `1`    |
-| `size`    | entier entre 1 et 50           | `20`   |
+| Paramètre   | Règle                                     | Défaut |
+|-------------|-------------------------------------------|--------|
+| `q`         | obligatoire, 2 à 100 caractères           | —      |
+| `stream_id` | optionnel, entier entre 1 et 2 147 483 647 | aucun  |
 
-`main` refuse lui-même un paramètre hors bornes (422), sans appeler `search`. Les règles plus fines (`q` fait d'espaces ou vide après normalisation) restent dans `search` : son 422 est renvoyé avec le même `detail`.
+Les deux appels à `search` partent en parallèle :
+
+| Section     | Appel à `search`                                | Contenu |
+|-------------|-------------------------------------------------|---------|
+| `streamers` | `GET /search/streamers?q=`                      | Les 20 premiers streamers trouvés, en live d'abord |
+| `messages`  | `GET /search/streams/{stream_id}/messages?q=`   | Les 10 messages les plus récents du chat du live qui contiennent `q`. Sans `stream_id`, la section est vide et `search` n'est pas appelé |
+
+```json
+{
+  "streamers": [{"streamer_id": 42, "streamer_name": "Célèste", "last_title": "Speedrun any%", "last_game": "Celeste", "is_live": true, "live_stream_id": 7}],
+  "messages": [{"message_id": "3f2b8d6a-7c1e-4a95-b0d4-6e8f1a2c5b97", "stream_id": 7, "author_name": "Célèste", "content": "GG WP !", "sent_at": "2026-10-02T20:14:03Z"}]
+}
+```
 
 | Code | Cas |
 |------|-----|
-| 200  | `{"items": [...], "total", "page", "size"}`, `items` vide si rien ne correspond |
-| 422  | Paramètre invalide, refusé par `main` ou par `search` |
-| 502  | `search` a renvoyé une réponse inattendue |
-| 503  | `search` est injoignable |
-| 504  | `search` n'a pas répondu à temps |
+| 200  | Toujours, dès que les paramètres sont valides. Une section dont l'appel échoue (`search` injoignable, trop lent, code autre que 200, réponse invalide) revient vide et l'erreur est journalisée ; l'autre section est quand même renvoyée |
+| 422  | `q` absent, trop court ou trop long, `stream_id` invalide. `search` n'est pas appelé |
+
+Un `q` que `search` refuse alors que `main` l'accepte (fait d'espaces, ou vide après normalisation) donne aussi des sections vides.
 
 ### Protéger une route
 
@@ -354,5 +364,5 @@ Avec le service lancé :
 - Pas de route pour retirer le rôle `admin` : il faut modifier la colonne `role` en base.
 - Pas de migrations : les tables sont créées au démarrage, un changement de modèle demande de recréer la table.
 - Si PostgreSQL n'est pas prêt quand l'API démarre, le `create_all` échoue et l'API plante : il faut la relancer.
-- Seuls `stream` (ingest et HLS) et la recherche de streamers de `search` sont relayés : le relais vers `live-chat`, `replay`, la recherche dans le chat, ... n'est pas encore implémenté.
+- Seuls `stream` (ingest et HLS) et `search` sont relayés : le relais vers `live-chat`, `replay`, ... n'est pas encore implémenté.
 - Les ids de session viennent de l'auto-incrément PostgreSQL, et `stream` refuse un id dont le dossier `lives/{stream_id}/` existe déjà (`Stream id already used`). Si la base est vidée (volume `postgres-data` supprimé) sans vider `stream/lives/`, les nouvelles sessions reprennent à 1 et leurs lives sont refusés : il faut vider les deux ensemble.

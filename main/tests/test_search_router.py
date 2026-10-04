@@ -1,105 +1,157 @@
+import anyio
 import httpx
 import pytest
 
 from app.dependencies import get_search_client
 from app.main import app
 
-PAGE = {
-    "items": [
-        {
-            "streamer_id": 42,
-            "streamer_name": "Célèste",
-            "last_title": "Speedrun any%",
-            "last_game": "Celeste",
-            "is_live": True,
-            "live_stream_id": 7,
-        }
-    ],
-    "total": 1,
-    "page": 1,
-    "size": 20,
+STREAMER = {
+    "streamer_id": 42,
+    "streamer_name": "Célèste",
+    "last_title": "Speedrun any%",
+    "last_game": "Celeste",
+    "is_live": True,
+    "live_stream_id": 7,
+}
+MESSAGE = {
+    "message_id": "3f2b8d6a-7c1e-4a95-b0d4-6e8f1a2c5b97",
+    "stream_id": 7,
+    "author_name": "Célèste",
+    "content": "GG WP !",
+    "sent_at": "2026-10-02T20:14:03Z",
 }
 
 
-def use_search(handler):
-    client = httpx.AsyncClient(
-        transport=httpx.MockTransport(handler), base_url="http://search"
-    )
-    app.dependency_overrides[get_search_client] = lambda: client
+def answer(request):
+    if request.url.path == "/search/streamers":
+        return httpx.Response(200, json={"items": [STREAMER], "total": 1, "page": 1, "size": 20})
+    return httpx.Response(200, json=[MESSAGE])
 
 
-def test_search_is_relayed(client):
+@pytest.fixture
+def use_search():
+    clients = []
+
+    def use(handler):
+        client = httpx.AsyncClient(
+            transport=httpx.MockTransport(handler), base_url="http://search"
+        )
+        clients.append(client)
+        app.dependency_overrides[get_search_client] = lambda: client
+
+    yield use
+    for client in clients:
+        anyio.run(client.aclose)
+
+
+def test_both_sections_are_returned(client, use_search):
+    paths = []
+
+    def handler(request):
+        paths.append(request.url.path)
+        assert request.url.params["q"] == "gg"
+        return answer(request)
+
+    use_search(handler)
+    response = client.get("/search", params={"q": "gg", "stream_id": 7})
+    assert response.status_code == 200
+    assert response.json() == {"streamers": [STREAMER], "messages": [MESSAGE]}
+    assert sorted(paths) == ["/search/streamers", "/search/streams/7/messages"]
+
+
+def test_messages_are_empty_without_stream_id(client, use_search):
     def handler(request):
         assert request.url.path == "/search/streamers"
-        assert dict(request.url.params) == {"q": "cel", "page": "2", "size": "5"}
-        return httpx.Response(200, json=PAGE)
+        return answer(request)
 
     use_search(handler)
-    response = client.get("/search/streamers", params={"q": "cel", "page": 2, "size": 5})
+    response = client.get("/search", params={"q": "gg"})
     assert response.status_code == 200
-    assert response.json() == PAGE
+    assert response.json() == {"streamers": [STREAMER], "messages": []}
 
 
-def test_default_pagination_is_sent(client):
-    def handler(request):
-        assert dict(request.url.params) == {"q": "cel", "page": "1", "size": "20"}
-        return httpx.Response(200, json=PAGE)
-
-    use_search(handler)
-    assert client.get("/search/streamers", params={"q": "cel"}).status_code == 200
-
-
-def test_search_does_not_need_a_token(client):
-    use_search(lambda request: httpx.Response(200, json=PAGE))
-    assert client.get("/search/streamers", params={"q": "cel"}).status_code == 200
+def test_search_does_not_need_a_token(client, use_search):
+    use_search(answer)
+    assert client.get("/search", params={"q": "gg"}).status_code == 200
 
 
 @pytest.mark.parametrize(
     "params",
-    [{}, {"q": "c"}, {"q": "c" * 101}, {"q": "cel", "page": 0}, {"q": "cel", "size": 51}],
+    [
+        {},
+        {"q": "g"},
+        {"q": "g" * 101},
+        {"q": "gg", "stream_id": 0},
+        {"q": "gg", "stream_id": 2_147_483_648},
+        {"q": "gg", "stream_id": "abc"},
+    ],
 )
-def test_invalid_params_are_not_relayed(client, params):
+def test_invalid_params_are_not_relayed(client, use_search, params):
     def handler(request):
         raise AssertionError("search should not be called")
 
     use_search(handler)
-    assert client.get("/search/streamers", params=params).status_code == 422
-
-
-def test_query_refused_by_search_returns_422(client):
-    detail = [{"type": "value_error", "loc": ["query", "q"], "msg": "empty"}]
-    use_search(lambda request: httpx.Response(422, json={"detail": detail}))
-    response = client.get("/search/streamers", params={"q": "́́"})
-    assert response.status_code == 422
-    assert response.json() == {"detail": detail}
+    assert client.get("/search", params=params).status_code == 422
 
 
 @pytest.mark.parametrize(
-    "answer",
-    [httpx.Response(500), httpx.Response(200, json={"items": "nope"}), httpx.Response(422)],
+    "failure",
+    [
+        httpx.Response(500),
+        httpx.Response(422, json={"detail": []}),
+        httpx.Response(200, json={"items": "nope"}),
+        httpx.ConnectError("refused"),
+        httpx.ReadTimeout("too slow"),
+    ],
 )
-def test_unexpected_answer_returns_502(client, answer):
-    use_search(lambda request: answer)
-    assert client.get("/search/streamers", params={"q": "cel"}).status_code == 502
+def test_failed_streamers_section_is_empty(client, use_search, failure):
+    def handler(request):
+        if request.url.path == "/search/streamers":
+            if isinstance(failure, Exception):
+                raise failure
+            return failure
+        return answer(request)
+
+    use_search(handler)
+    response = client.get("/search", params={"q": "gg", "stream_id": 7})
+    assert response.status_code == 200
+    assert response.json() == {"streamers": [], "messages": [MESSAGE]}
 
 
-def test_search_down_returns_503(client):
+@pytest.mark.parametrize(
+    "failure",
+    [
+        httpx.Response(500),
+        httpx.Response(200, json=[{"content": "no id"}]),
+        httpx.ConnectError("refused"),
+        httpx.ReadTimeout("too slow"),
+    ],
+)
+def test_failed_messages_section_is_empty(client, use_search, failure):
+    def handler(request):
+        if request.url.path != "/search/streamers":
+            if isinstance(failure, Exception):
+                raise failure
+            return failure
+        return answer(request)
+
+    use_search(handler)
+    response = client.get("/search", params={"q": "gg", "stream_id": 7})
+    assert response.status_code == 200
+    assert response.json() == {"streamers": [STREAMER], "messages": []}
+
+
+def test_search_down_returns_empty_sections(client, use_search):
     def handler(request):
         raise httpx.ConnectError("refused")
 
     use_search(handler)
-    assert client.get("/search/streamers", params={"q": "cel"}).status_code == 503
-
-
-def test_search_timeout_returns_504(client):
-    def handler(request):
-        raise httpx.ReadTimeout("too slow")
-
-    use_search(handler)
-    assert client.get("/search/streamers", params={"q": "cel"}).status_code == 504
+    response = client.get("/search", params={"q": "gg", "stream_id": 7})
+    assert response.status_code == 200
+    assert response.json() == {"streamers": [], "messages": []}
 
 
 def test_route_is_documented(client):
-    operation = client.get("/openapi.json").json()["paths"]["/search/streamers"]["get"]
+    operation = client.get("/openapi.json").json()["paths"]["/search"]["get"]
     schema = operation["responses"]["200"]["content"]["application/json"]["schema"]
-    assert schema == {"$ref": "#/components/schemas/StreamerPage"}
+    assert schema == {"$ref": "#/components/schemas/SearchResults"}

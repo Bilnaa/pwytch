@@ -1,3 +1,6 @@
+from datetime import datetime
+from uuid import UUID
+
 from pydantic import BaseModel, Field
 
 
@@ -10,8 +13,14 @@ class StreamerResult(BaseModel):
     live_stream_id: int | None
 
 
-class StreamerPage(BaseModel):
-    items: list[StreamerResult]
-    total: int
-    page: int
-    size: int
+class MessageResult(BaseModel):
+    message_id: UUID
+    stream_id: int
+    author_name: str = Field(examples=["Célèste"])
+    content: str = Field(examples=["GG WP !"])
+    sent_at: datetime
+
+
+class SearchResults(BaseModel):
+    streamers: list[StreamerResult]
+    messages: list[MessageResult]
