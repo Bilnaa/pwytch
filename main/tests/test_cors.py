@@ -22,6 +22,7 @@ def test_cors_preflight_allows_authorization_header():
     )
     assert response.status_code == 200
     assert response.headers["access-control-allow-origin"] == cors_settings.frontend_origin
+    assert "authorization" in response.headers["access-control-allow-headers"].lower()
 
 
 def test_cors_ignores_other_origin():
