@@ -10,6 +10,7 @@ from fastapi.responses import JSONResponse, Response
 
 from app import models  # noqa: F401  (registers tables on Base.metadata)
 from app.config import (
+    bookmarks_settings,
     cors_settings,
     frontend_settings,
     live_chat_settings,
@@ -20,7 +21,7 @@ from app.config import (
 )
 from app.db import Base, SessionLocal, engine
 from app.mqtt import create_mqtt_client
-from app.routers import auth, chat, health, ingest, lives, search, streams, users
+from app.routers import auth, bookmarks, chat, health, ingest, lives, search, streams, users
 from app.services import streams as streams_service
 from app.services.satellites import SatelliteError, SatelliteRejectedError
 
@@ -41,6 +42,10 @@ async def lifespan(app: FastAPI):
     app.state.replay_client = httpx.AsyncClient(
         base_url=replay_settings.replay_url,
         timeout=replay_settings.replay_timeout_seconds,
+    )
+    app.state.bookmarks_client = httpx.AsyncClient(
+        base_url=bookmarks_settings.bookmarks_url,
+        timeout=bookmarks_settings.bookmarks_timeout_seconds,
     )
     app.state.stats_client = httpx.AsyncClient(
         base_url=stats_settings.stats_url,
@@ -63,6 +68,7 @@ async def lifespan(app: FastAPI):
     await app.state.mqtt.stop()
     await app.state.live_chat_client.aclose()
     await app.state.stats_client.aclose()
+    await app.state.bookmarks_client.aclose()
     await app.state.replay_client.aclose()
     await app.state.search_client.aclose()
     await app.state.stream_client.aclose()
@@ -104,6 +110,7 @@ api.include_router(streams.router)
 api.include_router(lives.router)
 api.include_router(search.router)
 api.include_router(users.router)
+api.include_router(bookmarks.router)
 
 
 @api.get("")

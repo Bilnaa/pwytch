@@ -68,6 +68,10 @@ def get_replay_client(request: Request) -> httpx.AsyncClient:
     return request.app.state.replay_client
 
 
+def get_bookmarks_client(request: Request) -> httpx.AsyncClient:
+    return request.app.state.bookmarks_client
+
+
 def get_stats_client(request: Request) -> httpx.AsyncClient:
     return request.app.state.stats_client
 
