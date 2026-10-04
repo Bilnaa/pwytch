@@ -3,8 +3,10 @@ import { createRoot } from 'react-dom/client'
 import { createBrowserRouter, RouterProvider } from 'react-router'
 
 import { Layout } from '@/components/layout'
+import { AuthProvider } from '@/lib/auth'
 import { HomePage } from '@/pages/home'
 import { LoginPage } from '@/pages/login'
+import { RegisterPage } from '@/pages/register'
 import { NotFoundPage } from '@/pages/not-found'
 import './index.css'
 
@@ -14,6 +16,7 @@ const router = createBrowserRouter([
     children: [
       { path: '/', element: <HomePage /> },
       { path: '/login', element: <LoginPage /> },
+      { path: '/register', element: <RegisterPage /> },
       { path: '*', element: <NotFoundPage /> },
     ],
   },
@@ -21,6 +24,8 @@ const router = createBrowserRouter([
 
 createRoot(document.getElementById('root')!).render(
   <StrictMode>
-    <RouterProvider router={router} />
+    <AuthProvider>
+      <RouterProvider router={router} />
+    </AuthProvider>
   </StrictMode>,
 )

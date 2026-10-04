@@ -32,8 +32,12 @@ Elle est lue au build : la changer demande de relancer `npm run dev` ou de rebui
 |--------------------------|------|
 | `src/main.tsx`           | Routes de l'app |
 | `src/components/layout.tsx` | Layout commun avec le header, les pages s'affichent dans son `<Outlet />` |
+| `src/components/auth-form.tsx` | Carte de formulaire commune à `/login` et `/register`, les champs sont passés en enfants |
+| `src/components/form-field.tsx` | Label + input + petite aide sous le champ |
 | `src/components/ui/`     | Composants shadcn, ajoutés avec `npx shadcn@latest add <composant>` |
 | `src/lib/api.ts`         | Client d'API |
+| `src/lib/auth.tsx`       | `useAuth()` : utilisateur connecté, login, register, logout |
+| `src/lib/theme.ts`       | Thème clair / sombre |
 | `src/pages/`             | Une page par fichier |
 
 ## Client d'API
@@ -44,6 +48,10 @@ Elle est lue au build : la changer demande de relancer `npm run dev` ou de rebui
     const live = await api<Stream>('/streams', { method: 'POST', body: JSON.stringify({ title, game }) })
 
 `api()` préfixe le chemin par `/api`, ajoute `Authorization: Bearer <jeton>` si un jeton est dans le `localStorage` (`setToken()` après le login) et met `Content-Type: application/json` quand le corps est une chaîne (`JSON.stringify`). Pour un formulaire, comme `/auth/login`, passer un `URLSearchParams` : `fetch` met le bon type tout seul. Sur un `401`, il efface le jeton et renvoie vers `/login`. Toute autre erreur lève une `ApiError` avec le `status` et le `detail` de FastAPI (une chaîne, ou la liste des erreurs sur un `422`).
+
+## Thème
+
+Bleu et jaune de Python (`#3776AB`, `#FFD43B`), fond sombre comme Twitch. Les couleurs sont dans `src/index.css`. Sombre par défaut, le bouton du header passe en clair (gardé dans le `localStorage`).
 
 ## Pages et routes de l'API
 
