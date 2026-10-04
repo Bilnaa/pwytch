@@ -61,3 +61,12 @@ class UserResponse(BaseModel):
     username: str = Field(examples=["john_doe"])
     display_name: str = Field(examples=["John_Doe"])
     role: str = Field(examples=["user"])
+
+
+# what anyone can see of an account (channel page of the front), no role
+class PublicUser(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: int
+    username: str = Field(examples=["john_doe"])
+    display_name: str = Field(examples=["John_Doe"])

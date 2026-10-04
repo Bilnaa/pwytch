@@ -102,10 +102,16 @@ def get_user_from_token(db: Session, token: str) -> User:
     return user
 
 
-def make_admin(db: Session, username: str) -> User:
+def get_user_by_username(db: Session, username: str) -> User:
+    # usernames are stored in lowercase
     user = db.scalar(select(User).where(User.username == username.lower()))
     if user is None:
         raise UserNotFoundError(f"User {username!r} not found")
+    return user
+
+
+def make_admin(db: Session, username: str) -> User:
+    user = get_user_by_username(db, username)
     user.role = ADMIN_ROLE
     db.commit()
     return user
