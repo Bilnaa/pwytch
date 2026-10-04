@@ -4,7 +4,7 @@ TEMPLATE := cookiecutter-fastapi
 RUFF := ruff@0.16.10
 SERVICES := $(patsubst %/pyproject.toml,%,$(wildcard */pyproject.toml))
 
-.PHONY: help init dev infra-up infra-down test lint clear main stream live-chat replay search bookmarks stats
+.PHONY: help init dev infra-up infra-down test lint clear main stream live-chat replay search bookmarks stats web web-build
 
 help: ## Show this help
 	@grep -E '^[a-zA-Z_-]+:.*## ' $(MAKEFILE_LIST) | awk 'BEGIN {FS = ":.*## "}; {printf "  %-12s %s\n", $$1, $$2}'
@@ -71,3 +71,11 @@ bookmarks: ## Run bookmarks on port 8005
 
 stats: ## Run stats on port 8006
 	uv run --directory stats fastapi dev --port 8006
+
+web: ## Run the front on port 5173 (calls main on port 8000)
+	npm --prefix web install
+	npm --prefix web run dev
+
+web-build: ## Build the front into web/dist, served by main on port 8000
+	npm --prefix web install
+	npm --prefix web run build
