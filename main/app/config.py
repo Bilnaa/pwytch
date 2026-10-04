@@ -22,6 +22,7 @@ class StreamSettings(BaseSettings):
         # http -> ws, https -> wss
         return self.stream_url.replace("http", "ws", 1).rstrip("/")
 
+
 class SearchSettings(BaseSettings):
     model_config = SettingsConfigDict(env_file=".env", extra="ignore")
 

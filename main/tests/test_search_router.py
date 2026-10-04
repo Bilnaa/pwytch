@@ -49,19 +49,20 @@ def test_both_sections_are_returned(client, use_search):
 
     def handler(request):
         paths.append(request.url.path)
-        assert request.url.params["q"] == "gg"
+        assert dict(request.url.params) == {"q": "gg"}
         return answer(request)
 
     use_search(handler)
-    response = client.get("/search", params={"q": "gg", "stream_id": 7})
+    response = client.get("/search", params={"q": " gg "})
     assert response.status_code == 200
     assert response.json() == {"streamers": [STREAMER], "messages": [MESSAGE]}
-    assert sorted(paths) == ["/search/streamers", "/search/streams/7/messages"]
+    assert sorted(paths) == ["/search/messages", "/search/streamers"]
 
 
-def test_messages_are_empty_without_stream_id(client, use_search):
+def test_messages_route_missing_in_search_gives_empty_messages(client, use_search):
     def handler(request):
-        assert request.url.path == "/search/streamers"
+        if request.url.path == "/search/messages":
+            return httpx.Response(404, json={"detail": "Not Found"})
         return answer(request)
 
     use_search(handler)
@@ -81,9 +82,8 @@ def test_search_does_not_need_a_token(client, use_search):
         {},
         {"q": "g"},
         {"q": "g" * 101},
-        {"q": "gg", "stream_id": 0},
-        {"q": "gg", "stream_id": 2_147_483_648},
-        {"q": "gg", "stream_id": "abc"},
+        {"q": "  "},
+        {"q": " g "},
     ],
 )
 def test_invalid_params_are_not_relayed(client, use_search, params):
@@ -113,7 +113,7 @@ def test_failed_streamers_section_is_empty(client, use_search, failure):
         return answer(request)
 
     use_search(handler)
-    response = client.get("/search", params={"q": "gg", "stream_id": 7})
+    response = client.get("/search", params={"q": "gg"})
     assert response.status_code == 200
     assert response.json() == {"streamers": [], "messages": [MESSAGE]}
 
@@ -136,7 +136,7 @@ def test_failed_messages_section_is_empty(client, use_search, failure):
         return answer(request)
 
     use_search(handler)
-    response = client.get("/search", params={"q": "gg", "stream_id": 7})
+    response = client.get("/search", params={"q": "gg"})
     assert response.status_code == 200
     assert response.json() == {"streamers": [STREAMER], "messages": []}
 
@@ -146,7 +146,7 @@ def test_search_down_returns_empty_sections(client, use_search):
         raise httpx.ConnectError("refused")
 
     use_search(handler)
-    response = client.get("/search", params={"q": "gg", "stream_id": 7})
+    response = client.get("/search", params={"q": "gg"})
     assert response.status_code == 200
     assert response.json() == {"streamers": [], "messages": []}
 

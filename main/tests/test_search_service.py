@@ -43,24 +43,16 @@ async def test_search_streamers_returns_the_items():
     assert [streamer.model_dump() for streamer in streamers] == [STREAMER]
 
 
-async def test_search_messages_calls_the_live_route():
+async def test_search_messages_calls_the_global_route():
     def handler(request):
-        assert request.url.path == "/search/streams/7/messages"
+        assert request.url.path == "/search/messages"
         assert dict(request.url.params) == {"q": "gg"}
         return httpx.Response(200, json=[MESSAGE])
 
     async with search_client(handler) as client:
-        messages = await search_messages(client, "gg", 7)
+        messages = await search_messages(client, "gg")
 
     assert [message.model_dump(mode="json") for message in messages] == [MESSAGE]
-
-
-async def test_search_messages_without_stream_id_does_not_call_search():
-    def handler(request):
-        raise AssertionError("search should not be called")
-
-    async with search_client(handler) as client:
-        assert await search_messages(client, "gg", None) == []
 
 
 @pytest.mark.parametrize(
@@ -97,7 +89,7 @@ async def test_search_all_keeps_the_section_that_answered():
         return httpx.Response(200, json=[MESSAGE])
 
     async with search_client(handler) as client:
-        results = await search_all(client, "gg", 7)
+        results = await search_all(client, "gg")
 
     assert results.streamers == []
     assert len(results.messages) == 1

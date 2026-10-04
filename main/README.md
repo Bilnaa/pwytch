@@ -57,7 +57,7 @@ Les tables sont créées au démarrage (`Base.metadata.create_all`) si elles n'e
 | `/streams/{id}`  | HTTP GET  | Renvoie le détail d'une session       |
 | `/streams/{stream_id}/ingest` | WebSocket | Reçoit le flux vidéo du streamer et le relaie à `stream` (jeton en query) |
 | `/lives/{stream_id}/{filename}` | HTTP GET | Relaie la playlist ou un segment HLS d'un live depuis `stream` |
-| `/search` | HTTP GET | Cherche des streamers et des messages du chat d'un live via `search` |
+| `/search` | HTTP GET | Cherche des streamers et des messages du chat de tous les lives via `search` |
 
 La doc interactive est sur `http://localhost:8000/docs`.
 
@@ -228,21 +228,18 @@ Dès le premier morceau relayé à `stream`, la session passe de `created` à `l
 | 503  | `stream` est injoignable |
 | 504  | `stream` n'a pas répondu à temps |
 
-### `GET /search?q=&stream_id=`
+### `GET /search?q=`
 
 Une seule barre de recherche, une seule route : `main` interroge `search` (voir `search/README.md`) et assemble la réponse. Pas besoin d'être connecté.
 
-| Paramètre   | Règle                                     | Défaut |
-|-------------|-------------------------------------------|--------|
-| `q`         | obligatoire, 2 à 100 caractères           | —      |
-| `stream_id` | optionnel, entier entre 1 et 2 147 483 647 | aucun  |
+`q` est obligatoire et fait 2 à 100 caractères une fois les espaces du début et de la fin retirés. Sinon `main` répond 422 sans appeler `search`.
 
 Les deux appels à `search` partent en parallèle :
 
-| Section     | Appel à `search`                                | Contenu |
-|-------------|-------------------------------------------------|---------|
-| `streamers` | `GET /search/streamers?q=`                      | Les 20 premiers streamers trouvés, en live d'abord |
-| `messages`  | `GET /search/streams/{stream_id}/messages?q=`   | Les 10 messages les plus récents du chat du live qui contiennent `q`. Sans `stream_id`, la section est vide et `search` n'est pas appelé |
+| Section     | Appel à `search`            | Contenu |
+|-------------|-----------------------------|---------|
+| `streamers` | `GET /search/streamers?q=`  | Les 20 premiers streamers trouvés, en live d'abord |
+| `messages`  | `GET /search/messages?q=`   | Les messages du chat de tous les lives qui contiennent `q` (#150) |
 
 ```json
 {
@@ -253,10 +250,12 @@ Les deux appels à `search` partent en parallèle :
 
 | Code | Cas |
 |------|-----|
-| 200  | Toujours, dès que les paramètres sont valides. Une section dont l'appel échoue (`search` injoignable, trop lent, code autre que 200, réponse invalide) revient vide et l'erreur est journalisée ; l'autre section est quand même renvoyée |
-| 422  | `q` absent, trop court ou trop long, `stream_id` invalide. `search` n'est pas appelé |
+| 200  | Toujours, dès que `q` est valide. Une section dont l'appel échoue (`search` injoignable, trop lent, code autre que 200, réponse invalide) revient vide et l'erreur est journalisée ; l'autre section est quand même renvoyée |
+| 422  | `q` absent, ou de moins de 2 ou plus de 100 caractères après retrait des espaces. `search` n'est pas appelé |
 
-Un `q` que `search` refuse alors que `main` l'accepte (fait d'espaces, ou vide après normalisation) donne aussi des sections vides.
+Tant que #150 n'est pas mergé, `search` répond 404 sur `/search/messages` : `messages` est toujours vide, et se remplira sans changement côté `main` après le merge.
+
+Un `q` que `search` refuse alors que `main` l'accepte (vide après normalisation, par exemple des accents seuls) donne aussi des sections vides.
 
 ### Protéger une route
 

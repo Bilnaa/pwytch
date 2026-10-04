@@ -38,12 +38,8 @@ async def search_streamers(client: httpx.AsyncClient, query: str) -> list[Stream
     return page.items
 
 
-async def search_messages(
-    client: httpx.AsyncClient, query: str, stream_id: int | None
-) -> list[MessageResult]:
-    if stream_id is None:
-        return []
-    return await _get(client, f"/search/streams/{stream_id}/messages", query, MESSAGE_LIST)
+async def search_messages(client: httpx.AsyncClient, query: str) -> list[MessageResult]:
+    return await _get(client, "/search/messages", query, MESSAGE_LIST)
 
 
 async def _or_empty(section: str, search) -> list:
@@ -54,11 +50,9 @@ async def _or_empty(section: str, search) -> list:
         return []
 
 
-async def search_all(
-    client: httpx.AsyncClient, query: str, stream_id: int | None
-) -> SearchResults:
+async def search_all(client: httpx.AsyncClient, query: str) -> SearchResults:
     streamers, messages = await asyncio.gather(
         _or_empty("streamers", search_streamers(client, query)),
-        _or_empty("messages", search_messages(client, query, stream_id)),
+        _or_empty("messages", search_messages(client, query)),
     )
     return SearchResults(streamers=streamers, messages=messages)
