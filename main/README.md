@@ -1,6 +1,6 @@
 # main
 
-Point d'entrée unique du front. `main` gère les comptes utilisateurs et sert de passerelle vers les autres services (`stream`, `live-chat`, `replay`, ...), qui ne sont jamais exposés directement. Les données sont stockées dans PostgreSQL.
+Point d'entrée unique du front. `main` sert aussi le build du front (`web/`). `main` gère les comptes utilisateurs et sert de passerelle vers les autres services (`stream`, `live-chat`, `replay`, ...), qui ne sont jamais exposés directement. Les données sont stockées dans PostgreSQL.
 
 ```
 front ──HTTP──> main ──> PostgreSQL (users)
@@ -37,6 +37,7 @@ ou depuis `main/` :
 | `STATS_TIMEOUT_SECONDS` | `5` | Délai maximum d'attente d'une réponse de `stats`, en secondes |
 | `MQTT_HOST` | `localhost` | Hôte du broker MQTT (`mqtt` dans le docker-compose) |
 | `MQTT_PORT` | `1883` | Port du broker MQTT |
+| `FRONTEND_DIR` | `../web/dist` | Dossier du build du front servi par `main`, relatif à `main/`. S'il n'existe pas, `main` démarre sans front |
 | `FRONTEND_ORIGIN` | `http://localhost:5173` | Origine du front autorisée à appeler `main` depuis le navigateur (CORS), ex. `https://app.example.com`, sans `/` final |
 
 Les variables se mettent dans `main/.env` (copier `.env.example`). Les valeurs de `.env.example` correspondent à celles par défaut du `docker-compose.yml`. Remplacer `JWT_SECRET_KEY=change-me` par une vraie clé : quiconque la connaît peut fabriquer un jeton valide pour n'importe quel compte.
@@ -49,9 +50,11 @@ Les tables sont créées au démarrage (`Base.metadata.create_all`) si elles n'e
 
 ## Endpoints
 
+Toute l'API est sous `/api` (ex. `/api/auth/login`, `ws://localhost:8000/api/streams/{stream_id}/ingest`). Les chemins de cette section sont donnés sans ce préfixe. Les autres URL sont celles du front : `app.frontend()` de FastAPI sert les fichiers de `FRONTEND_DIR`, et renvoie `index.html` à une navigation du navigateur sur une URL inconnue (pour react-router). Une requête `fetch` vers une route inconnue reçoit toujours un `404` JSON.
+
 | Chemin           | Protocole | Rôle                                  |
 |------------------|-----------|---------------------------------------|
-| `/`              | HTTP GET  | Renvoie `{"service": "main"}`         |
+| `/` (soit `/api`) | HTTP GET  | Renvoie `{"service": "main"}`         |
 | `/health`        | HTTP GET  | Renvoie `{"status": "ok"}`            |
 | `/auth/register` | HTTP POST | Crée un compte utilisateur            |
 | `/auth/login`    | HTTP POST | Connecte un utilisateur, renvoie un jeton JWT |
@@ -63,7 +66,7 @@ Les tables sont créées au démarrage (`Base.metadata.create_all`) si elles n'e
 | `/lives/{stream_id}/{filename}` | HTTP GET | Relaie la playlist ou un segment HLS d'un live depuis `stream` |
 | `/search` | HTTP GET | Cherche des streamers et des messages du chat de tous les lives via `search` |
 
-La doc interactive est sur `http://localhost:8000/docs`.
+La doc interactive est sur `http://localhost:8000/api/docs`.
 
 ### `POST /auth/register`
 

@@ -152,6 +152,6 @@ def test_search_down_returns_empty_sections(client, use_search):
 
 
 def test_route_is_documented(client):
-    operation = client.get("/openapi.json").json()["paths"]["/search"]["get"]
+    operation = client.get("/openapi.json").json()["paths"]["/api/search"]["get"]
     schema = operation["responses"]["200"]["content"]["application/json"]["schema"]
     assert schema == {"$ref": "#/components/schemas/SearchResults"}

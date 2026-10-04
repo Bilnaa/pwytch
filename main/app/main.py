@@ -1,14 +1,16 @@
 import logging
+import os
 from contextlib import asynccontextmanager
 
 import httpx
-from fastapi import FastAPI, Request
+from fastapi import APIRouter, FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse, Response
 
 from app import models  # noqa: F401  (registers tables on Base.metadata)
 from app.config import (
     cors_settings,
+    frontend_settings,
     live_chat_settings,
     replay_settings,
     search_settings,
@@ -58,7 +60,13 @@ async def lifespan(app: FastAPI):
     await app.state.stream_client.aclose()
 
 
-app = FastAPI(title="main", lifespan=lifespan)
+app = FastAPI(
+    title="main",
+    lifespan=lifespan,
+    docs_url="/api/docs",
+    redoc_url="/api/redoc",
+    openapi_url="/api/openapi.json",
+)
 
 app.add_middleware(
     CORSMiddleware,
@@ -66,7 +74,6 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
-
 
 
 @app.exception_handler(SatelliteRejectedError)
@@ -79,14 +86,24 @@ async def satellite_error(request: Request, exc: SatelliteError):
     return JSONResponse({"detail": str(exc)}, status_code=exc.status_code)
 
 
-app.include_router(auth.router)
-app.include_router(health.router)
-app.include_router(ingest.router)
-app.include_router(streams.router)
-app.include_router(lives.router)
-app.include_router(search.router)
+# everything under /api, the rest of the URLs belong to the front
+api = APIRouter(prefix="/api")
+api.include_router(auth.router)
+api.include_router(health.router)
+api.include_router(ingest.router)
+api.include_router(streams.router)
+api.include_router(lives.router)
+api.include_router(search.router)
 
 
-@app.get("/")
+@api.get("")
 def root():
     return {"service": "main"}
+
+
+app.include_router(api)
+
+# only checked when no API route matched; unknown paths get index.html for react-router.
+# skipped when the front was not built (tests, Docker image without web/)
+if os.path.isdir(frontend_settings.frontend_dir):
+    app.frontend("/", directory=frontend_settings.frontend_dir)

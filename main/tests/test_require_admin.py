@@ -60,7 +60,7 @@ def test_me_returns_admin_role(db_session):
     admin = make_admin(db_session, "alice")
     main_app.dependency_overrides[get_db] = lambda: db_session
     try:
-        response = TestClient(main_app).get("/auth/me", headers=auth_header(admin))
+        response = TestClient(main_app).get("/api/auth/me", headers=auth_header(admin))
     finally:
         main_app.dependency_overrides.clear()
 
