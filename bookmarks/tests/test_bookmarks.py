@@ -1,7 +1,6 @@
 from http import HTTPStatus
 
 import pytest
-
 from app.utils import LIMIT_INTEGER
 
 OWNER_ID = 1

@@ -1,10 +1,11 @@
+from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
-from typing import AsyncIterator
+
 from fastapi import FastAPI
 
-from app.routers import health, bookmarks
 from app.database import engine
 from app.models import Base
+from app.routers import bookmarks, health
 
 
 @asynccontextmanager
