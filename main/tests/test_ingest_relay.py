@@ -141,3 +141,28 @@ def test_text_frame_closes_with_1003(client, upstream):
             ws.receive_bytes()
 
     assert exc.value.code == 1003
+
+
+def test_stop_is_passed_on_and_ends_the_session(client, db_session, upstream):
+    stream_id, token = create_stream(client)
+
+    with client.websocket_connect(f"/api/streams/{stream_id}/ingest?token={token}") as ws:
+        ws.send_bytes(b"x")
+        ws.close(code=4000)
+
+    assert upstream.sent_close == (4000, "Live ended")
+    db_session.expire_all()
+    stream = db_session.get(Stream, stream_id)
+    assert stream.status == "ended"
+    assert stream.ended_at is not None
+
+
+def test_leaving_without_stop_keeps_the_session_live(client, db_session, upstream):
+    stream_id, token = create_stream(client)
+
+    with client.websocket_connect(f"/api/streams/{stream_id}/ingest?token={token}") as ws:
+        ws.send_bytes(b"x")
+        ws.close(code=1001)
+
+    assert upstream.sent_close is None
+    assert db_session.get(Stream, stream_id).status == "live"

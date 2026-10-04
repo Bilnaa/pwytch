@@ -78,7 +78,14 @@ Codes de fermeture envoyés par `stream` (à gérer côté `main`) :
 | `1012` | `stream` s'arrête ou redémarre. La playlist est quand même terminée     |
 | `1013` | Aucune donnée reçue depuis `SIGNAL_TIMEOUT_SECONDS` (raison `No data received`). Traité comme une coupure : il faut se reconnecter sur le même `stream_id` |
 
-Quand c'est le client qui ferme (fin normale du live, en général `1000`), `stream` n'envoie rien.
+Quand c'est le client qui ferme, `stream` n'envoie rien. Le code de fermeture du client compte :
+
+| Code client | Effet |
+|-------------|-------|
+| `4000` (`Live ended`) | Le streamer a cliqué sur « Stop » : pas d'écran « Signal lost », le live se termine tout de suite (`#EXT-X-ENDLIST`, `stream/ended`) |
+| autre (`1000`, `1001`, coupure réseau) | Coupure : écran « Signal lost » et période de grâce, voir « Coupure et reconnexion » |
+
+`1000` reste une coupure : c'est ce qu'envoient `scripts/channels.py` et `fake_streamer.py` sur un `Ctrl+C`, et ils doivent pouvoir reprendre le même live.
 
 ### `POST /streams/{stream_id}/ingest`
 
@@ -100,7 +107,7 @@ Un fichier que ffmpeg ne sait pas lire renvoie quand même `204` : ffmpeg attend
 
 Comme sur Twitch, une coupure du streamer ne termine pas le live :
 
-1. Le streamer se déconnecte (fin du live ou coupure réseau), ou n'envoie plus rien pendant `SIGNAL_TIMEOUT_SECONDS` (streamer figé, `main` bloqué ou tombé sans fermer la connexion) : ffmpeg termine son segment, puis un second ffmpeg prend le relais et diffuse en boucle la vidéo « Signal lost » (`assets/slate.mp4`) dans la même playlist.
+1. Le streamer se déconnecte (sauf « Stop », code `4000`), ou n'envoie plus rien pendant `SIGNAL_TIMEOUT_SECONDS` (streamer figé, `main` bloqué ou tombé sans fermer la connexion) : ffmpeg termine son segment, puis un second ffmpeg prend le relais et diffuse en boucle la vidéo « Signal lost » (`assets/slate.mp4`) dans la même playlist.
 2. Si le streamer se reconnecte sur le même `stream_id` avant `RECONNECT_SECONDS`, l'écran s'arrête et le live reprend, toujours dans la même playlist.
 3. Sinon, le live se termine : la playlist reçoit `#EXT-X-ENDLIST` et devient le replay.
 

@@ -141,3 +141,13 @@ def test_me_with_invalid_token_returns_401(client):
 
     assert response.status_code == 401
     assert response.headers["WWW-Authenticate"] == "Bearer"
+
+
+@pytest.mark.parametrize("username", ["search", "login", "Admin"])
+def test_register_reserved_username_returns_422(client, username):
+    response = client.post(
+        "/auth/register", json={"username": username, "password": "s3cret-pass"}
+    )
+
+    assert response.status_code == 422
+    assert "reserved" in response.json()["detail"][0]["msg"]

@@ -18,6 +18,9 @@ STREAM_RESTARTING = 1012
 STREAM_NO_DATA = 1013
 STREAM_ALREADY_LIVE = "Stream already live"
 STREAM_ID_USED = "Stream id already used"
+# sent by the front when the streamer clicks Stop, passed on to stream as is.
+# Any other close is a cut: stream waits for the streamer to come back
+LIVE_ENDED = 4000
 
 
 class NotStreamOwnerError(Exception):
@@ -86,8 +89,10 @@ async def forward(websocket: WebSocket, upstream, on_first_chunk: Callable[[], N
             on_first_chunk()
 
 
-async def relay(websocket: WebSocket, url: str, on_first_chunk: Callable[[], None]) -> None:
-    """Copy the chunks of the streamer to stream until one of the two sides leaves."""
+async def relay(websocket: WebSocket, url: str, on_first_chunk: Callable[[], None]) -> bool:
+    """Copy the chunks of the streamer to stream until one of the two sides leaves.
+
+    Returns True when the streamer ended the live (Stop), False when they left."""
     try:
         async with connect(
             url, max_size=None, open_timeout=stream_settings.stream_timeout_seconds
@@ -105,6 +110,10 @@ async def relay(websocket: WebSocket, url: str, on_first_chunk: Callable[[], Non
             if not isinstance(error, WebSocketDisconnect):
                 reason = upstream.close_reason or "stream closed the connection"
                 raise UpstreamClosedError(upstream.close_code, reason)
+            if error.code == LIVE_ENDED:
+                await upstream.close(LIVE_ENDED, "Live ended")
+                return True
+            return False
     except (OSError, TimeoutError, WebSocketException) as exc:
         raise StreamUnavailableError("stream is unavailable") from exc
 
@@ -132,7 +141,7 @@ async def run_ingest(websocket: WebSocket, db: Session, stream: Stream) -> None:
         db.close()
 
     try:
-        await relay(websocket, url, mark_live)
+        stopped = await relay(websocket, url, mark_live)
     except UpstreamClosedError as exc:
         if session_is_over(exc):
             await asyncio.to_thread(mark_over)
@@ -142,3 +151,6 @@ async def run_ingest(websocket: WebSocket, db: Session, stream: Stream) -> None:
         if exc.code == STREAM_REFUSED and exc.reason == STREAM_ALREADY_LIVE:
             raise StreamAlreadyLiveError(exc.reason) from exc
         raise StreamUnavailableError(exc.reason) from exc
+    if stopped:
+        # no need to wait for stream/ended: the streamer can go live again right away
+        await asyncio.to_thread(mark_over)

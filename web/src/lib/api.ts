@@ -3,6 +3,17 @@ const API_URL = import.meta.env.VITE_API_URL ?? ''
 
 const TOKEN_KEY = 'token'
 
+// Full URL of a route of main, for what doesn't go through api() (video player, links)
+export function apiUrl(path: string): string {
+  return `${API_URL}/api${path}`
+}
+
+// ws:// or wss:// version of main's URL, for the WebSocket routes (ingest, chat)
+export function wsUrl(path: string): string {
+  const base = API_URL || window.location.origin
+  return `${base.replace(/^http/, 'ws')}/api${path}`
+}
+
 export function getToken(): string | null {
   return localStorage.getItem(TOKEN_KEY)
 }
@@ -27,6 +38,17 @@ export class ApiError extends Error {
   }
 }
 
+// FastAPI sends a string in detail, except on a 422 where it's a list of errors
+export function errorMessage(error: unknown): string {
+  if (!(error instanceof ApiError)) {
+    return 'Server error'
+  }
+  if (Array.isArray(error.detail) && error.detail.length > 0) {
+    return error.detail[0].msg
+  }
+  return error.message
+}
+
 export async function api<T>(path: string, init: RequestInit = {}): Promise<T> {
   const headers = new Headers(init.headers)
   const token = getToken()
@@ -38,7 +60,7 @@ export async function api<T>(path: string, init: RequestInit = {}): Promise<T> {
     headers.set('Content-Type', 'application/json')
   }
 
-  const response = await fetch(`${API_URL}/api${path}`, { ...init, headers })
+  const response = await fetch(apiUrl(path), { ...init, headers })
 
   if (response.status === 401) {
     clearToken()
