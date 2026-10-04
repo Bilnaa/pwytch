@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { Link, Navigate } from 'react-router'
+import { Link, Navigate, useLocation } from 'react-router'
 
 import { AuthForm } from '@/components/auth-form'
 import { FormField } from '@/components/form-field'
@@ -7,12 +7,14 @@ import { useAuth } from '@/lib/auth'
 
 export function LoginPage() {
   const { user, login } = useAuth()
+  const location = useLocation()
   const [username, setUsername] = useState('')
   const [password, setPassword] = useState('')
 
-  // already logged in, or just logged in with the form
+  // already logged in, or just logged in with the form. Back to the page that
+  // sent us here (the chat of a live), else home
   if (user) {
-    return <Navigate to="/" replace />
+    return <Navigate to={location.state?.from ?? '/'} replace />
   }
 
   return (

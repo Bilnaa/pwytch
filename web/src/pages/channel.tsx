@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react'
 import { useParams } from 'react-router'
 
 import { Avatar } from '@/components/avatar'
+import { Chat } from '@/components/chat'
 import { HlsPlayer } from '@/components/hls-player'
 import { Badge } from '@/components/ui/badge'
 import { errorMessage } from '@/lib/api'
@@ -90,19 +91,25 @@ export function ChannelPage() {
     )
   }
 
+  // chat next to the player on a wide screen, under it on a phone
   return (
-    <div className="space-y-4">
-      <HlsPlayer src={playlistUrl(stream.id)} onEnded={() => setEndedCount((n) => n + 1)} />
+    <div className="grid gap-4 lg:grid-cols-[1fr_20rem]">
+      <div className="min-w-0 space-y-4">
+        <HlsPlayer src={playlistUrl(stream.id)} onEnded={() => setEndedCount((n) => n + 1)} />
 
-      <div className="flex items-start gap-3">
-        <Avatar username={user.display_name} />
-        <div className="min-w-0 flex-1">
-          <p className="font-semibold text-primary">{user.display_name}</p>
-          <h1 className="truncate text-lg font-semibold">{stream.title}</h1>
-          <p className="text-sm text-muted-foreground">{stream.game}</p>
+        <div className="flex items-start gap-3">
+          <Avatar username={user.display_name} />
+          <div className="min-w-0 flex-1">
+            <p className="font-semibold text-primary">{user.display_name}</p>
+            <h1 className="truncate text-lg font-semibold">{stream.title}</h1>
+            <p className="text-sm text-muted-foreground">{stream.game}</p>
+          </div>
+          <Badge className="bg-red-600 text-white">LIVE</Badge>
         </div>
-        <Badge className="bg-red-600 text-white">LIVE</Badge>
       </div>
+
+      {/* key: a new live of the same channel starts with an empty chat */}
+      <Chat key={stream.id} streamId={stream.id} />
     </div>
   )
 }
