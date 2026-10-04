@@ -1,5 +1,11 @@
 # live-chat
 
+## Configuration
+
+    cp .env.example .env
+
+`DATABASE_URL` est obligatoire (le service refuse de démarrer sans). Les messages sont stockés dans la table `chat_messages` du schéma Postgres `live_chat` de la base `microservices`, créés automatiquement au démarrage (`docker compose up -d postgres` pour lancer Postgres).
+
 ## Run
     
     uv run fastapi dev --port 8002
@@ -25,3 +31,9 @@ Pour renseigner un message, envoyez dans le chat un élément comme ceci :
 
 Le chat récupèrera le content et le renverra par la suite.
 
+## Persistance
+Chaque message est enregistré **avant** d'être diffusé. Si la base est indisponible, rien n'est diffusé et seul l'auteur reçoit :
+
+    {"type": "error", "code": "MESSAGE_NOT_SAVED", "detail": "Le message n'a pas pu être enregistré"}
+
+Le WebSocket reste ouvert et le service continue de tourner (il démarre aussi sans base ; le schéma est alors créé au premier message enregistré).

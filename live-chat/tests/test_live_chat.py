@@ -3,7 +3,7 @@ import asyncio
 from fastapi.testclient import TestClient
 from starlette.websockets import WebSocketDisconnect
 
-from app.connection_manager import ConnectionManager
+from app.connection_manager import ConnectionManager, connectionManager
 from app.models.message_model import MessageModel, Author
 
 from app.main import app
@@ -36,3 +36,34 @@ def test_live_chat_fail_dead_socket():
     assert fake_socket in manager.rooms[1]
     assert fake_socket.sent == [message.model_dump_json()]
     assert dead_socket not in manager.rooms[1]
+
+
+def test_live_chat_saves_then_broadcasts(saved_messages):
+    with client.websocket_connect("/streams/1/chat?user_id=1&username=author") as author, \
+            client.websocket_connect("/streams/1/chat") as viewer:
+        author.send_json({"content": "  hello  "})
+        received = viewer.receive_json()
+        assert author.receive_json() == received
+    assert len(saved_messages) == 1
+    saved = saved_messages[0]
+    # what is broadcast is exactly what is stored
+    assert received == saved.model_dump(mode="json")
+    assert saved.content == "hello"
+    assert saved.author == Author(id=1, username="author")
+
+
+def test_live_chat_database_down(database_down, monkeypatch):
+    broadcasts = []
+
+    async def spy_broadcast(stream_id, message):
+        broadcasts.append(message)
+
+    monkeypatch.setattr(connectionManager, "broadcast", spy_broadcast)
+    with client.websocket_connect("/streams/1/chat?user_id=1&username=author") as author:
+        author.send_json({"content": "hello"})
+        assert author.receive_json() == {"type": "error", "code": "MESSAGE_NOT_SAVED", "detail": "Le message n'a pas pu être enregistré"}
+
+        # the WebSocket is still open: the author can keep sending
+        author.send_json({"content": ""})
+        assert author.receive_json()["code"] == "EMPTY_MESSAGE"
+    assert broadcasts == []
