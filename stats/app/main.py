@@ -37,7 +37,7 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
         await client.stop()
         await engine.dispose()
 
-    
+
 app = FastAPI(title="stats", lifespan=lifespan)
 
 app.include_router(health.router)

@@ -15,10 +15,10 @@ class Base(DeclarativeBase):
 
 class Counter(Base):
     __table_args__ = (
-        UniqueConstraint("counter_type", "key",  name="uq_counter_countertype_key"),
+        UniqueConstraint("counter_type", "key", name="uq_counter_countertype_key"),
     )
     
     id: Mapped[int] = mapped_column(primary_key=True)
     counter_type: Mapped[str]
     key: Mapped[str]
-    value: Mapped[int] = mapped_column(BigInteger, server_default="0") 
+    value: Mapped[int] = mapped_column(BigInteger, server_default="0")
