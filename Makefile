@@ -1,9 +1,10 @@
 # Usage: make help
 
 TEMPLATE := cookiecutter-fastapi
+RUFF := ruff@0.16.10
 SERVICES := $(patsubst %/pyproject.toml,%,$(wildcard */pyproject.toml))
 
-.PHONY: help init dev infra-up infra-down test clear main stream live-chat replay search bookmarks stats
+.PHONY: help init dev infra-up infra-down test lint clear main stream live-chat replay search bookmarks stats
 
 help: ## Show this help
 	@grep -E '^[a-zA-Z_-]+:.*## ' $(MAKEFILE_LIST) | awk 'BEGIN {FS = ":.*## "}; {printf "  %-12s %s\n", $$1, $$2}'
@@ -43,6 +44,9 @@ test: ## Run the tests of every service, fails if one of them fails
 		echo "Failed:$$failed"; \
 		exit 1; \
 	fi
+
+lint: ## Run ruff on every service (make lint fix=1 to fix what can be fixed)
+	uvx $(RUFF) check $(if $(fix),--fix) $(SERVICES)
 
 clear: ## Delete the local .db files
 	find . -name "*.db" -not -path "*/.venv/*" -print -delete
