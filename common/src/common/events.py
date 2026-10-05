@@ -56,9 +56,22 @@ class ItemType(StrEnum):
     MESSAGE = "message"
 
 
+class TargetType(StrEnum):
+    STREAMER = "streamer"
+    REPLAY = "replay"
+
+
 # published by search, consumed by stats; one event per item returned by a search
 class SearchHit(BaseEvent):
     item_type: ItemType
     item_id: str = Field(min_length=1)
     query: str = Field(min_length=1)
     hit_at: AwareDatetime
+
+
+class BookmarkDeleted(BaseEvent):
+    bookmark_id: int
+    user_id: int
+    target_type: TargetType
+    target_id: int
+    deleted_at: AwareDatetime
