@@ -51,4 +51,5 @@ Les 100 derniers messages de chaque live sont gardés dans Redis, dans la liste 
 - L'historique lit Redis d'abord ; si la clé est absente, il lit la base et remplit le cache
 - Chaque nouveau message enregistré est ajouté au cache, s'il existe
 - La clé expire après `CACHE_TTL_SECONDS` (60 secondes donc) : un message enregistré pendant le remplissage du cache revient au remplissage suivant
+- Le remplissage n'écrit que si la clé est toujours absente (liste écrite à part puis `RENAMENX`) : quand plusieurs viewers ratent le cache en même temps, un remplissage plus ancien n'écrase pas un cache déjà rempli qui a reçu de nouveaux messages
 - Si Redis est indisponible, l'historique est lu en base et le chat continue de fonctionner normalement

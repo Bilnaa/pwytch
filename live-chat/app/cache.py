@@ -1,4 +1,5 @@
 import logging
+from uuid import uuid4
 
 from pydantic import ValidationError
 from redis.asyncio import Redis
@@ -41,17 +42,22 @@ async def read_last(stream_id: int) -> list[MessageModel] | None:
 
 
 async def fill(stream_id: int, messages: list[MessageModel]) -> None:
-    # Replaces the cache of a live with its last messages read from the database
+    # Creates the cache of a live with its last messages read from the database
     if not messages:
         # Redis can't store an empty list: a live without messages reads the database
         return
+    # Written aside then renamed only if the cache is still absent: another fill may have
+    # created it first and received new messages since, a stale read must not replace it
+    temp = f"{key(stream_id)}:fill:{uuid4().hex}"
     try:
         async with redis.pipeline(transaction=True) as pipe:
-            pipe.delete(key(stream_id))
-            pipe.rpush(key(stream_id), *(m.model_dump_json() for m in messages[-CACHE_SIZE:]))
+            pipe.rpush(temp, *(m.model_dump_json() for m in messages[-CACHE_SIZE:]))
             # A message saved while filling is missing from the cache: it comes back
             # with the next fill instead of being missing until the live ends
-            pipe.expire(key(stream_id), redis_settings.cache_ttl_seconds)
+            pipe.expire(temp, redis_settings.cache_ttl_seconds)
+            pipe.renamenx(temp, key(stream_id))
+            # Left only when the cache already existed
+            pipe.delete(temp)
             await pipe.execute()
     except RedisError as exc:
         logger.warning("Chat cache of stream %s not filled: %s", stream_id, exc)

@@ -1,9 +1,11 @@
+import asyncio
 from datetime import UTC, datetime, timedelta
 
 import fakeredis
 import pytest
 from fastapi.testclient import TestClient
 
+from app import cache
 from app.config import redis_settings
 from app.main import app
 from app.models.message_model import Author, MessageModel
@@ -139,6 +141,18 @@ def test_message_saved_while_filling_is_not_duplicated(database, redis):
     redis.rpush(KEY, database["messages"][1].model_dump_json())
 
     assert contents(client.get("/streams/1/messages")) == ["message 0", "message 1"]
+
+
+def test_fill_does_not_replace_an_existing_cache(redis):
+    # two viewers missed the cache together: the second fill comes after the first one
+    # received a new message, its older read must not erase it
+    messages = make_messages(3)
+    asyncio.run(cache.fill(1, messages[:3]))
+    asyncio.run(cache.fill(1, messages[:2]))
+
+    assert redis.llen(KEY) == 3
+    # the aside list of the second fill is not left in Redis
+    assert redis.keys() == [KEY.encode()]
 
 
 def test_invalid_cache_entry_falls_back_to_the_database(database, redis):
