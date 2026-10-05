@@ -71,6 +71,7 @@ Toute l'API est sous `/api` (ex. `/api/auth/login`, `ws://localhost:8000/api/str
 | `/streams/{stream_id}/ingest` | WebSocket | Reçoit le flux vidéo du streamer et le relaie à `stream` (jeton en query) |
 | `/streams/{stream_id}/chat` | WebSocket | Relaie le chat du live avec `live-chat` dans les deux sens (jeton facultatif en query, sans jeton : lecture seule) |
 | `/streams/{stream_id}/messages` | HTTP GET | Renvoie les derniers messages du chat d'un live via `live-chat` |
+| `/streams/{stream_id}/player-events` | HTTP POST | Compte un play, pause ou stop du player : répond `202` et publie `player/event` |
 | `/lives/{stream_id}/{filename}` | HTTP GET | Relaie la playlist ou un segment HLS d'un live depuis `stream` |
 | `/users?id=` | HTTP GET | Plusieurs utilisateurs par id (`?id=1&id=7`), les id inconnus sont ignorés |
 | `/users/{username}` | HTTP GET | Profil public d'un utilisateur (`id`, `username`, `display_name`), 404 s'il n'existe pas |
@@ -79,6 +80,8 @@ Toute l'API est sous `/api` (ex. `/api/auth/login`, `ws://localhost:8000/api/str
 | `/bookmarks/{bookmark_id}` | HTTP GET, PATCH, DELETE | Lit, modifie ou supprime un bookmark de l'utilisateur via `bookmarks` (protégé) |
 | `/replays` | HTTP GET | Liste paginée des replays via `replay`, filtrable par streamer |
 | `/replays/{stream_id}` | HTTP GET | Renvoie un replay via `replay` |
+| `/stats/search/top` | HTTP GET | Éléments les plus trouvés par la recherche via `stats` (admin) |
+| `/stats/search/{item_type}/{item_id}` | HTTP GET | Nombre de fois qu'un élément a été trouvé par la recherche via `stats` (admin) |
 
 La doc interactive est sur `http://localhost:8000/api/docs`.
 
@@ -327,6 +330,22 @@ Ce sont les bornes de `bookmarks`, à garder alignées : un paramètre hors born
 
 Le `Location` de `bookmarks` pointe vers sa propre URL : `main` le remplace par celle de sa route.
 
+### `POST /streams/{stream_id}/player-events`
+
+Appelé par le player du front à chaque play, pause et stop, pour les stats. Le jeton est facultatif : sans jeton, `user_id` est `null` dans l'event (un jeton invalide ou expiré donne quand même `401`).
+
+```json
+{"event_type": "play"}
+```
+
+| Cas | Réponse |
+|-----|---------|
+| `event_type` vaut `play`, `pause` ou `stop` | `202`, sans corps |
+| autre `event_type`, ou absent | `422` |
+| session inconnue | `404 {"detail": "Stream not found"}` |
+
+`main` répond `202` tout de suite, puis publie en tâche de fond un `PlayerEvent` de `common` sur `player/event` (`stream_id`, `event_type`, `user_id`, `occurred_at` = heure de réception par `main`). Si le broker est indisponible, la réponse est la même : l'event est perdu et l'erreur est journalisée. Le statut de la session n'est pas vérifié (un stop peut arriver juste après la fin du live).
+
 ### `GET /streams/{stream_id}/messages?limit=`
 
 Le front charge les derniers messages en arrivant sur un live, avant d'ouvrir le WebSocket du chat. `main` vérifie que le stream existe (`live-chat` ne le sait pas), puis relaie la requête à `GET /streams/{stream_id}/messages` de `live-chat`. Pas besoin d'être connecté.
@@ -393,6 +412,26 @@ Les replays sont triés du plus récent au plus ancien (fin du live). Un replay 
 
 Les erreurs viennent du helper commun, voir « Appeler un satellite ».
 
+### Stats
+
+Réservées aux admins : `401` sans jeton, `403` (`Admin role required`) si le compte n'est pas `admin`, sans appeler `stats` (voir « Créer un admin »). `main` relaie la requête à `stats` avec les headers d'identité.
+
+| Route de `main` | Appel à `stats` | Succès |
+|-----------------|-----------------|--------|
+| `GET /stats/search/{item_type}/{item_id}` | `GET /stats/search/{item_type}/{item_id}` | `200`, le compteur de l'élément (`count` à `0` s'il n'a jamais été trouvé) |
+| `GET /stats/search/top?item_type=&limit=` | `GET /stats/search/top?item_type=&limit=` | `200`, liste des compteurs, du plus grand au plus petit |
+
+```json
+{"item_type": "streamer", "item_id": "42", "count": 3}
+```
+
+| Paramètre   | Défaut | Contraintes |
+|-------------|--------|-------------|
+| `item_type` | aucun dans `top` | `streamer` ou `message` |
+| `limit`     | `10`   | 1 à 500 |
+
+Ce sont les bornes de `stats`, à garder alignées : un paramètre hors bornes donne un `422` sans appeler `stats`. Les erreurs suivent le tableau de « Appeler un satellite ».
+
 ### Appeler un satellite
 
 Chaque satellite a son `httpx.AsyncClient`, créé dans le `lifespan` avec l'URL et le timeout de `.env`, et sa dépendance : `get_stream_client`, `get_search_client`, `get_replay_client`, `get_bookmarks_client`, `get_stats_client` (`app/dependencies.py`).
@@ -438,7 +477,7 @@ def quelque_chose(current_user: Annotated[User, Depends(get_current_user)]):
     ...
 ```
 
-Pour une route réservée aux admins (les futures routes `/stats`, par exemple), utiliser `require_admin` à la place. Elle fait la même vérification, puis répond `403` (`Admin role required`) si le rôle du compte n'est pas `admin` :
+Pour une route réservée aux admins (comme les routes `/stats`), utiliser `require_admin` à la place. Elle fait la même vérification, puis répond `403` (`Admin role required`) si le rôle du compte n'est pas `admin` :
 
 ```python
 from app.dependencies import require_admin
@@ -473,7 +512,11 @@ Au démarrage, `main` se connecte au broker avec le `MqttClient` de `common` (`a
 
 Les handlers sont dans `app/services/streams.py`. Chaque event ouvre sa propre session et tourne dans un thread (`asyncio.to_thread`), car la base est synchrone et ne doit pas bloquer la boucle. Un event pour un stream inconnu est ignoré et journalisé. Un event en retard ou en double ne change rien : `stream/started` n'agit que sur un stream `created` ou `live`, `stream/ended` que sur un stream `live`.
 
-Le client est aussi dans `app.state.mqtt` pour publier depuis une route.
+Le client est aussi dans `app.state.mqtt` pour publier depuis une route (dépendance `get_mqtt`). `main` publie :
+
+| Topic          | Event         | Quand |
+|----------------|---------------|-------|
+| `player/event` | `PlayerEvent` | À chaque `POST /streams/{stream_id}/player-events` (voir cette route) |
 
 ### `stream/ended` manqué
 
@@ -539,10 +582,10 @@ Avec le service lancé :
 
 - Pas de refresh token ni de déconnexion : un jeton reste valide jusqu'à son expiration, même après un « logout » côté front. Le front doit se reconnecter quand il reçoit un `401`.
 - Pas de limite sur le nombre de tentatives de connexion (pas de protection contre le brute force).
-- `require_admin` n'est branché sur aucune route : les routes `/stats` n'existent pas encore.
 - Pas de route pour retirer le rôle `admin` : il faut modifier la colonne `role` en base.
 - Une session dont le `stream/ended` a été perdu reste `live` jusqu'à 30 s de plus, le temps du prochain rattrapage (voir « `stream/ended` manqué »).
 - Pas de migrations : les tables sont créées au démarrage, un changement de modèle demande de recréer la table.
 - Si PostgreSQL n'est pas prêt quand l'API démarre, le `create_all` échoue et l'API plante : il faut la relancer.
-- Seuls `stream` (ingest et HLS), `search`, `replay` (liste et détail), `bookmarks` et le chat de `live-chat` sont relayés : le relais vers `stats`, ... n'est pas encore implémenté.
+- Seuls `stream` (ingest et HLS), `search`, `replay` (liste et détail), `bookmarks`, le chat de `live-chat` et les stats de recherche de `stats` sont relayés.
+- Un event du player publié pendant une coupure du broker est perdu (pas de file d'attente côté `main`).
 - Les ids de session viennent de l'auto-incrément PostgreSQL, et `stream` refuse un id dont le dossier `lives/{stream_id}/` existe déjà (`Stream id already used`). Si la base est vidée (volume `postgres-data` supprimé) sans vider `stream/lives/`, les nouvelles sessions reprennent à 1 et leurs lives sont refusés : il faut vider les deux ensemble.

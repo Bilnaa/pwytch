@@ -4,11 +4,16 @@ from typing import Literal
 from pydantic import BaseModel, ConfigDict, Field
 
 StreamStatus = Literal["created", "live", "ended", "cancelled"]
+PlayerEventType = Literal["play", "pause", "stop"]
 
 
 class StreamCreate(BaseModel):
     title: str = Field(min_length=1, max_length=100, examples=["Speedrun any%"])
     game: str = Field(min_length=1, max_length=50, examples=["Celeste"])
+
+
+class PlayerEventCreate(BaseModel):
+    event_type: PlayerEventType
 
 
 class Streamer(BaseModel):
