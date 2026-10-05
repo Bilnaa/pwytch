@@ -22,9 +22,16 @@ export function DownloadButton({ streamId, status }: { streamId: number; status:
   // last status seen, to know if the next request must restart a failed conversion
   const statusRef = useRef<Mp4Status>(status)
   const timerRef = useRef<number | undefined>(undefined)
+  const mountedRef = useRef(true)
 
-  // leaving the page stops the polling
-  useEffect(() => () => window.clearTimeout(timerRef.current), [])
+  // leaving the page (or opening another replay) stops the polling
+  useEffect(() => {
+    mountedRef.current = true
+    return () => {
+      mountedRef.current = false
+      window.clearTimeout(timerRef.current)
+    }
+  }, [])
 
   function fail(text: string) {
     statusRef.current = 'failed'
@@ -43,6 +50,9 @@ export function DownloadButton({ streamId, status }: { streamId: number; status:
     timerRef.current = window.setTimeout(async () => {
       try {
         const replay = await getReplay(streamId)
+        if (!mountedRef.current) {
+          return
+        }
         if (replay.mp4_status === 'ready') {
           finish()
         } else if (replay.mp4_status === 'failed') {
@@ -51,7 +61,9 @@ export function DownloadButton({ streamId, status }: { streamId: number; status:
           waitForFile(delayMs)
         }
       } catch {
-        fail('Cannot reach the server')
+        if (mountedRef.current) {
+          fail('Cannot reach the server')
+        }
       }
     }, delayMs)
   }
@@ -69,6 +81,9 @@ export function DownloadButton({ streamId, status }: { streamId: number; status:
       if (answer.state === 'failed' && statusRef.current === 'failed') {
         answer = await requestDownload(streamId)
       }
+      if (!mountedRef.current) {
+        return
+      }
       if (answer.state === 'ready') {
         finish()
       } else if (answer.state === 'pending') {
@@ -78,7 +93,9 @@ export function DownloadButton({ streamId, status }: { streamId: number; status:
         fail('Conversion failed')
       }
     } catch {
-      fail('Cannot reach the server')
+      if (mountedRef.current) {
+        fail('Cannot reach the server')
+      }
     }
   }
 

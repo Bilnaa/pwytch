@@ -10,10 +10,12 @@ export function formatUptime(startedAt: string, now: number): string {
 
 // Length of a replay: "45 min", "1h 02", "40 s" under a minute
 export function formatDuration(seconds: number): string {
-  if (seconds < 60) {
-    return `${Math.max(0, Math.round(seconds))} s`
+  // rounded before the test: 59.6 s is shown "1 min", never "60 s"
+  const roundedSeconds = Math.max(0, Math.round(seconds))
+  if (roundedSeconds < 60) {
+    return `${roundedSeconds} s`
   }
-  const minutes = Math.floor(seconds / 60)
+  const minutes = Math.floor(roundedSeconds / 60)
   if (minutes < 60) {
     return `${minutes} min`
   }

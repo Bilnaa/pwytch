@@ -91,7 +91,12 @@ export function ReplayPage() {
           </p>
         </div>
         <Badge variant="secondary">REPLAY</Badge>
-        <DownloadButton streamId={replay.stream_id} status={replay.mp4_status} />
+        {/* key: another replay gets a new button, without the state or the polling of this one */}
+        <DownloadButton
+          key={replay.stream_id}
+          streamId={replay.stream_id}
+          status={replay.mp4_status}
+        />
       </div>
     </div>
   )
