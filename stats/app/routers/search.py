@@ -17,7 +17,7 @@ router = APIRouter(tags=["search"])
 
 
 @router.get("/stats/search/{item_type}/{item_id}")
-async def search(item_type: ItemType, item_id: str, session: SessionDep) -> CounterResponse:
+async def get_searched(item_type: ItemType, item_id: str, session: SessionDep) -> CounterResponse:
     key = f"{item_type}:{item_id}"
     stmt = select(Counter.value).where(Counter.key == key, Counter.counter_type == SEARCH_HIT)
     count = await session.scalar(stmt)
@@ -26,7 +26,7 @@ async def search(item_type: ItemType, item_id: str, session: SessionDep) -> Coun
 
 
 @router.get("/stats/search/top")
-async def search_filter(
+async def get_top_searched(
     session: SessionDep,
     limit: Limit = 10,
     item_type: ItemType | None = None,
@@ -34,7 +34,10 @@ async def search_filter(
     stmt = (
         select(Counter)
         .where(Counter.counter_type == SEARCH_HIT)
-        .order_by(Counter.value.desc())
+        .order_by(
+            Counter.value.desc(),
+            Counter.key,
+        )
         .limit(limit)
     )
 
