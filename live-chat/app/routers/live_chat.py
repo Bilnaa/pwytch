@@ -117,6 +117,7 @@ async def live_chat(
                 await save_message(final_message)
             except SQLAlchemyError:
                 logger.exception("Could not save a message of stream %s", stream_id)
+                connectionManager.cancel_last_message(user_id, stream_id)
                 await websocket.send_json({
                     "type": "error",
                     "code": "MESSAGE_NOT_SAVED",
