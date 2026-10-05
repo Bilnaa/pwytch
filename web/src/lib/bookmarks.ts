@@ -56,7 +56,13 @@ export function deleteBookmark(id: number): Promise<void> {
 export async function findBookmark(type: TargetType, targetId: number): Promise<Bookmark | null> {
   const params = new URLSearchParams({ target_type: type, target_id: String(targetId), size: '1' })
   const page = await api<BookmarkPage>(`/bookmarks?${params}`)
-  return page.items[0] ?? null
+  const bookmark = page.items[0]
+  // a main without the target_id relay ignores the filter and sends back the latest bookmark,
+  // so check it's really this target (else Unfollow would delete another one)
+  if (!bookmark || bookmark.target_id !== targetId) {
+    return null
+  }
+  return bookmark
 }
 
 // Sent after a follow or an unfollow, so the sidebar updates without waiting for its refresh
