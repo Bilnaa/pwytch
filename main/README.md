@@ -68,6 +68,7 @@ Toute l'API est sous `/api` (ex. `/api/auth/login`, `ws://localhost:8000/api/str
 | `/streams/{id}`  | HTTP GET  | Renvoie le détail d'une session       |
 | `/streams/{stream_id}/ingest` | WebSocket | Reçoit le flux vidéo du streamer et le relaie à `stream` (jeton en query) |
 | `/streams/{stream_id}/chat` | WebSocket | Relaie le chat du live avec `live-chat` dans les deux sens (jeton facultatif en query, sans jeton : lecture seule) |
+| `/streams/{stream_id}/messages` | HTTP GET | Renvoie les derniers messages du chat d'un live via `live-chat` |
 | `/lives/{stream_id}/{filename}` | HTTP GET | Relaie la playlist ou un segment HLS d'un live depuis `stream` |
 | `/users/{username}` | HTTP GET | Profil public d'un utilisateur (`id`, `username`, `display_name`), 404 s'il n'existe pas |
 | `/search` | HTTP GET | Cherche des streamers et des messages du chat de tous les lives via `search` |
@@ -281,6 +282,35 @@ Les deux appels à `search` partent en parallèle :
 Tant que #150 n'est pas mergé, `search` répond 404 sur `/search/messages` : `messages` est toujours vide, et se remplira sans changement côté `main` après le merge.
 
 Un `q` que `search` refuse alors que `main` l'accepte (vide après normalisation, par exemple des accents seuls) donne aussi des sections vides.
+
+### `GET /streams/{stream_id}/messages?limit=`
+
+Le front charge les derniers messages en arrivant sur un live, avant d'ouvrir le WebSocket du chat. `main` vérifie que le stream existe (`live-chat` ne le sait pas), puis relaie la requête à `GET /streams/{stream_id}/messages` de `live-chat`. Pas besoin d'être connecté.
+
+| Paramètre | Défaut | Contraintes |
+|-----------|--------|-------------|
+| `limit`   | `50`   | 1 à 100 |
+
+Ce sont les bornes de `live-chat`, à garder alignées : un `limit` hors bornes donne un `422` sans appeler `live-chat`.
+
+Les messages sont renvoyés du plus ancien au plus récent :
+
+```json
+[
+  {"id": "6f1c2a8e-3b4d-4e5f-8a9b-0c1d2e3f4a5b", "stream_id": 7, "author": {"id": 42, "username": "Célèste"}, "content": "GG WP !", "sent_at": "2026-10-02T19:00:00Z"}
+]
+```
+
+| Code | Cas |
+|------|-----|
+| 200  | Messages relayés (liste vide si personne n'a écrit) |
+| 404  | Stream inconnu, `live-chat` n'est pas appelé |
+| 422  | Paramètre invalide, `live-chat` n'est pas appelé |
+| 502  | `live-chat` a renvoyé une réponse inattendue (y compris son `503` quand sa base est indisponible) |
+| 503  | `live-chat` est injoignable |
+| 504  | `live-chat` n'a pas répondu à temps |
+
+Les erreurs viennent du helper commun, voir « Appeler un satellite ».
 
 ### `GET /replays?page=&size=&streamer_id=` et `GET /replays/{stream_id}`
 
