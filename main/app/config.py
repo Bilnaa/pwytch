@@ -36,6 +36,7 @@ class ReplaySettings(BaseSettings):
 
     replay_url: str = "http://localhost:8003"
     replay_timeout_seconds: float = 5
+    replay_download_timeout_seconds: float = 300
 
 
 class BookmarksSettings(BaseSettings):
