@@ -1,10 +1,10 @@
 import pytest
 
-from app import conversion
-from app.infra.db import get_session
-from app.infra.models import Mp4Status, Replay
+from app.dependencies import get_session
 from app.main import app
-from app.routers import replays
+from app.models import Mp4Status, Replay
+from app.services import conversion_service as conversion
+from app.services import replay_service
 from tests.factories import add_replay, reload
 
 DOWNLOAD_URL = "/replays/42/download"
@@ -162,7 +162,7 @@ def read_stale_status(monkeypatch, stale_status: Mp4Status):
     async def find_stale_replay(session, stream_id):
         return Replay(stream_id=stream_id, streamer_id=7, mp4_status=stale_status)
 
-    monkeypatch.setattr(replays, "find_replay", find_stale_replay)
+    monkeypatch.setattr(replay_service, "find_replay", find_stale_replay)
 
 
 @pytest.mark.anyio

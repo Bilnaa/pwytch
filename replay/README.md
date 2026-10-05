@@ -32,6 +32,22 @@ En image Docker seule, le build se lance depuis la racine du repo, car l'image e
 
 Au démarrage, le service crée ses tables si elles n'existent pas. Si Postgres est injoignable, il démarre quand même et journalise un `WARNING` (même comportement que `stats`) ; les tables seront créées au prochain redémarrage. La base `replay` est créée par `infra/postgres/init.sql`, qui ne s'exécute que sur un volume Postgres vide : sur un volume plus ancien, la créer à la main avec `docker compose exec postgres createdb -U postgres replay`.
 
+## Organisation du code
+
+| Dossier | Rôle |
+|---|---|
+| `routers/` | Contrôleurs : lisent les paramètres, appellent un service, renvoient la réponse ; `error_handlers.py` traduit les exceptions métier en 404 et 500 |
+| `services/` | Logique : liste, détail et téléchargement (`replay_service`), events de live (`live_event_service`), ffmpeg (`conversion_service`), appel à `stream` (`stream_client`), exceptions métier (`exceptions`) |
+| `repositories/` | Requêtes SQL, dont les `UPDATE` atomiques des statuts de conversion |
+| `models/` | Table `replays` et `Mp4Status` |
+| `schemas/` | Réponses (`ReplayResult`, `ConversionPending`) |
+| `consumers/` | Abonnements MQTT |
+| `core/` | Config et connexion à la base |
+| `helpers/` | Constantes |
+| `dependencies.py` | Dépendances FastAPI (session, convertisseur) |
+
+Un service commite une fois à la fin de son cas d'usage ; un repository ne commite jamais, sauf les `UPDATE` conditionnels des statuts de conversion, qui doivent être visibles des autres requêtes dès leur retour.
+
 ## Configuration
 
 Les variables se mettent dans `replay/.env` (copier `.env.example`, ou `make dev` depuis la racine).

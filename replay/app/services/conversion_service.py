@@ -2,12 +2,11 @@ import asyncio
 import logging
 from pathlib import Path
 
-from fastapi import Request
 from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
-from app.infra.models import Mp4Status
-from app.infra.repository import finish_conversion, reset_processing
+from app.models import Mp4Status
+from app.repositories.replay_repository import finish_conversion, reset_processing
 
 logger = logging.getLogger(__name__)
 
@@ -117,7 +116,3 @@ class Mp4Converter:
         part_path.replace(self.mp4_path(stream_id))
         return Mp4Status.READY
 
-
-def get_converter(request: Request) -> Mp4Converter:
-    """Dépendance FastAPI : le convertisseur créé par le lifespan, remplacé en test."""
-    return request.app.state.converter

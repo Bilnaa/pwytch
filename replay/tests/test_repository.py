@@ -1,7 +1,7 @@
 import pytest
 
-from app.infra.models import Mp4Status
-from app.infra.repository import (
+from app.models import Mp4Status
+from app.repositories.replay_repository import (
     claim_conversion,
     finish_conversion,
     reset_conversion,

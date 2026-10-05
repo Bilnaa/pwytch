@@ -1,7 +1,7 @@
 from sqlalchemy import and_, func, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.infra.models import Mp4Status, Replay
+from app.models import Mp4Status, Replay
 
 # Seul endroit qui dit ce qu'est un replay visible : un live terminé. duration_s est écrit avec
 # ended_at ; une ligne écrite hors handler sans lui ferait planter ReplayResult (500).
@@ -11,6 +11,21 @@ FINISHED = and_(Replay.ended_at.is_not(None), Replay.duration_s.is_not(None))
 async def find_replay(session: AsyncSession, stream_id: int) -> Replay | None:
     return await session.scalar(select(Replay).where(Replay.stream_id == stream_id, FINISHED))
 
+
+
+async def get_replay(session: AsyncSession, stream_id: int) -> Replay | None:
+    """Ligne du live, terminé ou non (find_replay ne voit que les replays terminés)."""
+    return await session.get(Replay, stream_id)
+
+
+async def add_replay(session: AsyncSession, stream_id: int) -> Replay:
+    replay = Replay(stream_id=stream_id)
+    session.add(replay)
+    return replay
+
+
+async def delete_replay(session: AsyncSession, replay: Replay) -> None:
+    await session.delete(replay)
 
 async def list_replays(
     session: AsyncSession, page: int, size: int, streamer_id: int | None

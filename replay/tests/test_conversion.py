@@ -3,8 +3,8 @@ import logging
 
 import pytest
 
-from app.conversion import Mp4Converter
-from app.infra.models import Mp4Status
+from app.models import Mp4Status
+from app.services.conversion_service import Mp4Converter
 from tests.factories import add_replay, reload
 
 

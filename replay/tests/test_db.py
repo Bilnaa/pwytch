@@ -5,9 +5,9 @@ from sqlalchemy import inspect, text
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import create_async_engine
 
-from app.infra import db
-from app.infra.db import try_init_db
-from app.infra.models import Mp4Status, Replay
+from app.core import db
+from app.core.db import try_init_db
+from app.models import Mp4Status, Replay
 from tests.factories import FIRST_END, add_replay, reload
 
 

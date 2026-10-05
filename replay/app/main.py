@@ -4,11 +4,12 @@ from contextlib import asynccontextmanager
 import httpx
 from fastapi import FastAPI
 
-from app.conversion import Mp4Converter
-from app.infra.config import settings
-from app.infra.db import engine, session_factory, try_init_db
-from app.mqtt import create_mqtt_client
+from app.consumers.mqtt import create_mqtt_client
+from app.core.config import settings
+from app.core.db import engine, session_factory, try_init_db
 from app.routers import health, replays
+from app.routers.error_handlers import register_error_handlers
+from app.services.conversion_service import Mp4Converter
 
 
 @asynccontextmanager
@@ -38,6 +39,7 @@ app = FastAPI(title="replay", lifespan=lifespan)
 
 app.include_router(health.router)
 app.include_router(replays.router)
+register_error_handlers(app)
 
 
 @app.get("/")

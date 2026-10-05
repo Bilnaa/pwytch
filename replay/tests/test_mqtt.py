@@ -2,8 +2,8 @@ import httpx
 import pytest
 from common.topics import STREAM_ENDED, STREAM_STARTED
 
-from app.infra.config import Settings
-from app.mqtt import create_mqtt_client
+from app.consumers.mqtt import create_mqtt_client
+from app.core.config import Settings
 from tests.factories import make_ended, make_started, reload
 
 
