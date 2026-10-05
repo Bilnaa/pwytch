@@ -12,3 +12,8 @@ class BookmarkDeletedCountResponse(BaseModel):
     target_type: TargetType
     target_id: int
     count: int
+
+
+class ChatMessageCountResponse(BaseModel):
+    stream_id: int
+    count: int
