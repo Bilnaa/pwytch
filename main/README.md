@@ -343,8 +343,11 @@ Appelé par le player du front à chaque play, pause et stop, pour les stats. Le
 | `event_type` vaut `play`, `pause` ou `stop` | `202`, sans corps |
 | autre `event_type`, ou absent | `422` |
 | session inconnue | `404 {"detail": "Stream not found"}` |
+| plus de 10 events en 10 secondes pour la même IP et la même session | `429 {"detail": "Too many player events, try again later"}`, l'event n'est pas publié |
 
 `main` répond `202` tout de suite, puis publie en tâche de fond un `PlayerEvent` de `common` sur `player/event` (`stream_id`, `event_type`, `user_id`, `occurred_at` = heure de réception par `main`). Si le broker est indisponible, la réponse est la même : l'event est perdu et l'erreur est journalisée. Le statut de la session n'est pas vérifié (un stop peut arriver juste après la fin du live).
+
+La route est ouverte sans jeton : la limite empêche une boucle de requêtes de fausser les stats. Elle est gardée en mémoire dans `main` (remise à zéro au redémarrage). `event_type` est le `PlayerEventType` de `common`, le même que dans `PlayerEvent`.
 
 ### `GET /streams/{stream_id}/messages?limit=`
 

@@ -1,10 +1,10 @@
 from datetime import datetime
 from typing import Literal
 
+from common.events import PlayerEventType
 from pydantic import BaseModel, ConfigDict, Field
 
 StreamStatus = Literal["created", "live", "ended", "cancelled"]
-PlayerEventType = Literal["play", "pause", "stop"]
 
 
 class StreamCreate(BaseModel):
