@@ -37,8 +37,16 @@ def session_factory(engine):
 
 
 @pytest.fixture
-def converter(session_factory, tmp_path):
-    return Mp4Converter(session_factory, "http://stream", tmp_path, timeout_s=0.05)
+def lives_dir(tmp_path):
+    # LIVES_DIR de stream, vide : chaque test y écrit les playlists dont il a besoin.
+    directory = tmp_path / "lives"
+    directory.mkdir()
+    return directory
+
+
+@pytest.fixture
+def converter(session_factory, lives_dir, tmp_path):
+    return Mp4Converter(session_factory, lives_dir, tmp_path, timeout_s=0.05)
 
 
 @pytest.fixture

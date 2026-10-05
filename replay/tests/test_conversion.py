@@ -18,12 +18,12 @@ def broken_session_factory():
 
 
 @pytest.mark.anyio
-async def test_ffmpeg_reads_the_playlist_of_stream_and_copies_the_streams(
-    converter, tmp_path
+async def test_ffmpeg_reads_the_playlist_in_the_lives_dir_and_copies_the_streams(
+    converter, lives_dir, tmp_path
 ):
     assert converter.ffmpeg_args(42) == [
         "ffmpeg", "-nostdin", "-y", "-loglevel", "error",
-        "-i", "http://stream/lives/42/index.m3u8",
+        "-i", str(lives_dir / "42" / "index.m3u8"),
         "-c", "copy", "-f", "mp4", str(tmp_path / "42.mp4.part"),
     ]  # fmt: skip
 
@@ -48,7 +48,7 @@ async def test_failure_logs_stderr_removes_the_part_file_and_marks_failed(
 ):
     await add_replay(session, 42, mp4_status=Mp4Status.PROCESSING)
     fake_ffmpeg.returncode = 1
-    fake_ffmpeg.stderr = b"Server returned 404 Not Found"
+    fake_ffmpeg.stderr = b"index.m3u8: No such file or directory"
 
     await converter.convert(42)
 
@@ -56,7 +56,7 @@ async def test_failure_logs_stderr_removes_the_part_file_and_marks_failed(
     assert not (tmp_path / "42.mp4").exists()
     assert (await reload(session, 42)).mp4_status is Mp4Status.FAILED
     [error] = error_records(caplog)
-    assert "Server returned 404 Not Found" in error.getMessage()
+    assert "No such file or directory" in error.getMessage()
 
 
 @pytest.mark.anyio
@@ -88,7 +88,7 @@ async def test_missing_ffmpeg_marks_failed(converter, fake_ffmpeg, session, capl
 @pytest.mark.anyio
 async def test_convert_never_raises(fake_ffmpeg, tmp_path, caplog):
     broken_converter = Mp4Converter(
-        broken_session_factory, "http://stream", tmp_path, 1
+        broken_session_factory, tmp_path / "lives", tmp_path, 1
     )
 
     await broken_converter.convert(42)
@@ -117,7 +117,7 @@ async def test_reset_interrupted_creates_the_replays_dir(session_factory, tmp_pa
     replays_dir = tmp_path / "replays"
 
     await Mp4Converter(
-        session_factory, "http://stream", replays_dir, 1
+        session_factory, tmp_path / "lives", replays_dir, 1
     ).reset_interrupted()
 
     assert replays_dir.is_dir()
@@ -129,7 +129,7 @@ async def test_reset_interrupted_with_database_down_does_not_stop_the_start(
 ):
     # Même règle que try_init_db : une base coupée n'empêche pas le service de démarrer.
     broken_converter = Mp4Converter(
-        broken_session_factory, "http://stream", tmp_path, 1
+        broken_session_factory, tmp_path / "lives", tmp_path, 1
     )
     (tmp_path / "1.mp4.part").write_bytes(b"partial mp4")
 
@@ -164,7 +164,7 @@ async def test_cancelled_conversion_kills_ffmpeg_and_removes_the_part_file(
     # Annulation à l'arrêt du service : ffmpeg ne doit pas rester orphelin.
     await add_replay(session, 42, mp4_status=Mp4Status.PROCESSING)
     slow_converter = Mp4Converter(
-        session_factory, "http://stream", tmp_path, timeout_s=60
+        session_factory, tmp_path / "lives", tmp_path, timeout_s=60
     )
     fake_ffmpeg.hang = True
 

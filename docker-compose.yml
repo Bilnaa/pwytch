@@ -49,11 +49,18 @@ services:
             DATABASE_URL: postgresql+asyncpg://${POSTGRES_USER:-postgres}:${POSTGRES_PASSWORD:-postgres}@postgres:5432/replay
             MQTT_HOST: mqtt
             MQTT_PORT: 1883
-            STREAM_URL: http://stream:8000
+            LIVES_DIR: /code/lives
         ports:
             - "8003:8000"
         volumes:
             - replays-data:/code/replays
+            # Lives écrits par make stream, en lecture seule. Le dossier doit exister.
+            - type: bind
+              source: ./stream/lives
+              target: /code/lives
+              read_only: true
+              bind:
+                  create_host_path: false
         depends_on:
             postgres:
                 condition: service_healthy

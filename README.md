@@ -72,6 +72,8 @@ Par défaut, un service prévient les autres avec un event MQTT : le producteur 
 - **WebSocket `main` → `live-chat` pour le chat** : les messages vont dans les deux sens en temps réel avec un viewer connecté. `main` vérifie le jeton puis relaie.
 - **HTTP pour `/health`** : `main` interroge les autres services pour savoir s'ils répondent.
 
+Aucun satellite n'appelle un autre satellite. `replay` a besoin des fichiers HLS de `stream` : il les lit dans le dossier des lives, partagé en lecture seule (`LIVES_DIR`), sans appel réseau.
+
 ## Branches et PR
 
 - `main` : ce qui est rendu. Seules `develop` et les branches `hotfix/*` peuvent y être mergées.

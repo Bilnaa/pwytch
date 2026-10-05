@@ -1,6 +1,5 @@
 from collections.abc import Awaitable, Callable
 
-import httpx
 from common.events import BaseEvent, StreamEnded, StreamStarted
 from common.mqtt import MqttClient
 from common.topics import STREAM_ENDED, STREAM_STARTED
@@ -28,15 +27,13 @@ def with_session[E: BaseEvent](
 
 
 def create_mqtt_client(
-    app_settings: Settings,
-    session_factory: async_sessionmaker[AsyncSession],
-    stream_client: httpx.AsyncClient,
+    app_settings: Settings, session_factory: async_sessionmaker[AsyncSession]
 ) -> MqttClient:
     mqtt = MqttClient(app_settings.mqtt_host, app_settings.mqtt_port, client_id=MQTT_CLIENT_ID)
 
-    async def on_ended_with_stream(session: AsyncSession, event: StreamEnded) -> None:
-        await on_stream_ended(session, event, stream_client)
+    async def on_ended(session: AsyncSession, event: StreamEnded) -> None:
+        await on_stream_ended(session, event, app_settings.lives_dir)
 
     mqtt.subscribe(STREAM_STARTED, StreamStarted, with_session(session_factory, on_stream_started))
-    mqtt.subscribe(STREAM_ENDED, StreamEnded, with_session(session_factory, on_ended_with_stream))
+    mqtt.subscribe(STREAM_ENDED, StreamEnded, with_session(session_factory, on_ended))
     return mqtt

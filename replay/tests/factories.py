@@ -1,4 +1,5 @@
 from datetime import UTC, datetime, timedelta
+from pathlib import Path
 from uuid import uuid4
 
 from common.events import StreamEnded, StreamStarted
@@ -57,3 +58,12 @@ def make_ended(**overrides) -> StreamEnded:
         "reason": "normal",
     }
     return StreamEnded(**(defaults | overrides))
+
+
+def write_playlist(lives_dir: Path, stream_id: int) -> Path:
+    """Playlist terminée telle que stream la laisse dans LIVES_DIR."""
+    live_dir = lives_dir / str(stream_id)
+    live_dir.mkdir(parents=True)
+    playlist = live_dir / "index.m3u8"
+    playlist.write_text("#EXTM3U\n#EXTINF:4.0,\nindex0.ts\n#EXT-X-ENDLIST\n")
+    return playlist

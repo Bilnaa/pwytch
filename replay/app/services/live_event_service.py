@@ -1,11 +1,11 @@
 import logging
+from pathlib import Path
 
-import httpx
 from common.events import StreamEnded, StreamStarted
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.repositories import replay_repository
-from app.services.stream_client import playlist_is_missing
+from app.services.lives_storage import playlist_is_missing
 
 logger = logging.getLogger(__name__)
 
@@ -23,14 +23,12 @@ async def on_stream_started(session: AsyncSession, event: StreamStarted) -> None
     await session.commit()
 
 
-async def on_stream_ended(
-    session: AsyncSession, event: StreamEnded, stream_client: httpx.AsyncClient
-) -> None:
+async def on_stream_ended(session: AsyncSession, event: StreamEnded, lives_dir: Path) -> None:
     replay = await replay_repository.get_replay(session, event.stream_id)
     if replay is not None and replay.ended_at is not None:
         logger.debug("Duplicate stream/ended ignored for live %s", event.stream_id)
         return
-    if event.reason == "error" and await playlist_is_missing(stream_client, event.stream_id):
+    if event.reason == "error" and playlist_is_missing(lives_dir, event.stream_id):
         if replay is not None:
             await replay_repository.delete_replay(session, replay)
             await session.commit()

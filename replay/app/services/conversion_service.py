@@ -7,6 +7,7 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from app.models import Mp4Status
 from app.repositories.replay_repository import finish_conversion, reset_processing
+from app.services.lives_storage import playlist_path
 
 logger = logging.getLogger(__name__)
 
@@ -20,12 +21,12 @@ class Mp4Converter:
     def __init__(
         self,
         session_factory: async_sessionmaker[AsyncSession],
-        stream_url: str,
+        lives_dir: Path,
         replays_dir: Path,
         timeout_s: float,
     ):
         self.session_factory = session_factory
-        self.stream_url = stream_url
+        self.lives_dir = lives_dir
         self.replays_dir = replays_dir
         self.timeout_s = timeout_s
 
@@ -39,7 +40,7 @@ class Mp4Converter:
     def ffmpeg_args(self, stream_id: int) -> list[str]:
         return [
             "ffmpeg", "-nostdin", "-y", "-loglevel", "error",
-            "-i", f"{self.stream_url}/lives/{stream_id}/index.m3u8",
+            "-i", str(playlist_path(self.lives_dir, stream_id)),
             "-c", "copy", "-f", "mp4", str(self.part_path(stream_id)),
         ]  # fmt: skip
 
