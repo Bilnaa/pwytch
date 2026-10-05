@@ -1,0 +1,1 @@
+LIMIT_INTEGER = 2**31 - 1
