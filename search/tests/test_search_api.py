@@ -4,9 +4,9 @@ import pytest
 from common.events import ItemType
 from common.mqtt import NotConnectedError
 
-from app.indexer import on_stream_ended, on_stream_started
-from app.infra.db import get_session
+from app.dependencies import get_session
 from app.main import app
+from app.services.indexing_service import on_stream_ended, on_stream_started
 from tests.factories import (
     FIRST_START,
     SECOND_START,

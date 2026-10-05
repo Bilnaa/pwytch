@@ -26,6 +26,22 @@ En image Docker, le build se lance depuis la racine du repo, car l'image embarqu
 
 Au démarrage, le service crée son schéma, ses tables et l'extension `pg_trgm` s'ils n'existent pas, puis se connecte au broker. Aucune action manuelle sur la base.
 
+## Organisation du code
+
+| Dossier | Rôle |
+|---|---|
+| `routers/` | Contrôleurs : lisent les paramètres, appellent un service, renvoient la réponse |
+| `services/` | Logique : recherche et hits (`search_service`, `hit_service`), indexation des events (`indexing_service`) |
+| `repositories/` | Requêtes SQL |
+| `models/` | Tables SQLAlchemy |
+| `schemas/` | Réponses et paramètres validés (`q`) |
+| `consumers/` | Abonnements MQTT |
+| `core/` | Config et connexion à la base |
+| `helpers/` | Fonctions pures (`normalize`) et constantes |
+| `dependencies.py` | Dépendances FastAPI (session, client MQTT, `HitPublisher`) |
+
+Un service commite une fois à la fin de son cas d'usage ; un repository ne commite jamais.
+
 ## Configuration
 
 Les variables se mettent dans `search/.env` (copier `.env.example`).
@@ -151,7 +167,7 @@ Souscrits en QoS 1. Les modèles viennent de `common.events`.
 | `stream/ended`   | `StreamEnded`   | Marque le live comme terminé                                            |
 | `chat/message`   | `ChatMessage`   | Stocke le message et son texte normalisé, si `message_id` est nouveau   |
 
-Le consumer est le `MqttClient` de `common.mqtt`, créé dans `app/mqtt.py` et démarré par le `lifespan` :
+Le consumer est le `MqttClient` de `common.mqtt`, créé dans `app/consumers/mqtt.py` et démarré par le `lifespan` :
 
 - `client_id` fixe, `search` : la session est persistante, le broker garde les messages QoS 1 publiés pendant un redémarrage de `search` ;
 - si le broker est injoignable, le client réessaie toutes les 5 s, et l'API continue de répondre ;
@@ -172,7 +188,7 @@ Exemple :
 ```
 
 - Page courante seulement : `page=2&size=20` publie les éléments de la page 2. Rien n'est publié si la réponse est vide, ni sur un 422 ou un 500.
-- Publication en tâche de fond (`BackgroundTasks`, `app/hits.py`), après l'envoi de la réponse : elle ne la retarde pas.
+- Publication en tâche de fond (`BackgroundTasks`, `app/services/hit_service.py`), après l'envoi de la réponse : elle ne la retarde pas.
 - La session SQL est déclarée en `scope="function"` : elle est rendue au pool avant la tâche de fond. Avec le scope par défaut, elle garderait sa connexion pendant la publication.
 - Broker indisponible : la recherche répond quand même. `publish_hits` s'arrête au premier échec et logue une seule ligne `ERROR` (`N search/hit events not published: …`) ; une exception inattendue est loguée avec sa trace. Rien ne remonte.
 

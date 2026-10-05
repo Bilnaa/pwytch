@@ -3,9 +3,9 @@ from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
 
-from app.infra.config import settings
-from app.infra.db import engine, init_db, session_factory
-from app.mqtt import create_mqtt_client
+from app.consumers.mqtt import create_mqtt_client
+from app.core.config import settings
+from app.core.db import engine, init_db, session_factory
 from app.routers import health, search
 
 
