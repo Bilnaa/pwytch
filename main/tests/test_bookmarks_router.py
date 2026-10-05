@@ -6,7 +6,6 @@ import pytest
 
 from app.dependencies import get_bookmarks_client
 from app.main import app
-from tests.test_streams_router import auth_headers
 
 BOOKMARK = {
     "id": 3,
@@ -73,26 +72,27 @@ def test_routes_require_a_token(client, recorded, method, path, body):
 
 
 @pytest.mark.parametrize(("method", "path", "body"), ROUTES)
-def test_routes_send_the_identity(client, recorded, method, path, body):
-    client.request(method, path, json=body, headers=auth_headers(client))
+def test_routes_send_the_identity(client, auth_headers, recorded, method, path, body):
+    response = client.request(method, path, json=body, headers=auth_headers)
+    assert response.is_success
     request = recorded[0]
     assert (request.method, request.url.path) == (method, path)
     assert request.headers["X-User-Name"] == "alice"
     assert request.headers["X-User-Id"].isdigit()
 
 
-def test_list_returns_the_page_with_default_params(client, recorded):
-    response = client.get("/bookmarks", headers=auth_headers(client))
+def test_list_returns_the_page_with_default_params(client, auth_headers, recorded):
+    response = client.get("/bookmarks", headers=auth_headers)
     assert response.status_code == 200
     assert response.json() == PAGE
     assert dict(recorded[0].url.params) == {"page": "1", "size": "20"}
 
 
-def test_list_relays_page_size_and_target_type(client, recorded):
+def test_list_relays_page_size_and_target_type(client, auth_headers, recorded):
     client.get(
         "/bookmarks",
         params={"page": 2, "size": 5, "target_type": "streamer"},
-        headers=auth_headers(client),
+        headers=auth_headers,
     )
     assert dict(recorded[0].url.params) == {"page": "2", "size": "5", "target_type": "streamer"}
 
@@ -107,41 +107,41 @@ def test_list_relays_page_size_and_target_type(client, recorded):
         {"target_type": "game"},
     ],
 )
-def test_invalid_list_params_are_not_relayed(client, recorded, params):
-    response = client.get("/bookmarks", params=params, headers=auth_headers(client))
+def test_invalid_list_params_are_not_relayed(client, auth_headers, recorded, params):
+    response = client.get("/bookmarks", params=params, headers=auth_headers)
     assert response.status_code == 422
     assert recorded == []
 
 
-def test_create_returns_201_with_location(client, recorded):
-    response = client.post("/bookmarks", json=CREATE, headers=auth_headers(client))
+def test_create_returns_201_with_location(client, auth_headers, recorded):
+    response = client.post("/bookmarks", json=CREATE, headers=auth_headers)
     assert response.status_code == 201
     assert response.headers["Location"] == "/api/bookmarks/3"
     assert response.json() == BOOKMARK
     assert json.loads(recorded[0].content) == {**CREATE, "note": None}
 
 
-def test_get_returns_the_bookmark(client, recorded):
-    response = client.get("/bookmarks/3", headers=auth_headers(client))
+def test_get_returns_the_bookmark(client, auth_headers, recorded):
+    response = client.get("/bookmarks/3", headers=auth_headers)
     assert response.status_code == 200
     assert response.json() == BOOKMARK
 
 
 @pytest.mark.parametrize("bookmark_id", [0, 2_147_483_648])
-def test_invalid_bookmark_id_is_not_relayed(client, recorded, bookmark_id):
-    response = client.get(f"/bookmarks/{bookmark_id}", headers=auth_headers(client))
+def test_invalid_bookmark_id_is_not_relayed(client, auth_headers, recorded, bookmark_id):
+    response = client.get(f"/bookmarks/{bookmark_id}", headers=auth_headers)
     assert response.status_code == 422
     assert recorded == []
 
 
-def test_update_only_sends_the_given_fields(client, recorded):
-    response = client.patch("/bookmarks/3", json={"note": "GG"}, headers=auth_headers(client))
+def test_update_only_sends_the_given_fields(client, auth_headers, recorded):
+    response = client.patch("/bookmarks/3", json={"note": "GG"}, headers=auth_headers)
     assert response.status_code == 200
     assert json.loads(recorded[0].content) == {"note": "GG"}
 
 
-def test_delete_returns_204(client, recorded):
-    response = client.delete("/bookmarks/3", headers=auth_headers(client))
+def test_delete_returns_204(client, auth_headers, recorded):
+    response = client.delete("/bookmarks/3", headers=auth_headers)
     assert response.status_code == 204
     assert response.content == b""
 
@@ -151,11 +151,14 @@ def test_delete_returns_204(client, recorded):
     [
         {"target_type": "game", "target_id": 7, "label": "Run"},
         {"target_type": "replay", "label": "Run"},
+        {**CREATE, "target_id": "7"},
+        {**CREATE, "target_id": 0},
+        {**CREATE, "target_id": 2_147_483_648},
         {**CREATE, "user_id": 2},
     ],
 )
-def test_invalid_create_is_not_relayed(client, recorded, body):
-    response = client.post("/bookmarks", json=body, headers=auth_headers(client))
+def test_invalid_create_is_not_relayed(client, auth_headers, recorded, body):
+    response = client.post("/bookmarks", json=body, headers=auth_headers)
     assert response.status_code == 422
     assert recorded == []
 
@@ -168,9 +171,9 @@ def test_invalid_create_is_not_relayed(client, recorded, body):
         (httpx.Response(422, json={"detail": []}), 422),
     ],
 )
-def test_rejection_is_relayed(client, use_bookmarks, answer, code):
+def test_rejection_is_relayed(client, auth_headers, use_bookmarks, answer, code):
     use_bookmarks(lambda request: answer)
-    response = client.post("/bookmarks", json=CREATE, headers=auth_headers(client))
+    response = client.post("/bookmarks", json=CREATE, headers=auth_headers)
     assert response.status_code == code
     assert response.content == answer.content
 
@@ -184,14 +187,14 @@ def test_rejection_is_relayed(client, use_bookmarks, answer, code):
         (httpx.ReadTimeout("too slow"), 504),
     ],
 )
-def test_bookmarks_failure(client, use_bookmarks, failure, code):
+def test_bookmarks_failure(client, auth_headers, use_bookmarks, failure, code):
     def handler(request):
         if isinstance(failure, Exception):
             raise failure
         return failure
 
     use_bookmarks(handler)
-    assert client.get("/bookmarks/3", headers=auth_headers(client)).status_code == code
+    assert client.get("/bookmarks/3", headers=auth_headers).status_code == code
 
 
 def test_routes_are_documented(client):

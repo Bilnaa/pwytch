@@ -21,7 +21,18 @@ from app.config import (
 )
 from app.db import Base, SessionLocal, engine
 from app.mqtt import create_mqtt_client
-from app.routers import auth, bookmarks, chat, health, ingest, lives, replays, search, streams, users
+from app.routers import (
+    auth,
+    bookmarks,
+    chat,
+    health,
+    ingest,
+    lives,
+    replays,
+    search,
+    streams,
+    users,
+)
 from app.services import streams as streams_service
 from app.services.satellites import SatelliteError, SatelliteRejectedError
 

@@ -318,7 +318,7 @@ Les bookmarks sont propres à chaque utilisateur : toutes les routes demandent u
 
 Ce sont les bornes de `bookmarks`, à garder alignées : un paramètre hors bornes donne un `422` sans appeler `bookmarks`.
 
-`main` vérifie seulement la forme du corps (`target_type` vaut `replay` ou `streamer`, pas de champ en plus) : un corps mal formé donne `422` sans appeler `bookmarks`. Les longueurs de `label` et `note` sont vérifiées par `bookmarks`, dont le `422` est relayé tel quel, comme son `404` (bookmark absent ou d'un autre utilisateur) et son `409` (bookmark déjà existant). Les autres erreurs suivent le tableau de « Appeler un satellite ».
+`main` vérifie seulement la forme du corps (`target_type` vaut `replay` ou `streamer`, `target_id` est un entier de 1 à 2 147 483 647, `label` n'est pas `null`, pas de champ en plus) : un corps mal formé donne `422` sans appeler `bookmarks`. Les longueurs de `label` et `note` sont vérifiées par `bookmarks`, dont le `422` est relayé tel quel, comme son `404` (bookmark absent ou d'un autre utilisateur) et son `409` (bookmark déjà existant). Les autres erreurs suivent le tableau de « Appeler un satellite ».
 
 Le `Location` de `bookmarks` pointe vers sa propre URL : `main` le remplace par celle de sa route.
 
@@ -539,6 +539,5 @@ Avec le service lancé :
 - Une session dont le `stream/ended` a été perdu reste `live` jusqu'à 30 s de plus, le temps du prochain rattrapage (voir « `stream/ended` manqué »).
 - Pas de migrations : les tables sont créées au démarrage, un changement de modèle demande de recréer la table.
 - Si PostgreSQL n'est pas prêt quand l'API démarre, le `create_all` échoue et l'API plante : il faut la relancer.
-- `bookmarks` n'a pas encore `GET /bookmarks` ni `GET /bookmarks/{bookmark_id}` : en attendant, ces deux routes de `main` relaient son `405 Method Not Allowed`. `main` attend une liste JSON de bookmarks sur `GET /bookmarks`, sans pagination.
 - Seuls `stream` (ingest et HLS), `search`, `replay` (liste et détail), `bookmarks` et le chat de `live-chat` sont relayés : le relais vers `stats`, ... n'est pas encore implémenté.
 - Les ids de session viennent de l'auto-incrément PostgreSQL, et `stream` refuse un id dont le dossier `lives/{stream_id}/` existe déjà (`Stream id already used`). Si la base est vidée (volume `postgres-data` supprimé) sans vider `stream/lives/`, les nouvelles sessions reprennent à 1 et leurs lives sont refusés : il faut vider les deux ensemble.
