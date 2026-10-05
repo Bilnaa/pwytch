@@ -30,6 +30,7 @@ router = APIRouter(tags=["bookmarks"])
 
 BookmarkId = Annotated[int, Path(gt=0, le=LIMIT_INTEGER)]
 PageNumber = Annotated[int, Query(ge=1, le=LIMIT_INTEGER)]
+TargetId = Annotated[int, Query(gt=0, le=LIMIT_INTEGER)]
 PageSize = Annotated[int, Query(ge=1, le=100)]
 MqttDep = Annotated[MqttClient, Depends(get_mqtt)]
 
@@ -117,12 +118,15 @@ def get_bookmarks(
     user: CurrentUser,
     session: SessionDep,
     target_type: TargetType | None = None,
+    target_id: TargetId | None = None,
     page: PageNumber = 1,
     size: PageSize = 20,
 ) -> Page[BookmarkResponse]:
     conditions = [Bookmark.user_id == user.id]
     if target_type is not None:
         conditions.append(Bookmark.target_type == target_type)
+    if target_id is not None:
+        conditions.append(Bookmark.target_id == target_id)
 
     total = session.scalar(
         select(func.count()).select_from(Bookmark).where(*conditions)
