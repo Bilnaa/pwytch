@@ -1,6 +1,7 @@
 import logging
 from contextlib import asynccontextmanager
 
+from common.errors import register_internal_error_handler
 from fastapi import FastAPI
 
 from app.consumers.mqtt import create_mqtt_client
@@ -30,6 +31,7 @@ async def lifespan(app: FastAPI):
 
 
 app = FastAPI(title="replay", lifespan=lifespan)
+register_internal_error_handler(app)
 
 app.include_router(health.router)
 app.include_router(replays.router)

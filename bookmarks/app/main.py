@@ -1,6 +1,7 @@
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 
+from common.errors import register_internal_error_handler
 from fastapi import FastAPI
 
 from app.database import engine
@@ -16,6 +17,7 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     engine.dispose()
 
 app = FastAPI(title="bookmarks", lifespan=lifespan)
+register_internal_error_handler(app)
 
 app.include_router(health.router)
 app.include_router(bookmarks.router)

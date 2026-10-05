@@ -2,6 +2,7 @@ import logging
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 
+from common.errors import register_internal_error_handler
 from common.events import SearchHit
 from common.mqtt import MqttClient
 from common.topics import SEARCH_HIT
@@ -40,6 +41,7 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
 
 
 app = FastAPI(title="stats", lifespan=lifespan)
+register_internal_error_handler(app)
 
 app.include_router(health.router)
 app.include_router(search.router)

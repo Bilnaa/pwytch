@@ -1,6 +1,7 @@
 import asyncio
 from contextlib import asynccontextmanager
 
+from common.errors import register_internal_error_handler
 from fastapi import FastAPI
 
 from app import events, live, recovery
@@ -23,6 +24,7 @@ async def lifespan(app: FastAPI):
 
 
 app = FastAPI(title="stream", lifespan=lifespan)
+register_internal_error_handler(app)
 
 app.include_router(health.router)
 app.include_router(ingest.router)
