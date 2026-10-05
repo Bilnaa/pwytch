@@ -1,9 +1,120 @@
 # stats
 
-## Run
+Compteurs globaux de la plateforme. `stats` écoute les events MQTT des autres services et tient un compteur par élément : combien de fois un élément a été trouvé par la recherche (#102). Les compteurs des messages du chat, des events du player et des suppressions de bookmarks suivront le même modèle. Le service n'est jamais exposé au front : tout passe par `main`.
 
-    uv run fastapi dev
+```
+search ──MQTT search/hit──> stats (consumer) ──upsert──> Postgres, schéma stats
+                                                              │
+front ──> main ──HTTP GET /stats/...──> stats (API) <─────────┘
+```
 
-## Test
+## Lancer
+
+Depuis la racine du repo, avec l'infra du docker-compose :
+
+    make infra-up
+    make stats
+
+ou depuis `stats/` :
+
+    uv run fastapi dev --port 8006
+
+En image Docker, le build se lance depuis la racine du repo, car l'image embarque `common` :
+
+    docker build -f stats/Dockerfile -t stats .
+
+Au démarrage, le service crée son schéma et ses tables s'ils n'existent pas, puis se connecte au broker. Il démarre aussi sans Postgres (un warning est journalisé) et sans broker (le client MQTT réessaie toutes les 5 secondes). Si Postgres était absent au démarrage, les tables ne sont créées qu'au redémarrage suivant.
+
+## Configuration
+
+Les variables se mettent dans `stats/.env` (copier `.env.example`).
+
+| Variable       | Défaut                                                                 | Rôle                                   |
+|----------------|------------------------------------------------------------------------|----------------------------------------|
+| `DATABASE_URL` | `postgresql+psycopg://postgres:postgres@localhost:5432/microservices`  | Base Postgres (driver async psycopg 3) |
+| `REDIS_URL`    | `redis://localhost:6379/0`                                             | Cache des lectures (pas encore utilisé) |
+| `MQTT_HOST`    | `localhost`                                                            | Hôte du broker MQTT                    |
+| `MQTT_PORT`    | `1883`                                                                 | Port du broker MQTT                    |
+
+## Organisation du code
+
+| Fichier           | Rôle |
+|-------------------|------|
+| `main.py`         | `lifespan` : création du schéma et des tables, abonnements MQTT, démarrage du client |
+| `handlers.py`     | Un handler par topic MQTT, qui incrémente le bon compteur |
+| `counters.py`     | `increment_counter` : l'upsert commun à tous les compteurs |
+| `routers/`        | Routes de lecture des compteurs |
+| `models.py`       | Table `counter` |
+| `schemas.py`      | Réponses de l'API (`CounterResponse`) |
+| `database.py`     | Engine async, sessions, dépendance `SessionDep` |
+| `utils.py`        | Découpage des clés `type:id` |
+
+## Compteurs
+
+Tous les compteurs sont dans une seule table, `stats.counter` :
+
+| Colonne        | Exemple             | Rôle                                   |
+|----------------|---------------------|----------------------------------------|
+| `counter_type` | `search/hit`        | Le topic MQTT qui alimente le compteur |
+| `key`          | `streamer:42`       | L'élément compté, au format `type:id`  |
+| `value`        | `7`                 | Le nombre d'occurrences (`BIGINT`)     |
+
+Le couple (`counter_type`, `key`) est unique. Chaque event fait un upsert (`INSERT ... ON CONFLICT DO UPDATE SET value = value + 1`) : la ligne est créée à 1 au premier event, puis incrémentée par Postgres. Il n'y a pas de lecture préalable, donc deux events simultanés ne perdent pas d'incrément.
+
+La table est générique : un nouveau compteur, c'est un nouveau `counter_type`, sans nouvelle table. La clé est un détail de stockage, l'API renvoie `item_type` et `item_id` séparés.
+
+### Events consommés
+
+| Topic               | Modèle            | Clé                       | État |
+|---------------------|-------------------|---------------------------|------|
+| `search/hit`        | `SearchHit`       | `{item_type}:{item_id}`   | Fait (#102) |
+| `bookmarks/deleted` | `BookmarkDeleted` | `{target_type}:{target_id}` | À venir |
+| `chat/message`      | `ChatMessage`     | `{stream_id}`             | À venir |
+| `player/event`      | `PlayerEvent`     | `{stream_id}:{event_type}` | À venir |
+
+Le client MQTT se connecte avec `client_id="stats"` : la session est persistante, le broker garde les events publiés pendant un arrêt de `stats` et les livre au redémarrage. Les doublons possibles en QoS 1 sont écartés par `MqttClient` grâce à l'`event_id`. Un handler qui échoue n'est pas marqué comme traité, l'event peut être retraité s'il est renvoyé.
+
+## Endpoints
+
+| Chemin                                  | Méthode | Rôle |
+|-----------------------------------------|---------|------|
+| `/health`                               | GET     | Renvoie `{"status": "ok"}` |
+| `/stats/search/{item_type}/{item_id}`   | GET     | Nombre de fois où un élément a été trouvé par la recherche |
+| `/stats/search/top`                     | GET     | Éléments les plus trouvés par la recherche |
+
+### `GET /stats/search/{item_type}/{item_id}`
+
+`item_type` vaut `streamer` ou `message` (sinon `422`). `item_id` est une chaîne : l'id d'un streamer ou l'UUID d'un message. Un élément jamais trouvé renvoie `count: 0`, pas un `404`.
+
+    curl http://localhost:8006/stats/search/streamer/42
+
+```json
+{"item_type": "streamer", "item_id": "42", "count": 7}
+```
+
+### `GET /stats/search/top`
+
+| Param       | Défaut | Rôle |
+|-------------|--------|------|
+| `item_type` | aucun  | `streamer` ou `message` pour ne garder qu'un type, tous les types sinon |
+| `limit`     | `10`   | Nombre d'éléments, entre 1 et 500 (sinon `422`) |
+
+Le classement est trié par compteur décroissant, puis par clé en cas d'égalité : l'ordre est le même d'un appel à l'autre.
+
+    curl "http://localhost:8006/stats/search/top?item_type=streamer&limit=3"
+
+```json
+[
+  {"item_type": "streamer", "item_id": "3", "count": 78},
+  {"item_type": "streamer", "item_id": "42", "count": 51},
+  {"item_type": "streamer", "item_id": "7", "count": 12}
+]
+```
+
+`stats` ne connaît que des ids : les noms des streamers sont à demander au service concerné.
+
+## Tests
 
     uv run pytest
+
+Les tests n'ont besoin ni de Postgres ni de Mosquitto : ils tournent sur SQLite en mémoire (`aiosqlite`), sans schéma (`schema_translate_map`). L'upsert Postgres passe aussi sur SQLite. Les routes sont testées avec un `AsyncClient` dont la session est remplacée, le handler avec `monkeypatch` sur `SessionLocal`.
