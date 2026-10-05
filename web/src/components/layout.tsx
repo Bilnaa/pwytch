@@ -89,9 +89,14 @@ export function Layout() {
               Lives
             </NavLink>
             {user && (
-              <NavLink to="/go-live" className={navClass}>
-                Go live
-              </NavLink>
+              <>
+                <NavLink to="/go-live" className={navClass}>
+                  Go live
+                </NavLink>
+                <NavLink to="/bookmarks" className={navClass}>
+                  Bookmarks
+                </NavLink>
+              </>
             )}
           </nav>
           <div className="flex flex-1 justify-center">

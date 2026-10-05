@@ -92,6 +92,15 @@ Un seul appel, `GET /search?q=`, pour les deux sections : « Streamers » (badge
 
 Un message ne connaît que l'id de son live : il pointe vers `/videos/{id}` (`pages/video.tsx`), qui fait `GET /streams/{id}` au clic et renvoie sur la chaîne du streamer. Id inconnu : page 404.
 
+## Follows et bookmarks
+
+Comme sur Twitch, un streamer se suit et un replay se met de côté. Les deux sont des bookmarks côté API : un follow est un bookmark de type `streamer`, avec le nom du streamer en libellé.
+
+- Page d'une chaîne : bouton « Follow » / « Following » (`components/follow-button.tsx`), seulement si on est connecté et pas sur sa propre chaîne. Pour savoir si on suit déjà le streamer, il cherche son id dans `GET /bookmarks?target_type=streamer&size=100` (`bookmarks` ne filtre pas par `target_id`). Un deuxième clic supprime le bookmark. Un 409 (suivi depuis un autre onglet) recharge le follow existant.
+- `/bookmarks`, réservée aux comptes connectés, avec deux onglets paginés par 20 (`?tab=replays&page=2` dans l'URL). « Following » : les streamers suivis, avec un lien vers leur chaîne et « Unfollow ». Les noms viennent de `GET /users?id=...`, un appel pour toute la page. « Replays » : libellé et note modifiables, suppression avec confirmation. La confirmation s'affiche sous le texte, pas à la place du bouton, pour qu'un double clic ne supprime rien.
+
+Le bouton pour mettre un replay de côté arrive avec les pages replays (#131).
+
 ## Pages et routes de l'API
 
 Comme l'API est sous `/api`, une page peut avoir le même chemin qu'une route de l'API (`/search` côté front, `/api/search` côté API). Recharger une page renvoie toujours le front.

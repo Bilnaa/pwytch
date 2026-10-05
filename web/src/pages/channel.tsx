@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react'
 import { useParams } from 'react-router'
 
 import { Avatar } from '@/components/avatar'
+import { FollowButton } from '@/components/follow-button'
 import { Chat } from '@/components/chat'
 import { HlsPlayer } from '@/components/hls-player'
 import { Badge } from '@/components/ui/badge'
@@ -105,7 +106,8 @@ export function ChannelPage() {
         </div>
         <div className="flex items-center gap-3">
           <Avatar username={user.display_name} />
-          <p className="font-semibold">{user.display_name}</p>
+          <p className="flex-1 font-semibold">{user.display_name}</p>
+          <FollowButton streamerId={user.id} username={user.username} />
         </div>
       </div>
     )
@@ -125,6 +127,7 @@ export function ChannelPage() {
             <h1 className="truncate text-lg font-semibold">{stream.title}</h1>
             <p className="text-sm text-muted-foreground">{stream.game}</p>
           </div>
+          <FollowButton streamerId={user.id} username={user.username} />
           <Badge className="bg-red-600 text-white">LIVE</Badge>
         </div>
       </div>

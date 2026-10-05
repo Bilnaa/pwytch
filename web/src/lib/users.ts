@@ -17,3 +17,12 @@ export async function getUser(username: string): Promise<PublicUser | null> {
     throw err
   }
 }
+
+// unknown ids are left out of the answer
+export function getUsers(ids: number[]): Promise<PublicUser[]> {
+  const params = new URLSearchParams()
+  for (const id of ids) {
+    params.append('id', String(id))
+  }
+  return api<PublicUser[]>(`/users?${params}`)
+}
