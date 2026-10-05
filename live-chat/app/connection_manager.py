@@ -1,4 +1,5 @@
 import time
+from collections import OrderedDict
 
 from fastapi import WebSocket
 from starlette.websockets import WebSocketDisconnect
@@ -13,7 +14,8 @@ class ConnectionManager:
         # A dict of the user, the stream_id associated with it and the time
         # the last message associated to it was sent
         # Float is for a time value
-        self.last_sent : dict[tuple[int, int], float] = {}
+        # Entries are in sending order, so expired ones are always at the front
+        self.last_sent : OrderedDict[tuple[int, int], float] = OrderedDict()
 
     async def connect(self, stream_id: int, websocket: WebSocket):
         await websocket.accept()
@@ -37,11 +39,27 @@ class ConnectionManager:
 
     def can_send_message(self, user_id: int, stream_id: int) -> bool:
         now = time.monotonic()
-        author_last_message = self.last_sent.get((user_id, stream_id))
-        if author_last_message is not None and now - author_last_message < WAITING_TIME:
+        self.forget_expired(now)
+        # Every entry left was sent less than WAITING_TIME ago
+        if (user_id, stream_id) in self.last_sent:
             return False
         self.last_sent[(user_id, stream_id)] = now
         return True
+
+    def forget_expired(self, now: float) -> None:
+        # Without this, last_sent would grow with every (user, stream) couple
+        # ever seen, and user_id comes from the URL
+        while self.last_sent:
+            key, sent_at = next(iter(self.last_sent.items()))
+            if now - sent_at < WAITING_TIME:
+                break
+            del self.last_sent[key]
+
+    def cancel_last_message(self, user_id: int, stream_id: int) -> None:
+        # Gives the slot back when the message couldn't be saved, so a retry
+        # isn't rate limited. The slot stays reserved during the save so that
+        # two sockets of the same user can't both send at the same time
+        self.last_sent.pop((user_id, stream_id), None)
 
 
 connectionManager = ConnectionManager()

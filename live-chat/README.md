@@ -37,3 +37,10 @@ Chaque message est enregistré **avant** d'être diffusé. Si la base est indisp
     {"type": "error", "code": "MESSAGE_NOT_SAVED", "detail": "Le message n'a pas pu être enregistré"}
 
 Le WebSocket reste ouvert et le service continue de tourner (il démarre aussi sans base ; le schéma est alors créé au premier message enregistré).
+
+## Derniers messages
+Un viewer qui arrive sur un live récupère les derniers messages, du plus ancien au plus récent :
+
+    curl "http://localhost:8002/streams/1/messages?limit=50"
+
+`limit` vaut 50 par défaut et doit être entre 1 et 100 (sinon `422`). Un live sans message renvoie `[]`. live-chat ne vérifie pas que le live existe : c'est `main` qui s'en charge. Si la base est indisponible, la route renvoie `503`.
