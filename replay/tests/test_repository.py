@@ -1,12 +1,12 @@
 import pytest
+
 from app.infra.models import Mp4Status
 from app.infra.repository import (
     claim_conversion,
     finish_conversion,
+    reset_conversion,
     reset_processing,
-    set_mp4_status,
 )
-
 from tests.factories import add_replay, reload
 
 
@@ -48,12 +48,21 @@ async def test_unknown_replay_cannot_be_claimed(session):
 
 
 @pytest.mark.anyio
-async def test_set_mp4_status(session):
-    await add_replay(session, 42)
+@pytest.mark.parametrize("status", [Mp4Status.READY, Mp4Status.FAILED])
+async def test_reset_conversion_puts_back_the_expected_status_to_none(session, status):
+    await add_replay(session, 42, mp4_status=status)
 
-    await set_mp4_status(session, 42, Mp4Status.READY)
+    assert await reset_conversion(session, 42, status) is True
+    assert (await reload(session, 42)).mp4_status is Mp4Status.NONE
 
-    assert (await reload(session, 42)).mp4_status is Mp4Status.READY
+
+@pytest.mark.anyio
+async def test_reset_conversion_keeps_a_status_changed_meanwhile(session):
+    # Une autre requête a déjà remis à none et relancé ffmpeg : on n'écrase pas processing.
+    await add_replay(session, 42, mp4_status=Mp4Status.PROCESSING)
+
+    assert await reset_conversion(session, 42, Mp4Status.FAILED) is False
+    assert (await reload(session, 42)).mp4_status is Mp4Status.PROCESSING
 
 
 @pytest.mark.anyio

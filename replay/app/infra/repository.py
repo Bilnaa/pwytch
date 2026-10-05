@@ -46,11 +46,21 @@ async def claim_conversion(session: AsyncSession, stream_id: int) -> bool:
     return result.rowcount == 1
 
 
-async def set_mp4_status(session: AsyncSession, stream_id: int, status: Mp4Status) -> None:
-    await session.execute(
-        update(Replay).where(Replay.stream_id == stream_id).values(mp4_status=status)
+async def reset_conversion(
+    session: AsyncSession, stream_id: int, expected_status: Mp4Status
+) -> bool:
+    """Remet à none seulement si la ligne a toujours le statut lu par la requête.
+
+    Faux si une autre requête l'a déjà remise à none et a relancé ffmpeg : on n'écrase
+    pas son processing, sinon deux ffmpeg écriraient le même .part.
+    """
+    result = await session.execute(
+        update(Replay)
+        .where(Replay.stream_id == stream_id, Replay.mp4_status == expected_status)
+        .values(mp4_status=Mp4Status.NONE)
     )
     await session.commit()
+    return result.rowcount == 1
 
 
 async def finish_conversion(session: AsyncSession, stream_id: int, status: Mp4Status) -> bool:
