@@ -68,13 +68,21 @@ Le navigateur doit savoir enregistrer du WebM (Chrome, Firefox). Pour tester san
 
 ## Page d'une chaîne
 
-`/{username}`, comme sur Twitch (`/aespa_radio`) : player HLS (`components/hls-player.tsx`) sur `/api/lives/{id}/index.m3u8`, avec le streamer, le titre, le jeu et le badge LIVE. Pas besoin d'être connecté. Les chemins fixes (`/login`, `/go-live`...) passent avant : un compte nommé `login` n'aurait pas de page.
+`/{username}`, comme sur Twitch (`/aespa_radio`) : player [Vidstack](https://vidstack.io) (`components/hls-player.tsx`) sur `/api/lives/{id}/index.m3u8`, avec le streamer, le titre, le jeu et le badge LIVE. Pas besoin d'être connecté. Les chemins fixes (`/login`, `/go-live`...) passent avant : un compte nommé `login` n'aurait pas de page.
 
 `main` ne filtre pas `/streams` par streamer : la page cherche le nom dans `GET /streams?status=live&size=100` (`findLive()` dans `lib/streams.ts`). Pas en live, ou nom inconnu : « {username} is offline ».
 
-hls.js (build `light`) n'est chargé qu'à l'ouverture d'une chaîne (`lazy` dans `main.tsx`), Safari lit le HLS sans lui. Tant que la playlist n'existe pas (début du live), le player réessaie toutes les 3 s.
+Vidstack lit le HLS avec hls.js (build `light`, passé à Vidstack pour qu'il ne le télécharge pas depuis un CDN). Les deux ne sont chargés qu'à l'ouverture d'une chaîne (`lazy` dans `main.tsx`), Safari lit le HLS sans hls.js. Tant que la playlist n'existe pas (début du live), le player réessaie toutes les 3 s.
+
+Chaque play, pause et stop du player part sur `POST /api/streams/{id}/player-events` pour les stats (`hooks/use-player-events.ts`). Stop = fin du live, ou on quitte la page pendant la lecture (lien, onglet fermé). L'envoi n'est jamais attendu et ses erreurs sont ignorées, la lecture ne dépend pas de `main`.
 
 Pour avoir un live à regarder sans webcam : `uv run python scripts/channels.py` depuis `stream/` (voir `stream/README.md`).
+
+## Chat
+
+À côté du player sur la page d'une chaîne (en dessous sur mobile), et sur `/go-live` pour le streamer pendant son live. `wsUrl('/streams/{id}/chat')`, avec `?token=` si on est connecté (`hooks/use-chat.ts`). Sans compte, le chat est en lecture seule avec un lien « Log in » qui ramène sur la chaîne.
+
+Les erreurs de `live-chat` arrivent avec un `code` (`EMPTY_MESSAGE`, `CONTENT_TOO_LONG`...) traduit en message sous le champ. Si la connexion coupe (`main` redémarré, `live-chat` down), le chat se reconnecte toutes les 3 s, sauf sur 4401 (session expirée) et 4404 (live inconnu). Pas encore d'historique à l'arrivée ni des messages manqués pendant une coupure, en attendant la route de #84.
 
 ## Pages et routes de l'API
 

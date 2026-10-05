@@ -40,5 +40,26 @@ services:
             timeout: 5s
             retries: 10
 
+    replay:
+        build:
+            context: .
+            dockerfile: replay/Dockerfile
+        profiles: ["apps"]
+        environment:
+            DATABASE_URL: postgresql+asyncpg://${POSTGRES_USER:-postgres}:${POSTGRES_PASSWORD:-postgres}@postgres:5432/replay
+            MQTT_HOST: mqtt
+            MQTT_PORT: 1883
+            STREAM_URL: http://stream:8000
+        ports:
+            - "8003:8000"
+        volumes:
+            - replays-data:/code/replays
+        depends_on:
+            postgres:
+                condition: service_healthy
+            mqtt:
+                condition: service_healthy
+
 volumes:
     postgres-data:
+    replays-data:

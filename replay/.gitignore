@@ -2,3 +2,5 @@
 __pycache__/
 *.pyc
 .env
+# mp4 produits par la conversion (REPLAYS_DIR)
+replays/

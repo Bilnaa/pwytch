@@ -1,17 +1,38 @@
 import json
 import logging
 
-from fastapi import APIRouter, WebSocket
+from fastapi import APIRouter, HTTPException, Query, WebSocket
 from sqlalchemy.exc import SQLAlchemyError
 from starlette.websockets import WebSocketDisconnect
 
+from app import cache, events
 from app.connection_manager import connectionManager
 from app.models.message_model import Author, MessageModel
-from app.services.messages import save_message
+from app.services.messages import get_last_messages, save_message
 
 logger = logging.getLogger(__name__)
 
 router = APIRouter(tags=["liveChat"])
+
+
+# live-chat doesn't know if the stream exists so main checks it before calling
+@router.get("/streams/{stream_id}/messages")
+async def last_messages(
+    stream_id: int, limit: int = Query(50, ge=1, le=100)
+) -> list[MessageModel]:
+    cached = await cache.read_last(stream_id)
+    if cached is not None:
+        return cached[-limit:]
+    try:
+        # Always the whole cache size, whatever the limit, so the cache can be filled
+        messages = await get_last_messages(stream_id, cache.CACHE_SIZE)
+    except SQLAlchemyError:
+        logger.exception("Could not read the messages of stream %s", stream_id)
+        raise HTTPException(
+            status_code=503, detail="Les messages n'ont pas pu être récupérés"
+        ) from None
+    await cache.fill(stream_id, messages)
+    return messages[-limit:]
 
 
 @router.websocket("/streams/{stream_id}/chat")
@@ -23,6 +44,7 @@ async def live_chat(
     try:
         while True:
             ws_text = await websocket.receive_text()
+
             # Not sending any message if the user_id isn't in the QueryParams
             if user_id is None or not username:
                 await websocket.send_json({
@@ -83,6 +105,17 @@ async def live_chat(
                 })
                 continue
 
+            # Checking if a certain amount of seconds passed before sending a new message
+            if not connectionManager.can_send_message(user_id, stream_id):
+                await websocket.send_json(
+                    {
+                        "type": "error",
+                        "code": "RATE_LIMITED",
+                        "detail": "Veuillez attendre une seconde.",
+                    }
+                )
+                continue
+
             author = Author(id=user_id, username=username)
             final_message = MessageModel(stream_id=stream_id, author=author, content=message)
 
@@ -91,6 +124,7 @@ async def live_chat(
                 await save_message(final_message)
             except SQLAlchemyError:
                 logger.exception("Could not save a message of stream %s", stream_id)
+                connectionManager.cancel_last_message(user_id, stream_id)
                 await websocket.send_json({
                     "type": "error",
                     "code": "MESSAGE_NOT_SAVED",
@@ -99,6 +133,9 @@ async def live_chat(
                 continue
 
             await connectionManager.broadcast(stream_id, final_message)
+            await cache.append(final_message)
+            # For search and stats: only a saved message is published
+            events.publish_in_background(final_message)
 
     except WebSocketDisconnect:
         pass
