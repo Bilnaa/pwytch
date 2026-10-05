@@ -1,7 +1,6 @@
 import logging
 from contextlib import asynccontextmanager
 
-import httpx
 from fastapi import FastAPI
 
 from app.consumers.mqtt import create_mqtt_client
@@ -20,18 +19,13 @@ async def lifespan(app: FastAPI):
     # Base coupée : le service démarre quand même, les tables seront créées au redémarrage.
     await try_init_db(engine)
     app.state.converter = Mp4Converter(
-        session_factory, settings.stream_url, settings.replays_dir, settings.conversion_timeout_s
+        session_factory, settings.lives_dir, settings.replays_dir, settings.conversion_timeout_s
     )
     await app.state.converter.reset_interrupted()
-    # Sert à vérifier la playlist d'un live terminé en erreur.
-    app.state.stream_client = httpx.AsyncClient(
-        base_url=settings.stream_url, timeout=settings.stream_timeout_s
-    )
-    app.state.mqtt = create_mqtt_client(settings, session_factory, app.state.stream_client)
+    app.state.mqtt = create_mqtt_client(settings, session_factory)
     await app.state.mqtt.start()
     yield
     await app.state.mqtt.stop()
-    await app.state.stream_client.aclose()
     await engine.dispose()
 
 

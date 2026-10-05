@@ -1,13 +1,14 @@
 # replay
 
-Replays des lives terminés (#94, #115, #95, #97, #98). `replay` apprend le début et la fin de chaque live par MQTT (`stream/started`, `stream/ended`), garde un replay par live dans sa base, et convertit un replay en `.mp4` à la demande en lisant la playlist HLS directement chez `stream`.
+Replays des lives terminés (#94, #115, #95, #97, #98). `replay` apprend le début et la fin de chaque live par MQTT (`stream/started`, `stream/ended`), garde un replay par live dans sa base, et convertit un replay en `.mp4` à la demande en lisant la playlist HLS que `stream` a écrite dans `LIVES_DIR`.
 
 ```
 stream ──MQTT stream/started, stream/ended──> replay (consumer) ──> Postgres, base replay
-stream <──HTTP HEAD playlist (reason error)── replay
-stream <──HTTP GET playlist + segments (ffmpeg)── replay ──> REPLAYS_DIR/{stream_id}.mp4
+stream ──écrit──> LIVES_DIR/{stream_id}/ ──lu par ffmpeg──> replay ──> REPLAYS_DIR/{stream_id}.mp4
 front ──> main ──HTTP GET /replays...──> replay (API)
 ```
+
+`replay` n'appelle jamais `stream` : seul `main` appelle les autres services. Les deux partagent le dossier des lives, comme le prévoit le sujet (`ffmpeg -i lives/42/index.m3u8 -c copy replay.mp4`, « main ne touche jamais directement au storage ») ; `replay` le lit sans jamais l'écrire.
 
 ## Lancer
 
@@ -24,7 +25,7 @@ ou en conteneur, avec le docker-compose (profil `apps`, pas lancé par `make inf
 
     docker compose --profile apps up -d --build replay
 
-Le conteneur écoute sur le port 8003, parle à `postgres`, `mqtt` et `stream` par leurs noms de service, et garde les `.mp4` dans le volume `replays-data`. Arrêter `make replay` avant : une seule instance à la fois (voir « Dettes connues »).
+Le conteneur écoute sur le port 8003, parle à `postgres` et `mqtt` par leurs noms de service, lit `stream/lives` monté en lecture seule sur `/code/lives`, et garde les `.mp4` dans le volume `replays-data`. `stream/lives` doit exister avant le démarrage (`make stream` le crée au premier live, sinon `mkdir stream/lives`) : le compose refuse de le créer, car Docker le créerait au nom de root et `make stream` ne pourrait plus y écrire. En local, `make stream` et `make replay` partagent `stream/lives` sans configuration. Arrêter `make replay` avant : une seule instance à la fois (voir « Dettes connues »).
 
 En image Docker seule, le build se lance depuis la racine du repo, car l'image embarque `common` :
 
@@ -37,7 +38,7 @@ Au démarrage, le service crée ses tables si elles n'existent pas. Si Postgres 
 | Dossier | Rôle |
 |---|---|
 | `routers/` | Contrôleurs : lisent les paramètres, appellent un service, renvoient la réponse ; `error_handlers.py` traduit les exceptions métier en 404 et 500 |
-| `services/` | Logique : liste, détail et téléchargement (`replay_service`), events de live (`live_event_service`), ffmpeg (`conversion_service`), appel à `stream` (`stream_client`), exceptions métier (`exceptions`) |
+| `services/` | Logique : liste, détail et téléchargement (`replay_service`), events de live (`live_event_service`), ffmpeg (`conversion_service`), lecture du dossier des lives (`lives_storage`), exceptions métier (`exceptions`) |
 | `repositories/` | Requêtes SQL, dont les `UPDATE` atomiques des statuts de conversion |
 | `models/` | Table `replays` et `Mp4Status` |
 | `schemas/` | Réponses (`ReplayResult`, `ConversionPending`) |
@@ -57,9 +58,8 @@ Les variables se mettent dans `replay/.env` (copier `.env.example`, ou `make dev
 | `DATABASE_URL`         | `postgresql+asyncpg://postgres:postgres@localhost:5432/replay`  | Base Postgres du service                   |
 | `MQTT_HOST`            | `localhost`                                                     | Hôte du broker MQTT                        |
 | `MQTT_PORT`            | `1883`                                                          | Port du broker MQTT                        |
-| `STREAM_URL`           | `http://localhost:8001`                                         | `stream`, qui sert les playlists et segments |
+| `LIVES_DIR`            | `../stream/lives`                                               | `LIVES_DIR` de `stream`, lu sans être modifié, relatif à `replay/` |
 | `REPLAYS_DIR`          | `replays`                                                       | Dossier des `.mp4`, ignoré par Git         |
-| `STREAM_TIMEOUT_S`     | `5`                                                             | Délai des appels HTTP vers `stream`        |
 | `CONVERSION_TIMEOUT_S` | `600`                                                           | Durée maximale d'une conversion ffmpeg     |
 
 ## Modèle
@@ -161,9 +161,9 @@ curl -OJ localhost:8003/replays/1/download     # replay-1.mp4
 
 ## Conversion `.mp4`
 
-`replay` lit la playlist HLS d'un live terminé directement chez `stream`, sans dossier partagé, et la recopie dans un `.mp4` sans réencoder :
+`replay` lit la playlist HLS d'un live terminé dans `LIVES_DIR`, là où `stream` l'a écrite, et la recopie dans un `.mp4` sans réencoder :
 
-    ffmpeg -nostdin -y -loglevel error -i {STREAM_URL}/lives/{stream_id}/index.m3u8 -c copy -f mp4 {REPLAYS_DIR}/{stream_id}.mp4.part
+    ffmpeg -nostdin -y -loglevel error -i {LIVES_DIR}/{stream_id}/index.m3u8 -c copy -f mp4 {REPLAYS_DIR}/{stream_id}.mp4.part
 
 | `mp4_status` | Sens                                                                |
 |--------------|---------------------------------------------------------------------|
@@ -178,7 +178,7 @@ curl -OJ localhost:8003/replays/1/download     # replay-1.mp4
 - **Au démarrage** : les `*.mp4.part` restants sont supprimés et les lignes en `processing` repassent à `none` (un arrêt du service a tué leur ffmpeg). Ce nettoyage suppose un seul process `replay` : il viserait aussi les conversions d'un autre process. C'est déjà la règle à cause du `client_id` MQTT (voir « Dettes connues »). `REPLAYS_DIR` est créé s'il manque. Base coupée : un `WARNING`, et le service démarre quand même.
 - L'image Docker installe ffmpeg. En local, il faut `ffmpeg` dans le `PATH`.
 
-Vérifié avec un vrai ffmpeg sur une playlist servie par `stream` (H.264 + AAC, 3 segments) : `.mp4` de 12 s, codecs `h264` et `aac`, sans option de flux audio en plus. Sur un live inconnu, ffmpeg écrit `Server returned 404 Not Found` et le replay passe à `failed`.
+Vérifié avec un vrai ffmpeg sur une playlist écrite par `stream` dans `LIVES_DIR` (H.264 + AAC, 9 segments) : `.mp4` de 28 s, codecs `h264` et `aac`, sans option de flux audio en plus. Sans playlist, ffmpeg écrit `Error opening input: No such file or directory` et le replay passe à `failed`. En conteneur, `/code/lives` est bien en lecture seule (`Read-only file system`).
 
 ## Topics consommés
 
@@ -191,13 +191,14 @@ Souscrits en QoS 1 avec le `client_id` fixe `replay` : la session est persistant
 
 Les deux events peuvent arriver dans n'importe quel ordre : chaque handler crée la ligne si elle manque et ne touche pas aux champs de l'autre. Un `stream/ended` reçu une seconde fois est ignoré.
 
-Avec `reason: "error"`, `replay` envoie d'abord `HEAD {STREAM_URL}/lives/{stream_id}/index.m3u8` :
+Avec `reason: "error"`, `replay` cherche d'abord `LIVES_DIR/{stream_id}/index.m3u8` :
 
-| Réponse de `stream`                 | Effet                                                        |
-|-------------------------------------|--------------------------------------------------------------|
-| 2xx                                 | Le replay est créé                                           |
-| 404                                 | Aucun replay : ffmpeg n'a rien produit, la ligne est supprimée |
-| Injoignable, timeout, autre statut  | Le replay est créé quand même, avec un `WARNING`             |
+| Cas                                                           | Effet                                                          |
+|---------------------------------------------------------------|----------------------------------------------------------------|
+| Playlist présente                                             | Le replay est créé                                             |
+| Playlist absente                                              | Aucun replay : ffmpeg n'a rien produit, la ligne est supprimée |
+| `LIVES_DIR` introuvable (volume non monté, mauvais chemin)    | Le replay est créé quand même, avec un `WARNING`               |
+| Autre erreur de lecture (droits, un fichier à la place du dossier du live) | Le replay est créé quand même, avec un `WARNING`  |
 
 ### Vérification manuelle
 
@@ -209,7 +210,7 @@ docker compose exec mqtt mosquitto_pub -q 1 -t stream/ended -m '{"stream_id": 1,
 docker compose exec postgres psql -U postgres replay -c 'SELECT stream_id, title, ended_at FROM replays'
 ```
 
-Attendu : une ligne `1 | Speedrun | 2026-10-04 15:00:00+00`. Avec `"reason": "error"` et `stream` arrêté, la ligne est créée et les logs de `replay` montrent `Playlist of live … not checked, replay kept`.
+Attendu : une ligne `1 | Speedrun | 2026-10-04 15:00:00+00`. Avec `"reason": "error"`, la ligne est créée seulement si `stream/lives/1/index.m3u8` existe. Si `LIVES_DIR` pointe vers un dossier absent, elle est créée et les logs de `replay` montrent `Playlist of live 1 not checked, lives dir … not found, replay kept`.
 
 ## Tests
 
@@ -221,9 +222,9 @@ Les tests n'ont besoin ni de Postgres ni de Mosquitto : ils tournent sur SQLite 
 
 - **Tables absentes si la base était coupée au démarrage** : le service tourne, mais les requêtes échouent tant qu'il n'a pas été redémarré avec la base disponible.
 - **Event perdu si un handler échoue** (base indisponible par exemple) : `MqttClient` le journalise en `ERROR` puis l'abandonne. À traiter avec #11.
-- **Events en attente pendant le `HEAD` vers `stream`** : `MqttClient` traite les messages un par un et le `HEAD` est fait dans le handler de `stream/ended`. Si `stream` ne répond pas, tous les events suivants attendent jusqu'à `STREAM_TIMEOUT_S` (5 s). Acceptable avec notre volume ; sinon, sortir la vérification du handler.
 - **Replay visible sans titre** : si `stream/ended` arrive avant `stream/started`, le replay est visible tout de suite avec `streamer_name`, `title`, `game` et `started_at` à `null`, et le reste si `stream/started` est perdu. Choix assumé : on préfère montrer le replay que le cacher ; les routes de #95 renvoient donc ces champs en nullable.
-- **Event perdu à l'arrêt** : `mqtt.stop()` annule le handler en cours, par exemple un `stream/ended` qui attend le `HEAD` vers `stream` (jusqu'à `STREAM_TIMEOUT_S`). Le message QoS 1 est acquitté dès sa réception, le broker ne le renvoie pas : le live reste invisible. Même cause que la ligne précédente (acquittement avant traitement, dans `common.mqtt`), à traiter avec #11.
+- **Event perdu à l'arrêt** : `mqtt.stop()` annule le handler en cours. Le message QoS 1 est acquitté dès sa réception, le broker ne le renvoie pas : le live reste invisible. Même cause que « Event perdu si un handler échoue » (acquittement avant traitement, dans `common.mqtt`), à traiter avec #11.
+- **Dossier des lives partagé avec `stream`** : `replay` dépend de l'arborescence `LIVES_DIR/{stream_id}/index.m3u8` écrite par `stream`, et doit voir le même dossier (même machine ou même volume). Si `stream` change cette arborescence, la vérification des lives en erreur et l'export `.mp4` cassent.
 - **Deux instances avec le même `client_id`** : le broker déconnecte la première quand la seconde se connecte, et elles se volent la session en boucle ; des events partent vers la mauvaise instance ou se perdent. Une seule instance de `replay` à la fois : ne pas lancer `make replay` pendant que le conteneur tourne, ni `--workers` ou plusieurs réplicas. La remise à zéro des conversions au démarrage repose aussi sur cette règle : un second process supprimerait les `.part` et remettrait à `none` les conversions du premier. Pour passer à plusieurs instances, il faudra un `client_id` par instance et un nom de `.part` propre à chaque conversion, avec une remise à zéro limitée aux conversions plus vieilles que `CONVERSION_TIMEOUT_S`.
 - **Ligne invisible pour toujours** : un `stream/ended` en erreur, sans playlist, reçu avant son `stream/started` ne supprime rien ; la ligne créée ensuite par `stream/started` n'a jamais de `ended_at`. Sans effet pour l'utilisateur.
 - **Identifiants de live réutilisés en dev** : si la base de `main` est recréée, les `stream_id` repartent de 1 alors que celle de `replay` garde ses lignes. Le nouveau live 1 reprend la ligne de l'ancien replay 1 : il est listé comme terminé pendant qu'il tourne, et son vrai `stream/ended` est ignoré comme doublon. Recréer la base de `replay` en même temps que celle de `main` (`DROP TABLE replays;`).

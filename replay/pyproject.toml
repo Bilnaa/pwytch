@@ -6,7 +6,6 @@ dependencies = [
     "asyncpg>=0.31.0",
     "common",
     "fastapi[standard]>=0.142.2",
-    "httpx>=0.28.1",
     "pydantic-settings>=2.15.0",
     "sqlalchemy[asyncio]>=2.1.1",
 ]
@@ -14,6 +13,7 @@ dependencies = [
 [dependency-groups]
 dev = [
     "aiosqlite>=0.22.1",
+    "httpx>=0.28.1",
     "pytest>=9.1.1",
 ]
 
