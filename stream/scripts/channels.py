@@ -143,7 +143,9 @@ async def play(track: Path, ws) -> int:
     finally:
         if proc.returncode is None:
             proc.kill()
-        await proc.wait()
+        # not wait(): it only returns once stdout is read to the end, and when the
+        # connection drops mid-track nobody reads it anymore, so the channel froze without a log
+        await proc.communicate()
     return sent
 
 
