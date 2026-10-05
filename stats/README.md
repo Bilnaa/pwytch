@@ -1,11 +1,12 @@
 # stats
 
-Compteurs globaux de la plateforme. `stats` écoute les events MQTT des autres services et tient un compteur par élément : combien de fois un élément a été trouvé par la recherche (#102). Les compteurs des messages du chat, des events du player et des suppressions de bookmarks suivront le même modèle. Le service n'est jamais exposé au front : tout passe par `main`.
+Compteurs globaux de la plateforme. `stats` écoute les events MQTT des autres services et tient un compteur par élément : combien de fois un élément a été trouvé par la recherche (#102) et combien de fois il a été retiré des bookmarks. Les compteurs des messages du chat et des events du player suivront le même modèle. Le service n'est jamais exposé au front : tout passe par `main`.
 
 ```
-search ──MQTT search/hit──> stats (consumer) ──upsert──> Postgres, schéma stats
-                                                              │
-front ──> main ──HTTP GET /stats/...──> stats (API) <─────────┘
+search ────MQTT search/hit──────────┐
+bookmarks ─MQTT bookmarks/deleted───┴──> stats (consumer) ──upsert──> Postgres, schéma stats
+                                                                            │
+front ──> main ──HTTP GET /stats/...──> stats (API) <───────────────────────┘
 ```
 
 ## Lancer
@@ -45,7 +46,7 @@ Les variables se mettent dans `stats/.env` (copier `.env.example`).
 | `counters.py`     | `increment_counter` : l'upsert commun à tous les compteurs |
 | `routers/`        | Routes de lecture des compteurs |
 | `models.py`       | Table `counter` |
-| `schemas.py`      | Réponses de l'API (`CounterResponse`) |
+| `schemas.py`      | Réponses de l'API, une par compteur (`SearchCountResponse`, `BookmarkDeletedCountResponse`) |
 | `database.py`     | Engine async, sessions, dépendance `SessionDep` |
 | `utils.py`        | Découpage des clés `type:id` |
 
@@ -61,14 +62,14 @@ Tous les compteurs sont dans une seule table, `stats.counter` :
 
 Le couple (`counter_type`, `key`) est unique. Chaque event fait un upsert (`INSERT ... ON CONFLICT DO UPDATE SET value = value + 1`) : la ligne est créée à 1 au premier event, puis incrémentée par Postgres. Il n'y a pas de lecture préalable, donc deux events simultanés ne perdent pas d'incrément.
 
-La table est générique : un nouveau compteur, c'est un nouveau `counter_type`, sans nouvelle table. La clé est un détail de stockage, l'API renvoie `item_type` et `item_id` séparés.
+La table est générique : un nouveau compteur, c'est un nouveau `counter_type`, sans nouvelle table. La clé est un détail de stockage : l'API la redécoupe et renvoie le type et l'id séparés, avec les noms du domaine (`item_type` / `item_id` pour la recherche, `target_type` / `target_id` pour les bookmarks).
 
 ### Events consommés
 
 | Topic               | Modèle            | Clé                       | État |
 |---------------------|-------------------|---------------------------|------|
 | `search/hit`        | `SearchHit`       | `{item_type}:{item_id}`   | Fait (#102) |
-| `bookmarks/deleted` | `BookmarkDeleted` | `{target_type}:{target_id}` | À venir |
+| `bookmarks/deleted` | `BookmarkDeleted` | `{target_type}:{target_id}` | Fait |
 | `chat/message`      | `ChatMessage`     | `{stream_id}`             | À venir |
 | `player/event`      | `PlayerEvent`     | `{stream_id}:{event_type}` | À venir |
 
@@ -81,6 +82,10 @@ Le client MQTT se connecte avec `client_id="stats"` : la session est persistante
 | `/health`                               | GET     | Renvoie `{"status": "ok"}` |
 | `/stats/search/{item_type}/{item_id}`   | GET     | Nombre de fois où un élément a été trouvé par la recherche |
 | `/stats/search/top`                     | GET     | Éléments les plus trouvés par la recherche |
+| `/stats/bookmarks/deleted/{target_type}/{target_id}` | GET | Nombre de fois où une cible a été retirée des bookmarks |
+| `/stats/bookmarks/deleted/top`          | GET     | Cibles les plus retirées des bookmarks |
+
+Les routes ne vérifient pas l'identité : `stats` n'est joignable que par `main`, qui réserve les stats de recherche aux admins (`require_admin`). Les routes `/stats/bookmarks/deleted/...` ne sont pas encore relayées par `main`.
 
 ### `GET /stats/search/{item_type}/{item_id}`
 
@@ -99,7 +104,7 @@ Le client MQTT se connecte avec `client_id="stats"` : la session est persistante
 | `item_type` | aucun  | `streamer` ou `message` pour ne garder qu'un type, tous les types sinon |
 | `limit`     | `10`   | Nombre d'éléments, entre 1 et 500 (sinon `422`) |
 
-Le classement est trié par compteur décroissant, puis par clé en cas d'égalité : l'ordre est le même d'un appel à l'autre.
+Le classement est trié par compteur décroissant, puis par clé en cas d'égalité : l'ordre est le même d'un appel à l'autre. La clé est du texte, les égalités suivent donc l'ordre alphabétique et non numérique (`streamer:10` avant `streamer:9`).
 
     curl "http://localhost:8006/stats/search/top?item_type=streamer&limit=3"
 
@@ -113,8 +118,38 @@ Le classement est trié par compteur décroissant, puis par clé en cas d'égali
 
 `stats` ne connaît que des ids : les noms des streamers sont à demander au service concerné.
 
+### `GET /stats/bookmarks/deleted/{target_type}/{target_id}`
+
+`target_type` vaut `streamer` ou `replay`, `target_id` est un entier de 1 à 2³¹ − 1 (sinon `422`). Une cible jamais retirée des bookmarks renvoie `count: 0`, pas un `404`.
+
+    curl http://localhost:8006/stats/bookmarks/deleted/streamer/42
+
+```json
+{"target_type": "streamer", "target_id": 42, "count": 3}
+```
+
+### `GET /stats/bookmarks/deleted/top`
+
+| Param         | Défaut | Rôle |
+|---------------|--------|------|
+| `target_type` | aucun  | `streamer` ou `replay` pour ne garder qu'un type, tous les types sinon |
+| `limit`       | `10`   | Nombre d'éléments, entre 1 et 500 (sinon `422`) |
+
+Même tri que le top de la recherche : compteur décroissant, puis clé texte en cas d'égalité. Comme `target_id` est renvoyé en nombre, attention : à égalité, `replay:10` passe avant `replay:9`.
+
+    curl "http://localhost:8006/stats/bookmarks/deleted/top?target_type=replay&limit=2"
+
+```json
+[
+  {"target_type": "replay", "target_id": 7, "count": 5},
+  {"target_type": "replay", "target_id": 12, "count": 2}
+]
+```
+
+`bookmarks` peut perdre un event si le broker reste coupé longtemps (voir le README de `bookmarks`) : ce compteur peut donc être légèrement sous-estimé.
+
 ## Tests
 
     uv run pytest
 
-Les tests n'ont besoin ni de Postgres ni de Mosquitto : ils tournent sur SQLite en mémoire (`aiosqlite`), sans schéma (`schema_translate_map`). L'upsert Postgres passe aussi sur SQLite. Les routes sont testées avec un `AsyncClient` dont la session est remplacée, le handler avec `monkeypatch` sur `SessionLocal`.
+Les tests n'ont besoin ni de Postgres ni de Mosquitto : ils tournent sur SQLite en mémoire (`aiosqlite`), sans schéma (`schema_translate_map`). L'upsert Postgres passe aussi sur SQLite. Les routes sont testées avec un `AsyncClient` dont la session est remplacée, les handlers avec `monkeypatch` sur `SessionLocal`. Un fichier de tests par compteur : `test_search.py` et `test_bookmarks.py`.
