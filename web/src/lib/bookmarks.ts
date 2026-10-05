@@ -52,12 +52,12 @@ export function deleteBookmark(id: number): Promise<void> {
   return api<void>(`/bookmarks/${id}`, { method: 'DELETE' })
 }
 
-// The follow of this streamer, or null. bookmarks can't filter by target_id, so
-// we look in the first 100 follows (max page size), plenty for us
-export async function findFollow(streamerId: number): Promise<Bookmark | null> {
-  const page = await listBookmarks(1, 100, 'streamer')
+// The bookmark of this streamer or replay, or null. bookmarks can't filter by target_id,
+// so we look in the first 100 of that type (max page size), plenty for us
+export async function findBookmark(type: TargetType, targetId: number): Promise<Bookmark | null> {
+  const page = await listBookmarks(1, 100, type)
   for (const bookmark of page.items) {
-    if (bookmark.target_id === streamerId) {
+    if (bookmark.target_id === targetId) {
       return bookmark
     }
   }

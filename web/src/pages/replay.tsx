@@ -4,6 +4,7 @@ import { Link, useParams } from 'react-router'
 import { Avatar } from '@/components/avatar'
 import { DownloadButton } from '@/components/download-button'
 import { HlsPlayer } from '@/components/hls-player'
+import { SaveReplayButton } from '@/components/save-replay-button'
 import { Badge } from '@/components/ui/badge'
 import { ApiError, errorMessage } from '@/lib/api'
 import { formatDate, formatDuration } from '@/lib/format'
@@ -91,6 +92,7 @@ export function ReplayPage() {
           </p>
         </div>
         <Badge variant="secondary">REPLAY</Badge>
+        <SaveReplayButton key={`save-${replay.stream_id}`} replay={replay} />
         {/* key: another replay gets a new button, without the state or the polling of this one */}
         <DownloadButton
           key={replay.stream_id}
