@@ -4,7 +4,7 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_asyn
 from sqlalchemy.pool import StaticPool
 
 from app import conversion
-from app.conversion import Mp4Converter
+from app.conversion import Mp4Converter, get_converter
 from app.infra.db import get_session, init_db
 from app.main import app
 from tests.fake_ffmpeg import FakeFfmpeg
@@ -48,11 +48,12 @@ def fake_ffmpeg(monkeypatch):
 
 
 @pytest.fixture
-async def client(session):
+async def client(session, converter):
     async def override_get_session():
         yield session
 
     app.dependency_overrides[get_session] = override_get_session
+    app.dependency_overrides[get_converter] = lambda: converter
     # ASGITransport ne lance pas le lifespan : ni Postgres ni broker.
     async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as test_client:
         yield test_client

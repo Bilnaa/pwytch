@@ -65,6 +65,7 @@ Une table, `replays`, une ligne par live. `stream_id` est la clé et l'identifia
 | `/health`               | GET     | Renvoie `{"status": "ok"}`             |
 | `/replays`              | GET     | Liste des replays, paginée             |
 | `/replays/{stream_id}`  | GET     | Détail d'un replay                     |
+| `/replays/{stream_id}/download` | GET | Téléchargement en `.mp4`, converti à la première demande |
 
 Un replay est un live terminé (`ended_at` et `duration_s` renseignés) : un live en cours n'apparaît dans aucune route. Son identifiant est le `stream_id` du live.
 
@@ -116,6 +117,31 @@ Renvoie un `ReplayResult`, même format qu'un élément de la liste.
 
 - 404 `{"detail": "Replay not found"}` : replay inconnu ou live encore en cours.
 - 422 : `stream_id` non numérique, ≤ 0 ou au-delà de 2 147 483 647. Comme partout avec FastAPI, une chaîne numérique est convertie : `42.0` ou `+42` donnent le replay 42.
+
+### `GET /replays/{stream_id}/download`
+
+Le `.mp4` n'est produit qu'à la demande : le premier appel lance la conversion et répond 202, le client redemande après `Retry-After`.
+
+| État du replay                       | Réponse                                                                                       |
+|--------------------------------------|-----------------------------------------------------------------------------------------------|
+| Inconnu ou live en cours             | 404 `{"detail": "Replay not found"}`                                                          |
+| `ready`, fichier présent             | 200, le fichier en `video/mp4`, `Content-Disposition: attachment; filename="replay-{id}.mp4"` |
+| `ready`, fichier disparu             | statut remis à `none`, puis comme `none`                                                      |
+| `none`                               | conversion lancée, 202 `{"stream_id": id, "mp4_status": "processing"}`, `Retry-After: 5`     |
+| `processing`                         | 202, même corps et même en-tête, aucun second ffmpeg                                          |
+| `failed`                             | 500 `{"detail": "Conversion failed, try again"}`, statut remis à `none` : l'appel suivant relance la conversion |
+
+422 : `stream_id` non numérique, ≤ 0 ou au-delà de 2 147 483 647.
+
+La conversion tourne en tâche de fond, après l'envoi du 202, avec ses propres sessions : la session de la requête est déjà rendue. `main` relaie le 202 tel quel (#99).
+
+Vérification manuelle, avec un replay terminé dont la playlist est servie par `stream` :
+
+```bash
+curl -i localhost:8003/replays/1/download      # 202, Retry-After: 5
+sleep 5
+curl -OJ localhost:8003/replays/1/download     # replay-1.mp4
+```
 
 ## Conversion `.mp4`
 
