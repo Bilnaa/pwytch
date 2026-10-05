@@ -1,69 +1,26 @@
 from typing import Annotated
 
-from common.events import ItemType
-from common.mqtt import MqttClient
 from common.pagination import Page
-from fastapi import APIRouter, BackgroundTasks, Depends, Path, Query
-from pydantic import AfterValidator, StringConstraints
-from sqlalchemy.ext.asyncio import AsyncSession
+from fastapi import APIRouter, Path, Query
 
-from app.helpers.text import normalize
-from app.hits import schedule_hits
-from app.infra.db import get_session
-from app.infra.repository import search_chat_messages, search_streamers
-from app.mqtt import get_mqtt
+from app.dependencies import HitPublisherDep, SessionDep
+from app.helpers.constants import MAX_POSTGRES_INTEGER
 from app.schemas import MessageResult, StreamerResult
+from app.schemas.search_query import ChatSearchQuery, SearchQuery
+from app.services import search_service
 
 router = APIRouter(prefix="/search", tags=["search"])
-
-# Plus grand INTEGER de Postgres : au-delà, la requête lèverait une erreur (500).
-MAX_POSTGRES_INTEGER = 2_147_483_647
-
-
-def require_searchable_text(search_query: str) -> str:
-    # Des diacritiques combinants seuls passent la longueur mais deviennent "" une fois
-    # normalisés : la requête correspondrait alors à tout. Le repository normalise déjà.
-    if not normalize(search_query):
-        raise ValueError("query is empty after normalization")
-    # Postgres refuse le caractère nul dans un texte : sans ce contrôle, 500 au lieu de 422.
-    if "\x00" in search_query:
-        raise ValueError("query contains a null character")
-    return search_query
-
-
-# Le strip passe avant les contrôles de longueur : "   " et " a " donnent 422.
-SearchQuery = Annotated[
-    str,
-    StringConstraints(strip_whitespace=True, min_length=2, max_length=100),
-    AfterValidator(require_searchable_text),
-]
-
-# Un seul caractère suffit dans le chat : "g", "?" ou un emoji sont des recherches utiles.
-ChatSearchQuery = Annotated[
-    str,
-    StringConstraints(strip_whitespace=True, min_length=1, max_length=100),
-    AfterValidator(require_searchable_text),
-]
 
 
 @router.get("/streamers")
 async def search_streamers_route(
-    session: Annotated[AsyncSession, Depends(get_session, scope="function")],
-    mqtt: Annotated[MqttClient, Depends(get_mqtt)],
-    background_tasks: BackgroundTasks,
+    session: SessionDep,
+    hits: HitPublisherDep,
     search_query: Annotated[SearchQuery, Query(alias="q")],
     page: Annotated[int, Query(ge=1)] = 1,
     size: Annotated[int, Query(ge=1, le=50)] = 20,
 ) -> Page[StreamerResult]:
-    results, total = await search_streamers(session, search_query, page, size)
-    schedule_hits(
-        background_tasks,
-        mqtt,
-        ItemType.STREAMER,
-        [result.streamer_id for result in results],
-        search_query,
-    )
-    return Page[StreamerResult](items=results, total=total, page=page, size=size)
+    return await search_service.search_streamers(session, hits, search_query, page, size)
 
 
 @router.get(
@@ -72,21 +29,12 @@ async def search_streamers_route(
     responses={422: {"description": "Invalid stream_id or q"}},
 )
 async def search_chat_messages_route(
-    session: Annotated[AsyncSession, Depends(get_session, scope="function")],
-    mqtt: Annotated[MqttClient, Depends(get_mqtt)],
-    background_tasks: BackgroundTasks,
+    session: SessionDep,
+    hits: HitPublisherDep,
     stream_id: Annotated[int, Path(ge=1, le=MAX_POSTGRES_INTEGER)],
     search_query: Annotated[ChatSearchQuery, Query(alias="q")],
 ) -> list[MessageResult]:
-    results = await search_chat_messages(session, stream_id, search_query)
-    schedule_hits(
-        background_tasks,
-        mqtt,
-        ItemType.MESSAGE,
-        [result.message_id for result in results],
-        search_query,
-    )
-    return results
+    return await search_service.search_chat_messages(session, hits, stream_id, search_query)
 
 
 @router.get(
@@ -95,19 +43,8 @@ async def search_chat_messages_route(
     responses={422: {"description": "Invalid q"}},
 )
 async def search_all_chat_messages_route(
-    session: Annotated[AsyncSession, Depends(get_session, scope="function")],
-    mqtt: Annotated[MqttClient, Depends(get_mqtt)],
-    background_tasks: BackgroundTasks,
+    session: SessionDep,
+    hits: HitPublisherDep,
     search_query: Annotated[SearchQuery, Query(alias="q")],
 ) -> list[MessageResult]:
-    results = await search_chat_messages(
-        session, stream_id=None, search_query=search_query
-    )
-    schedule_hits(
-        background_tasks,
-        mqtt,
-        ItemType.MESSAGE,
-        [result.message_id for result in results],
-        search_query,
-    )
-    return results
+    return await search_service.search_all_chat_messages(session, hits, search_query)

@@ -6,9 +6,9 @@ from httpx import ASGITransport, AsyncClient
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 from sqlalchemy.pool import StaticPool
 
-from app.infra.db import SCHEMA_NAME, get_session, init_db
+from app.core.db import SCHEMA_NAME, init_db
+from app.dependencies import get_mqtt, get_session
 from app.main import app
-from app.mqtt import get_mqtt
 
 
 @pytest.fixture
@@ -34,7 +34,7 @@ async def session(engine):
 
 @pytest.fixture
 def session_factory(engine):
-    # Mêmes options que la fabrique de prod dans app.infra.db.
+    # Mêmes options que la fabrique de prod dans app.core.db.
     return async_sessionmaker(engine, expire_on_commit=False)
 
 

@@ -4,8 +4,8 @@ from uuid import UUID
 import pytest
 from sqlalchemy import inspect
 
-from app.infra.config import Settings
-from app.infra.models import IndexedChatMessage, Stream, Streamer
+from app.core.config import Settings
+from app.models import IndexedChatMessage, Stream, Streamer
 from tests.factories import FIRST_START, as_utc, reload
 
 MESSAGE_ID = UUID("3f2b8d6a-7c1e-4a95-b0d4-6e8f1a2c5b97")

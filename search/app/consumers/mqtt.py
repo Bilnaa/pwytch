@@ -3,11 +3,10 @@ from collections.abc import Awaitable, Callable
 from common.events import BaseEvent, ChatMessage, StreamEnded, StreamStarted
 from common.mqtt import MqttClient
 from common.topics import CHAT_MESSAGE, STREAM_ENDED, STREAM_STARTED
-from fastapi import Request
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
-from app.indexer import on_chat_message, on_stream_ended, on_stream_started
-from app.infra.config import Settings
+from app.core.config import Settings
+from app.services.indexing_service import on_chat_message, on_stream_ended, on_stream_started
 
 # Avec un client_id, le broker garde les messages QoS 1 reçus pendant un redémarrage.
 MQTT_CLIENT_ID = "search"
@@ -44,7 +43,3 @@ def create_mqtt_client(
     )
     return mqtt
 
-
-def get_mqtt(request: Request) -> MqttClient:
-    """Dépendance FastAPI : le client créé par le lifespan, remplacé par un faux en test."""
-    return request.app.state.mqtt

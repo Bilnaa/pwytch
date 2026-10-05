@@ -2,8 +2,8 @@ import logging
 
 import pytest
 
-from app.indexer import on_chat_message, on_stream_ended
-from app.infra.models import IndexedChatMessage
+from app.models import IndexedChatMessage
+from app.services.indexing_service import on_chat_message, on_stream_ended
 from tests.factories import (
     MESSAGE_ID,
     count_rows,

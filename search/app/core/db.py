@@ -1,15 +1,12 @@
-from collections.abc import AsyncIterator
-
 from sqlalchemy import MetaData, text
 from sqlalchemy.ext.asyncio import (
     AsyncEngine,
-    AsyncSession,
     async_sessionmaker,
     create_async_engine,
 )
 from sqlalchemy.orm import DeclarativeBase
 
-from app.infra.config import Settings, settings
+from app.core.config import Settings, settings
 
 SCHEMA_NAME = "search"
 
@@ -23,6 +20,7 @@ def create_engine_from_settings(app_settings: Settings) -> AsyncEngine:
 
 
 async def init_db(engine: AsyncEngine) -> None:
+    # Enregistre les tables dans Base.metadata, même si rien d'autre n'a importé les modèles.
 
     async with engine.begin() as connection:
         if engine.dialect.name == "postgresql":
@@ -33,8 +31,3 @@ async def init_db(engine: AsyncEngine) -> None:
 
 engine = create_engine_from_settings(settings)
 session_factory = async_sessionmaker(engine, expire_on_commit=False)
-
-
-async def get_session() -> AsyncIterator[AsyncSession]:
-    async with session_factory() as session:
-        yield session

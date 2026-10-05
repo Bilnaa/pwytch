@@ -61,3 +61,16 @@ async def publish_hits(mqtt: MqttClient, hits: list[SearchHit]) -> None:
             # Cas inattendu : la trace sert à corriger, la recherche a déjà répondu.
             logger.exception("%d search/hit events not published", len(hits) - index)
             return
+
+
+class HitPublisher:
+    """Programme les search/hit d'une requête ; le service qui l'utilise ignore FastAPI."""
+
+    def __init__(self, background_tasks: BackgroundTasks, mqtt: MqttClient):
+        self.background_tasks = background_tasks
+        self.mqtt = mqtt
+
+    def schedule(
+        self, item_type: ItemType, item_ids: list[int] | list[UUID], search_query: str
+    ) -> None:
+        schedule_hits(self.background_tasks, self.mqtt, item_type, item_ids, search_query)
