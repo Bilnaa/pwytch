@@ -1,11 +1,14 @@
 import asyncio
 
+import pytest
 from fastapi.testclient import TestClient
+from sqlalchemy.exc import OperationalError
 from starlette.websockets import WebSocketDisconnect
 
 from app.connection_manager import ConnectionManager, connectionManager
 from app.main import app
 from app.models.message_model import Author, MessageModel
+from app.routers import live_chat
 
 client = TestClient(app)
 
@@ -93,3 +96,43 @@ def test_live_chat_rate_limited(saved_messages):
             "detail": "Veuillez attendre une seconde.",
         }
     assert [m.content for m in saved_messages] == ["first"]
+
+
+def test_last_messages_oldest_first(monkeypatch):
+    calls = []
+    author = Author(id=1, username="author")
+    stored = [MessageModel(stream_id=1, author=author, content=c) for c in ("first", "second")]
+
+    async def fake_get(stream_id, limit):
+        calls.append((stream_id, limit))
+        return stored
+
+    monkeypatch.setattr(live_chat, "get_last_messages", fake_get)
+    response = client.get("/streams/1/messages")
+    assert response.status_code == 200
+    assert [m["content"] for m in response.json()] == ["first", "second"]
+    # default limit
+    assert calls == [(1, 50)]
+
+
+def test_last_messages_empty_stream(monkeypatch):
+    async def fake_get(stream_id, limit):
+        return []
+
+    monkeypatch.setattr(live_chat, "get_last_messages", fake_get)
+    response = client.get("/streams/42/messages?limit=1")
+    assert response.status_code == 200
+    assert response.json() == []
+
+
+@pytest.mark.parametrize("limit", [0, 101, -1, "abc"])
+def test_last_messages_invalid_limit(limit):
+    assert client.get(f"/streams/1/messages?limit={limit}").status_code == 422
+
+
+def test_last_messages_database_down(monkeypatch):
+    async def failing_get(stream_id, limit):
+        raise OperationalError("SELECT", {}, Exception("connection refused"))
+
+    monkeypatch.setattr(live_chat, "get_last_messages", failing_get)
+    assert client.get("/streams/1/messages").status_code == 503
