@@ -84,6 +84,14 @@ Pour avoir un live à regarder sans webcam : `uv run python scripts/channels.py`
 
 Les erreurs de `live-chat` arrivent avec un `code` (`EMPTY_MESSAGE`, `CONTENT_TOO_LONG`...) traduit en message sous le champ. Si la connexion coupe (`main` redémarré, `live-chat` down), le chat se reconnecte toutes les 3 s, sauf sur 4401 (session expirée) et 4404 (live inconnu). Pas encore d'historique à l'arrivée ni des messages manqués pendant une coupure, en attendant la route de #84.
 
+## Recherche
+
+Une barre dans le header, sur toutes les pages comme sur Twitch (`components/search-bar.tsx`). Entrée ouvre `/search?q=`, et une fois sur la page les résultats suivent la saisie 300 ms après la dernière touche. Moins de 2 caractères : pas d'appel (`main` répond 422).
+
+Un seul appel, `GET /search?q=`, pour les deux sections : « Streamers » (badge LIVE s'il est en direct, lien vers sa chaîne) et « Messages ». Une section vide n'est pas affichée.
+
+Un message ne connaît que l'id de son live : il pointe vers `/videos/{id}` (`pages/video.tsx`), qui fait `GET /streams/{id}` au clic et renvoie sur la chaîne du streamer. Id inconnu : page 404.
+
 ## Pages et routes de l'API
 
 Comme l'API est sous `/api`, une page peut avoir le même chemin qu'une route de l'API (`/search` côté front, `/api/search` côté API). Recharger une page renvoie toujours le front.

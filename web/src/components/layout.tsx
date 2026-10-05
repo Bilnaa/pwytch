@@ -2,6 +2,7 @@ import { useState } from 'react'
 import { Link, NavLink, Outlet } from 'react-router'
 import { LogOut, Moon, Sun, User } from 'lucide-react'
 
+import { SearchBar } from '@/components/search-bar'
 import { Button } from '@/components/ui/button'
 import {
   DropdownMenu,
@@ -93,7 +94,10 @@ export function Layout() {
               </NavLink>
             )}
           </nav>
-          <div className="ml-auto flex items-center gap-2">
+          <div className="flex flex-1 justify-center">
+            <SearchBar />
+          </div>
+          <div className="flex items-center gap-2">
             <ThemeButton />
             <UserMenu />
           </div>
