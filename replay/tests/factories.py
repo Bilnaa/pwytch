@@ -3,7 +3,7 @@ from uuid import uuid4
 
 from common.events import StreamEnded, StreamStarted
 
-from app.infra.models import Replay
+from app.models import Replay
 
 STREAMER_ID = 7
 FIRST_START = datetime(2026, 10, 4, 20, 0, tzinfo=UTC)

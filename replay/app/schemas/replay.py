@@ -3,7 +3,7 @@ from typing import Literal
 
 from pydantic import BaseModel, computed_field
 
-from app.infra.models import Mp4Status
+from app.models import Mp4Status
 
 
 class ReplayResult(BaseModel):

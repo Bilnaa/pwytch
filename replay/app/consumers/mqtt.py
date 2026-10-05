@@ -6,8 +6,8 @@ from common.mqtt import MqttClient
 from common.topics import STREAM_ENDED, STREAM_STARTED
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
-from app.events import on_stream_ended, on_stream_started
-from app.infra.config import Settings
+from app.core.config import Settings
+from app.services.live_event_service import on_stream_ended, on_stream_started
 
 # Avec un client_id, le broker garde les messages QoS 1 reçus pendant un redémarrage.
 MQTT_CLIENT_ID = "replay"

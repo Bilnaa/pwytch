@@ -4,7 +4,7 @@ from enum import StrEnum
 from sqlalchemy import DateTime, Enum, Index
 from sqlalchemy.orm import Mapped, mapped_column
 
-from app.infra.db import Base
+from app.core.db import Base
 
 
 class Mp4Status(StrEnum):

@@ -3,7 +3,7 @@ import logging
 import httpx
 import pytest
 
-from app.events import on_stream_ended, on_stream_started
+from app.services.live_event_service import on_stream_ended, on_stream_started
 from tests.factories import add_replay, make_ended, make_started, reload
 
 PLAYLIST_PATH = "/lives/42/index.m3u8"

@@ -1,6 +1,6 @@
 from pathlib import Path
 
-from app.infra.config import Settings
+from app.core.config import Settings
 
 
 def test_defaults_point_to_the_local_stack(monkeypatch):
