@@ -20,7 +20,7 @@ from app.config import (
 )
 from app.db import Base, SessionLocal, engine
 from app.mqtt import create_mqtt_client
-from app.routers import auth, chat, health, ingest, lives, search, streams, users
+from app.routers import auth, chat, health, ingest, lives, replays, search, streams, users
 from app.services import streams as streams_service
 from app.services.satellites import SatelliteError, SatelliteRejectedError
 
@@ -103,6 +103,7 @@ api.include_router(chat.router)
 api.include_router(streams.router)
 api.include_router(lives.router)
 api.include_router(search.router)
+api.include_router(replays.router)
 api.include_router(users.router)
 
 

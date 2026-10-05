@@ -71,6 +71,8 @@ Toute l'API est sous `/api` (ex. `/api/auth/login`, `ws://localhost:8000/api/str
 | `/lives/{stream_id}/{filename}` | HTTP GET | Relaie la playlist ou un segment HLS d'un live depuis `stream` |
 | `/users/{username}` | HTTP GET | Profil public d'un utilisateur (`id`, `username`, `display_name`), 404 s'il n'existe pas |
 | `/search` | HTTP GET | Cherche des streamers et des messages du chat de tous les lives via `search` |
+| `/replays` | HTTP GET | Liste paginée des replays via `replay`, filtrable par streamer |
+| `/replays/{stream_id}` | HTTP GET | Renvoie un replay via `replay` |
 
 La doc interactive est sur `http://localhost:8000/api/docs`.
 
@@ -280,6 +282,43 @@ Tant que #150 n'est pas mergé, `search` répond 404 sur `/search/messages` : `m
 
 Un `q` que `search` refuse alors que `main` l'accepte (vide après normalisation, par exemple des accents seuls) donne aussi des sections vides.
 
+### `GET /replays?page=&size=&streamer_id=` et `GET /replays/{stream_id}`
+
+`main` ne touche jamais au stockage des replays : il relaie la requête à `replay` (voir `replay/README.md`) et renvoie sa réponse. Pas besoin d'être connecté.
+
+| Paramètre     | Défaut | Contraintes |
+|---------------|--------|-------------|
+| `page`        | `1`    | 1 à 2 147 483 647 |
+| `size`        | `20`   | 1 à 50 |
+| `streamer_id` | aucun  | 1 à 2 147 483 647, ne garde que les replays de ce streamer |
+| `stream_id`   |        | 1 à 2 147 483 647 |
+
+Ce sont les bornes de `replay`, à garder alignées : un paramètre hors bornes donne un `422` sans appeler `replay`.
+
+Les replays sont triés du plus récent au plus ancien (fin du live). Un replay a l'id de la session de live (`stream_id`) :
+
+```json
+{
+  "items": [{"stream_id": 7, "streamer_id": 42, "streamer_name": "Célèste", "title": "Speedrun any%", "game": "Celeste", "started_at": "2026-10-02T19:00:00Z", "ended_at": "2026-10-02T20:02:05Z", "duration_s": 3725.4, "mp4_status": "none", "playback_url": "/lives/7/index.m3u8"}],
+  "total": 1,
+  "page": 1,
+  "size": 20
+}
+```
+
+`GET /replays/{stream_id}` renvoie un seul de ces objets. `playback_url` est relatif à `/api` : le front le lit via le relais HLS `/lives/{stream_id}/{filename}`.
+
+| Code | Cas |
+|------|-----|
+| 200  | Replay(s) relayé(s) |
+| 404  | Replay inconnu ou live encore en cours (réponse de `replay` renvoyée telle quelle) |
+| 422  | Paramètre invalide, `replay` n'est pas appelé |
+| 502  | `replay` a renvoyé une réponse inattendue |
+| 503  | `replay` est injoignable |
+| 504  | `replay` n'a pas répondu à temps |
+
+Les erreurs viennent du helper commun, voir « Appeler un satellite ».
+
 ### Appeler un satellite
 
 Chaque satellite a son `httpx.AsyncClient`, créé dans le `lifespan` avec l'URL et le timeout de `.env`, et sa dépendance : `get_stream_client`, `get_search_client`, `get_replay_client`, `get_stats_client` (`app/dependencies.py`).
@@ -431,5 +470,5 @@ Avec le service lancé :
 - Une session dont le `stream/ended` a été perdu reste `live` jusqu'à 30 s de plus, le temps du prochain rattrapage (voir « `stream/ended` manqué »).
 - Pas de migrations : les tables sont créées au démarrage, un changement de modèle demande de recréer la table.
 - Si PostgreSQL n'est pas prêt quand l'API démarre, le `create_all` échoue et l'API plante : il faut la relancer.
-- Seuls `stream` (ingest et HLS), `search` et le chat de `live-chat` sont relayés : le relais vers `replay`, ... n'est pas encore implémenté.
+- Seuls `stream` (ingest et HLS), `search`, `replay` (liste et détail) et le chat de `live-chat` sont relayés : le relais vers `bookmarks`, `stats`, ... n'est pas encore implémenté.
 - Les ids de session viennent de l'auto-incrément PostgreSQL, et `stream` refuse un id dont le dossier `lives/{stream_id}/` existe déjà (`Stream id already used`). Si la base est vidée (volume `postgres-data` supprimé) sans vider `stream/lives/`, les nouvelles sessions reprennent à 1 et leurs lives sont refusés : il faut vider les deux ensemble.
