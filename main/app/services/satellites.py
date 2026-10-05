@@ -1,4 +1,5 @@
 import logging
+from collections.abc import Collection
 from typing import Any
 
 import httpx
@@ -49,9 +50,11 @@ async def send(
     params: dict[str, Any] | None = None,
     json: Any = None,
     stream: bool = False,
+    timeout: Any = httpx.USE_CLIENT_DEFAULT,
+    relayed_errors: Collection[int] = (),
 ) -> httpx.Response:
     request = client.build_request(
-        method, path, params=params, json=json, headers=identity_headers(user)
+        method, path, params=params, json=json, headers=identity_headers(user), timeout=timeout
     )
     try:
         response = await client.send(request, stream=stream)
@@ -68,7 +71,9 @@ async def send(
     if stream:
         await response.aread()
         await response.aclose()
-    if response.is_client_error and response.status_code != 401:
+    if response.status_code in relayed_errors or (
+        response.is_client_error and response.status_code != 401
+    ):
         raise SatelliteRejectedError(response)
     logger.warning("%s %s answered %s", method, request.url, response.status_code)
     raise InvalidSatelliteResponseError("Invalid answer from service")

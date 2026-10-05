@@ -24,3 +24,8 @@ class ReplayPage(BaseModel):
     total: int
     page: int
     size: int
+
+
+class ConversionPending(BaseModel):
+    stream_id: int
+    mp4_status: Literal["processing"] = "processing"

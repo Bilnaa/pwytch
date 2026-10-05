@@ -2,9 +2,11 @@ from typing import Annotated
 
 import httpx
 from fastapi import APIRouter, Depends, Path, Query
+from fastapi.responses import StreamingResponse
+from starlette.background import BackgroundTask
 
 from app.dependencies import get_replay_client
-from app.schemas.replay import ReplayPage, ReplayResponse
+from app.schemas.replay import ConversionPending, ReplayPage, ReplayResponse
 from app.services import replays as replays_service
 
 router = APIRouter(prefix="/replays", tags=["replays"])
@@ -45,3 +47,29 @@ async def get_replay(
     stream_id: ReplayId,
 ):
     return await replays_service.get_replay(client, stream_id)
+
+
+@router.get(
+    "/{stream_id}/download",
+    summary="Relay the mp4 of a replay, converted by replay on the first request",
+    response_class=StreamingResponse,
+    responses={
+        200: {"description": "The mp4 file, as an attachment", "content": {"video/mp4": {}}},
+        202: {"description": "Conversion in progress, retry later", "model": ConversionPending},
+        404: {"description": "Unknown replay or live still in progress"},
+        500: {"description": "Conversion failed; the next request starts it again"},
+        **ERRORS,
+    },
+)
+async def download_replay(
+    client: Annotated[httpx.AsyncClient, Depends(get_replay_client)],
+    stream_id: ReplayId,
+):
+    download = await replays_service.open_replay_download(client, stream_id)
+    return StreamingResponse(
+        download.content,
+        status_code=download.status_code,
+        media_type=download.media_type,
+        headers=download.headers,
+        background=BackgroundTask(download.close),
+    )
