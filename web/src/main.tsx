@@ -10,6 +10,7 @@ import { GoLivePage } from '@/pages/go-live'
 import { HomePage } from '@/pages/home'
 import { LoginPage } from '@/pages/login'
 import { RegisterPage } from '@/pages/register'
+import { ReplaysPage } from '@/pages/replays'
 import { SearchPage } from '@/pages/search'
 import { VideoPage } from '@/pages/video'
 import { NotFoundPage } from '@/pages/not-found'
@@ -22,6 +23,12 @@ const router = createBrowserRouter([
       { path: '/', element: <HomePage /> },
       { path: '/login', element: <LoginPage /> },
       { path: '/register', element: <RegisterPage /> },
+      { path: '/replays', element: <ReplaysPage /> },
+      {
+        path: '/replays/:id',
+        // same player as a channel: only loaded when a replay is opened
+        lazy: async () => ({ Component: (await import('@/pages/replay')).ReplayPage }),
+      },
       { path: '/search', element: <SearchPage /> },
       { path: '/videos/:id', element: <VideoPage /> },
       {

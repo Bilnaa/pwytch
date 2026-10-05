@@ -39,6 +39,7 @@ Elle est lue au build : la changer demande de relancer `npm run dev` ou de rebui
 | `src/lib/auth.tsx`       | `useAuth()` : utilisateur connecté, login, register, logout |
 | `src/lib/theme.ts`       | Thème clair / sombre |
 | `src/lib/streams.ts`     | Type `Stream` et appels à `/streams` |
+| `src/lib/replays.ts`     | Type `Replay` et appels à `/replays` (liste, détail, demande du `.mp4`) |
 | `src/hooks/`             | Hooks : webcam (`use-webcam`), envoi du flux à `main` (`use-broadcast`) |
 | `src/components/require-auth.tsx` | Routes réservées aux utilisateurs connectés, renvoie vers `/login` sinon |
 | `src/pages/`             | Une page par fichier |
@@ -77,6 +78,20 @@ Vidstack lit le HLS avec hls.js (build `light`, passé à Vidstack pour qu'il ne
 Chaque play, pause et stop du player part sur `POST /api/streams/{id}/player-events` pour les stats (`hooks/use-player-events.ts`). Stop = fin du live, ou on quitte la page pendant la lecture (lien, onglet fermé). L'envoi n'est jamais attendu et ses erreurs sont ignorées, la lecture ne dépend pas de `main`.
 
 Pour avoir un live à regarder sans webcam : `uv run python scripts/channels.py` depuis `stream/` (voir `stream/README.md`).
+
+## Replays
+
+`/replays` : une carte par live terminé (`GET /replays?page=&size=24`), du plus récent au plus ancien, avec la durée, le titre, le streamer, le jeu et la date. Le numéro de page est dans l'URL (`/replays?page=2`) ; une page au-delà de la dernière propose de revenir à la première. Un champ manquant (replay reçu sans le début du live) s'affiche « Untitled » ou « Unknown streamer ».
+
+`/replays/{id}` : le même player que les lives, en `streamType="on-demand"` : barre de progression sur tout le live, et pas de nouvel essai en boucle si la playlist manque. `playback_url` du replay est relatif à l'API de `main` et passe par `apiUrl()`. Replay inconnu, live encore en cours ou id invalide : page 404. Chargée à la demande (`lazy`), comme la page d'une chaîne.
+
+Bouton « Download .mp4 » (`components/download-button.tsx`) : le `.mp4` n'est créé qu'à la première demande.
+
+- Déjà prêt (`mp4_status: ready`) : lien direct vers `/api/replays/{id}/download`, le navigateur enregistre le fichier (`Content-Disposition: attachment`) sans le charger en mémoire.
+- Sinon, un `fetch` de `/download` lance la conversion : sur le `202`, le bouton affiche « Preparing... » et relit le replay (`GET /replays/{id}`) toutes les `Retry-After` secondes, puis enregistre le fichier dès que le statut est `ready`.
+- Conversion ratée : « Try again ». `replay` répond `500` une fois puis remet la conversion à zéro, le bouton redemande donc tout de suite pour la relancer.
+
+Quitter la page arrête l'attente.
 
 ## Chat
 

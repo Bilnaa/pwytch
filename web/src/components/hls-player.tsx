@@ -18,13 +18,21 @@ const RETRY_MS = 3000
 
 interface HlsPlayerProps {
   src: string
+  // 'on-demand' for a replay: full progress bar, and a missing playlist is not retried
+  streamType?: 'live' | 'on-demand'
   onPlay?: () => void
   onPause?: () => void
   // the playlist is over (#EXT-X-ENDLIST reached), the live has ended
   onEnded?: () => void
 }
 
-export function HlsPlayer({ src, onPlay, onPause, onEnded }: HlsPlayerProps) {
+export function HlsPlayer({
+  src,
+  streamType = 'live',
+  onPlay,
+  onPause,
+  onEnded,
+}: HlsPlayerProps) {
   const playerRef = useRef<MediaPlayerInstance>(null)
   const hlsRef = useRef<HLSProvider | null>(null)
   const retryRef = useRef<number | undefined>(undefined)
@@ -45,7 +53,7 @@ export function HlsPlayer({ src, onPlay, onPause, onEnded }: HlsPlayerProps) {
 
   // vidstack already recovers media errors, network ones are left to us
   function onHlsError(error: HLSErrorEvent['detail']) {
-    if (!error.fatal || error.type !== Hls.ErrorTypes.NETWORK_ERROR) {
+    if (!error.fatal || error.type !== Hls.ErrorTypes.NETWORK_ERROR || streamType !== 'live') {
       return
     }
     // the playlist is a 404 for the first seconds of a live, so we try again
@@ -68,7 +76,7 @@ export function HlsPlayer({ src, onPlay, onPause, onEnded }: HlsPlayerProps) {
     <MediaPlayer
       ref={playerRef}
       src={{ src, type: 'application/x-mpegurl' }}
-      streamType="live"
+      streamType={streamType}
       autoPlay
       playsInline
       className="aspect-video max-h-[calc(100svh-12rem)] w-full overflow-hidden rounded-lg bg-black"
