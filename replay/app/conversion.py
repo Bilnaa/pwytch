@@ -7,7 +7,7 @@ from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from app.infra.models import Mp4Status
-from app.infra.repository import reset_processing, set_mp4_status
+from app.infra.repository import finish_conversion, reset_processing
 
 logger = logging.getLogger(__name__)
 
@@ -52,13 +52,24 @@ class Mp4Converter:
         try:
             status = await self._produce_mp4(stream_id)
             async with self.session_factory() as session:
-                await set_mp4_status(session, stream_id, status)
+                written = await finish_conversion(session, stream_id, status)
+            if not written:
+                logger.warning(
+                    "Replay %s was reset during its conversion, %s result not written",
+                    stream_id,
+                    status,
+                )
         except Exception:
             # Statut resté en processing : le prochain démarrage le remet à none.
             logger.exception("Conversion of replay %s could not be finished", stream_id)
 
     async def reset_interrupted(self) -> None:
-        """Au démarrage : un arrêt pendant ffmpeg laisse des .part et des lignes « processing »."""
+        """Au démarrage : un arrêt pendant ffmpeg laisse des .part et des lignes « processing ».
+
+        Suppose un seul process replay : il remet à zéro toutes les conversions, y compris
+        celles qu'un autre process ferait tourner. replay tourne déjà en une seule instance
+        à cause de son client_id MQTT fixe (voir « Dettes connues » du README).
+        """
         self.replays_dir.mkdir(parents=True, exist_ok=True)
         for part_path in self.replays_dir.glob("*.mp4.part"):
             part_path.unlink(missing_ok=True)
@@ -86,11 +97,14 @@ class Mp4Converter:
         try:
             _, stderr = await asyncio.wait_for(process.communicate(), self.timeout_s)
         except TimeoutError:
-            process.kill()
-            await process.wait()
-            part_path.unlink(missing_ok=True)
             logger.error("ffmpeg timed out after %s s for replay %s", self.timeout_s, stream_id)
             return Mp4Status.FAILED
+        finally:
+            # Délai dépassé ou tâche annulée (arrêt du service) : ffmpeg ne reste pas orphelin.
+            if process.returncode is None:
+                process.kill()
+                await process.wait()
+                part_path.unlink(missing_ok=True)
         if process.returncode != 0:
             part_path.unlink(missing_ok=True)
             logger.error(

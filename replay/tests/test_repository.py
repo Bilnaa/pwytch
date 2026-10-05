@@ -1,7 +1,12 @@
 import pytest
-
 from app.infra.models import Mp4Status
-from app.infra.repository import claim_conversion, reset_processing, set_mp4_status
+from app.infra.repository import (
+    claim_conversion,
+    finish_conversion,
+    reset_processing,
+    set_mp4_status,
+)
+
 from tests.factories import add_replay, reload
 
 
@@ -59,3 +64,20 @@ async def test_reset_processing_only_touches_processing(session):
     assert await reset_processing(session) == 1
     assert (await reload(session, 1)).mp4_status is Mp4Status.NONE
     assert (await reload(session, 2)).mp4_status is Mp4Status.READY
+
+
+@pytest.mark.anyio
+async def test_finish_conversion_writes_the_result_of_a_processing_replay(session):
+    await add_replay(session, 42, mp4_status=Mp4Status.PROCESSING)
+
+    assert await finish_conversion(session, 42, Mp4Status.READY) is True
+    assert (await reload(session, 42)).mp4_status is Mp4Status.READY
+
+
+@pytest.mark.anyio
+async def test_finish_conversion_does_not_overwrite_a_reset_status(session):
+    # Ligne remise à none entre-temps : un ffmpeg qui finit en retard n'écrase rien.
+    await add_replay(session, 42, mp4_status=Mp4Status.NONE)
+
+    assert await finish_conversion(session, 42, Mp4Status.READY) is False
+    assert (await reload(session, 42)).mp4_status is Mp4Status.NONE

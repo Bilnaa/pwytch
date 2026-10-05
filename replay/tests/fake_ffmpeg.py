@@ -4,19 +4,23 @@ from pathlib import Path
 
 class FakeProcess:
     def __init__(self, returncode: int, stderr: bytes, hang: bool):
-        self.returncode = returncode
+        # returncode vaut None tant que ffmpeg tourne.
+        self.returncode: int | None = None
+        self.final_returncode = returncode
         self.stderr = stderr
         self.hang = hang
         self.killed = False
 
     async def communicate(self) -> tuple[bytes, bytes]:
         if self.hang:
-            # ffmpeg bloqué : seul le délai maximal du convertisseur l'arrête.
+            # ffmpeg bloqué : seul le délai maximal ou une annulation l'arrête.
             await asyncio.Event().wait()
+        self.returncode = self.final_returncode
         return b"", self.stderr
 
     def kill(self) -> None:
         self.killed = True
+        self.returncode = -9
 
     async def wait(self) -> int:
         return self.returncode
