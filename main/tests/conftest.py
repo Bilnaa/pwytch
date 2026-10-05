@@ -47,3 +47,10 @@ def live_chat(monkeypatch):
     fake = FakeChat()
     monkeypatch.setattr(chat, "connect", fake)
     return fake
+
+
+@pytest.fixture
+def auth_headers(client):
+    client.post("/auth/register", json={"username": "alice", "password": "s3cret-pass"})
+    response = client.post("/auth/login", data={"username": "alice", "password": "s3cret-pass"})
+    return {"Authorization": f"Bearer {response.json()['access_token']}"}

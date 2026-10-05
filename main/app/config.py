@@ -38,6 +38,13 @@ class ReplaySettings(BaseSettings):
     replay_timeout_seconds: float = 5
 
 
+class BookmarksSettings(BaseSettings):
+    model_config = SettingsConfigDict(env_file=".env", extra="ignore")
+
+    bookmarks_url: str = "http://localhost:8005"
+    bookmarks_timeout_seconds: float = 5
+
+
 class StatsSettings(BaseSettings):
     model_config = SettingsConfigDict(env_file=".env", extra="ignore")
 
@@ -78,6 +85,7 @@ auth_settings = AuthSettings.model_validate({})
 stream_settings = StreamSettings()
 search_settings = SearchSettings()
 replay_settings = ReplaySettings()
+bookmarks_settings = BookmarksSettings()
 stats_settings = StatsSettings()
 live_chat_settings = LiveChatSettings()
 mqtt_settings = MqttSettings()

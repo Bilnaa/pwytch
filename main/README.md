@@ -33,6 +33,8 @@ ou depuis `main/` :
 | `SEARCH_TIMEOUT_SECONDS` | `5` | Délai maximum d'attente d'une réponse de `search`, en secondes |
 | `REPLAY_URL` | `http://localhost:8003` | URL du service `replay` |
 | `REPLAY_TIMEOUT_SECONDS` | `5` | Délai maximum d'attente d'une réponse de `replay`, en secondes |
+| `BOOKMARKS_URL` | `http://localhost:8005` | URL du service `bookmarks`, utilisée pour relayer les bookmarks |
+| `BOOKMARKS_TIMEOUT_SECONDS` | `5` | Délai maximum d'attente d'une réponse de `bookmarks`, en secondes |
 | `STATS_URL` | `http://localhost:8006` | URL du service `stats` |
 | `STATS_TIMEOUT_SECONDS` | `5` | Délai maximum d'attente d'une réponse de `stats`, en secondes |
 | `LIVE_CHAT_URL` | `http://localhost:8002` | URL du service `live-chat`, utilisée pour relayer le chat |
@@ -72,6 +74,8 @@ Toute l'API est sous `/api` (ex. `/api/auth/login`, `ws://localhost:8000/api/str
 | `/lives/{stream_id}/{filename}` | HTTP GET | Relaie la playlist ou un segment HLS d'un live depuis `stream` |
 | `/users/{username}` | HTTP GET | Profil public d'un utilisateur (`id`, `username`, `display_name`), 404 s'il n'existe pas |
 | `/search` | HTTP GET | Cherche des streamers et des messages du chat de tous les lives via `search` |
+| `/bookmarks` | HTTP GET, POST | Liste ou crée les bookmarks de l'utilisateur via `bookmarks` (protégé) |
+| `/bookmarks/{bookmark_id}` | HTTP GET, PATCH, DELETE | Lit, modifie ou supprime un bookmark de l'utilisateur via `bookmarks` (protégé) |
 | `/replays` | HTTP GET | Liste paginée des replays via `replay`, filtrable par streamer |
 | `/replays/{stream_id}` | HTTP GET | Renvoie un replay via `replay` |
 
@@ -283,6 +287,41 @@ Tant que #150 n'est pas mergé, `search` répond 404 sur `/search/messages` : `m
 
 Un `q` que `search` refuse alors que `main` l'accepte (vide après normalisation, par exemple des accents seuls) donne aussi des sections vides.
 
+### Bookmarks
+
+Les bookmarks sont propres à chaque utilisateur : toutes les routes demandent un jeton (`401` sinon, sans appeler `bookmarks`). `main` relaie la requête à `bookmarks` avec les headers d'identité, et c'est `bookmarks` qui ne renvoie que les bookmarks de cet utilisateur.
+
+| Route de `main` | Appel à `bookmarks` | Succès |
+|-----------------|---------------------|--------|
+| `GET /bookmarks?page=&size=&target_type=` | `GET /bookmarks?page=&size=&target_type=` | `200`, page de bookmarks, du plus récent au plus ancien |
+| `POST /bookmarks` | `POST /bookmarks` | `201`, le bookmark créé, `Location: /api/bookmarks/{id}` |
+| `GET /bookmarks/{bookmark_id}` | `GET /bookmarks/{bookmark_id}` | `200`, le bookmark |
+| `PATCH /bookmarks/{bookmark_id}` | `PATCH /bookmarks/{bookmark_id}` | `200`, le bookmark modifié. Seuls les champs envoyés sont transmis |
+| `DELETE /bookmarks/{bookmark_id}` | `DELETE /bookmarks/{bookmark_id}` | `204`, sans corps |
+
+```json
+{"id": 3, "user_id": 1, "target_type": "replay", "target_id": 7, "label": "Run record", "note": null, "created_at": "2026-10-02T20:14:03Z", "updated_at": "2026-10-02T20:14:03Z"}
+```
+
+`GET /bookmarks` renvoie ces objets paginés :
+
+```json
+{"items": [{"id": 3, "...": "..."}], "total": 1, "page": 1, "size": 20}
+```
+
+| Paramètre     | Défaut | Contraintes |
+|---------------|--------|-------------|
+| `page`        | `1`    | 1 à 2 147 483 647 |
+| `size`        | `20`   | 1 à 100 |
+| `target_type` | aucun  | `replay` ou `streamer`, ne garde que les bookmarks de ce type |
+| `bookmark_id` |        | 1 à 2 147 483 647 |
+
+Ce sont les bornes de `bookmarks`, à garder alignées : un paramètre hors bornes donne un `422` sans appeler `bookmarks`.
+
+`main` vérifie seulement la forme du corps (`target_type` vaut `replay` ou `streamer`, `target_id` est un entier de 1 à 2 147 483 647, `label` n'est pas `null`, pas de champ en plus) : un corps mal formé donne `422` sans appeler `bookmarks`. Les longueurs de `label` et `note` sont vérifiées par `bookmarks`, dont le `422` est relayé tel quel, comme son `404` (bookmark absent ou d'un autre utilisateur) et son `409` (bookmark déjà existant). Les autres erreurs suivent le tableau de « Appeler un satellite ».
+
+Le `Location` de `bookmarks` pointe vers sa propre URL : `main` le remplace par celle de sa route.
+
 ### `GET /streams/{stream_id}/messages?limit=`
 
 Le front charge les derniers messages en arrivant sur un live, avant d'ouvrir le WebSocket du chat. `main` vérifie que le stream existe (`live-chat` ne le sait pas), puis relaie la requête à `GET /streams/{stream_id}/messages` de `live-chat`. Pas besoin d'être connecté.
@@ -351,7 +390,7 @@ Les erreurs viennent du helper commun, voir « Appeler un satellite ».
 
 ### Appeler un satellite
 
-Chaque satellite a son `httpx.AsyncClient`, créé dans le `lifespan` avec l'URL et le timeout de `.env`, et sa dépendance : `get_stream_client`, `get_search_client`, `get_replay_client`, `get_stats_client` (`app/dependencies.py`).
+Chaque satellite a son `httpx.AsyncClient`, créé dans le `lifespan` avec l'URL et le timeout de `.env`, et sa dépendance : `get_stream_client`, `get_search_client`, `get_replay_client`, `get_bookmarks_client`, `get_stats_client` (`app/dependencies.py`).
 
 `app/services/satellites.py` fait l'appel et traite les erreurs une seule fois pour toutes les routes :
 
@@ -500,5 +539,5 @@ Avec le service lancé :
 - Une session dont le `stream/ended` a été perdu reste `live` jusqu'à 30 s de plus, le temps du prochain rattrapage (voir « `stream/ended` manqué »).
 - Pas de migrations : les tables sont créées au démarrage, un changement de modèle demande de recréer la table.
 - Si PostgreSQL n'est pas prêt quand l'API démarre, le `create_all` échoue et l'API plante : il faut la relancer.
-- Seuls `stream` (ingest et HLS), `search`, `replay` (liste et détail) et le chat de `live-chat` sont relayés : le relais vers `bookmarks`, `stats`, ... n'est pas encore implémenté.
+- Seuls `stream` (ingest et HLS), `search`, `replay` (liste et détail), `bookmarks` et le chat de `live-chat` sont relayés : le relais vers `stats`, ... n'est pas encore implémenté.
 - Les ids de session viennent de l'auto-incrément PostgreSQL, et `stream` refuse un id dont le dossier `lives/{stream_id}/` existe déjà (`Stream id already used`). Si la base est vidée (volume `postgres-data` supprimé) sans vider `stream/lives/`, les nouvelles sessions reprennent à 1 et leurs lives sont refusés : il faut vider les deux ensemble.
