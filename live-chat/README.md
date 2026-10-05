@@ -44,3 +44,11 @@ Un viewer qui arrive sur un live récupère les derniers messages, du plus ancie
     curl "http://localhost:8002/streams/1/messages?limit=50"
 
 `limit` vaut 50 par défaut et doit être entre 1 et 100 (sinon `422`). Un live sans message renvoie `[]`. live-chat ne vérifie pas que le live existe : c'est `main` qui s'en charge. Si la base est indisponible, la route renvoie `503`.
+
+## Cache
+Les 100 derniers messages de chaque live sont gardés dans Redis, dans la liste `live-chat:stream:{id}:last` (`docker compose up -d redis` pour lancer Redis) :
+
+- L'historique lit Redis d'abord ; si la clé est absente, il lit la base et remplit le cache
+- Chaque nouveau message enregistré est ajouté au cache, s'il existe
+- La clé expire après `CACHE_TTL_SECONDS` (60 secondes donc) : un message enregistré pendant le remplissage du cache revient au remplissage suivant
+- Si Redis est indisponible, l'historique est lu en base et le chat continue de fonctionner normalement

@@ -6,10 +6,12 @@ os.environ.setdefault("DATABASE_URL", "postgresql+psycopg_async://postgres:postg
 
 from unittest.mock import AsyncMock
 
+import fakeredis
 import pytest
+from fastapi.testclient import TestClient
 from sqlalchemy.exc import OperationalError
 
-from app import events
+from app import cache, events, main
 from app.connection_manager import connectionManager
 from app.routers import live_chat
 
@@ -27,6 +29,23 @@ def mqtt(monkeypatch):
     fake = AsyncMock(connected=True)
     monkeypatch.setattr(events, "mqtt", fake)
     return fake
+
+
+@pytest.fixture(autouse=True)
+def redis_server(monkeypatch):
+    # In-memory Redis: the tests never touch a real one. connected = False stops it
+    server = fakeredis.FakeServer()
+    monkeypatch.setattr(cache, "redis", fakeredis.FakeAsyncRedis(server=server))
+    return server
+
+
+@pytest.fixture
+def chat_client(monkeypatch):
+    # WebSockets of this client share one event loop, like uvicorn. Without it each
+    # connection runs on its own loop, and a broadcast to another one can be lost
+    monkeypatch.setattr(main, "init_db", AsyncMock())
+    with TestClient(main.app) as client:
+        yield client
 
 
 @pytest.fixture
