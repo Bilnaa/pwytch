@@ -52,16 +52,11 @@ export function deleteBookmark(id: number): Promise<void> {
   return api<void>(`/bookmarks/${id}`, { method: 'DELETE' })
 }
 
-// The bookmark of this streamer or replay, or null. bookmarks can't filter by target_id,
-// so we look in the first 100 of that type (max page size), plenty for us
+// The bookmark of this streamer or replay, or null. There is at most one per target
 export async function findBookmark(type: TargetType, targetId: number): Promise<Bookmark | null> {
-  const page = await listBookmarks(1, 100, type)
-  for (const bookmark of page.items) {
-    if (bookmark.target_id === targetId) {
-      return bookmark
-    }
-  }
-  return null
+  const params = new URLSearchParams({ target_type: type, target_id: String(targetId), size: '1' })
+  const page = await api<BookmarkPage>(`/bookmarks?${params}`)
+  return page.items[0] ?? null
 }
 
 // Sent after a follow or an unfollow, so the sidebar updates without waiting for its refresh
