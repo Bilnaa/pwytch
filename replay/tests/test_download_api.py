@@ -2,8 +2,9 @@ import pytest
 
 from app import conversion
 from app.infra.db import get_session
-from app.infra.models import Mp4Status
+from app.infra.models import Mp4Status, Replay
 from app.main import app
+from app.routers import replays
 from tests.factories import add_replay, reload
 
 DOWNLOAD_URL = "/replays/42/download"
@@ -153,3 +154,28 @@ async def test_session_is_closed_before_converting(client, session, fake_ffmpeg,
     await client.get(DOWNLOAD_URL)
 
     assert closed_when_converting == [True]
+
+
+def read_stale_status(monkeypatch, stale_status: Mp4Status):
+    """La route lit un statut déjà dépassé : une autre requête a changé la ligne entre-temps."""
+
+    async def find_stale_replay(session, stream_id):
+        return Replay(stream_id=stream_id, streamer_id=7, mp4_status=stale_status)
+
+    monkeypatch.setattr(replays, "find_replay", find_stale_replay)
+
+
+@pytest.mark.anyio
+@pytest.mark.parametrize("stale_status", [Mp4Status.READY, Mp4Status.FAILED])
+async def test_concurrent_request_does_not_start_a_second_ffmpeg(
+    client, session, fake_ffmpeg, monkeypatch, stale_status
+):
+    # Une autre requête a déjà relancé la conversion : la ligne est en processing.
+    await add_replay(session, 42, mp4_status=Mp4Status.PROCESSING)
+    read_stale_status(monkeypatch, stale_status)
+
+    response = await client.get(DOWNLOAD_URL)
+
+    assert_pending(response)
+    assert fake_ffmpeg.calls == []
+    assert (await reload(session, 42)).mp4_status is Mp4Status.PROCESSING

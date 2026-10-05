@@ -12,7 +12,7 @@ from app.infra.repository import (
     claim_conversion,
     find_replay,
     list_replays,
-    set_mp4_status,
+    reset_conversion,
 )
 from app.schemas import ConversionPending, ReplayResult
 
@@ -91,16 +91,18 @@ async def download_replay_route(
             return FileResponse(
                 mp4_path, media_type="video/mp4", filename=f"replay-{stream_id}.mp4"
             )
-        # Fichier supprimé ou volume perdu, on relance la conversion.
-        await set_mp4_status(session, stream_id, Mp4Status.NONE)
-        mp4_status = Mp4Status.NONE
+        # Fichier supprimé ou volume perdu, on relance la conversion. Si une autre requête
+        # l'a déjà fait, le claim ci-dessous échoue et on répond 202 sans second ffmpeg.
+        await reset_conversion(session, stream_id, Mp4Status.READY)
 
-    if mp4_status is Mp4Status.FAILED:
-        # L'échec est signalé une fois, la demande suivante relance ffmpeg.
-        await set_mp4_status(session, stream_id, Mp4Status.NONE)
-        raise HTTPException(status_code=500, detail="Conversion failed, try again")
+    elif mp4_status is Mp4Status.FAILED:
+        # L'échec est signalé une fois, par la requête qui remet à none ; la suivante relance
+        # ffmpeg. Une requête arrivée trop tard trouve la conversion déjà repartie : 202.
+        if await reset_conversion(session, stream_id, Mp4Status.FAILED):
+            raise HTTPException(status_code=500, detail="Conversion failed, try again")
 
-    if mp4_status is Mp4Status.NONE and await claim_conversion(session, stream_id):
+    # Tente le claim quel que soit le statut lu : seul none → processing en base gagne.
+    if await claim_conversion(session, stream_id):
         # Lancée après l'envoi de la réponse, avec ses propres sessions.
         background_tasks.add_task(converter.convert, stream_id)
 
