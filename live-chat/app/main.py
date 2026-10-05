@@ -4,7 +4,7 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI
 from sqlalchemy.exc import SQLAlchemyError
 
-from app import events
+from app import cache, events
 from app.db import engine, init_db
 from app.routers import health, live_chat
 
@@ -24,6 +24,7 @@ async def lifespan(app: FastAPI):
     yield
     await events.wait_pending()
     await events.mqtt.stop()
+    await cache.redis.aclose()
     await engine.dispose()
 
 

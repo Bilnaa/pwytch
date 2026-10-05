@@ -53,7 +53,7 @@ def test_unsaved_message_is_not_published(database_down, mqtt):
     assert published(mqtt) == []
 
 
-def test_publication_does_not_delay_the_broadcast(saved_messages, mqtt):
+def test_publication_does_not_delay_the_broadcast(chat_client, saved_messages, mqtt):
     started = threading.Event()
     finished = []
 
@@ -63,8 +63,8 @@ def test_publication_does_not_delay_the_broadcast(saved_messages, mqtt):
         finished.append(event)
 
     mqtt.publish.side_effect = slow_publish
-    with client.websocket_connect("/streams/1/chat?user_id=7&username=author") as author, \
-            client.websocket_connect("/streams/1/chat") as viewer:
+    with chat_client.websocket_connect("/streams/1/chat?user_id=7&username=author") as author, \
+            chat_client.websocket_connect("/streams/1/chat") as viewer:
         wait_joined(viewer)
         author.send_json({"content": "hello"})
         assert viewer.receive_json()["content"] == "hello"
@@ -73,10 +73,10 @@ def test_publication_does_not_delay_the_broadcast(saved_messages, mqtt):
         assert finished == []
 
 
-def test_broker_down_still_broadcasts(saved_messages, mqtt, caplog):
+def test_broker_down_still_broadcasts(chat_client, saved_messages, mqtt, caplog):
     mqtt.publish.side_effect = NotConnectedError("Not connected to the MQTT broker")
-    with client.websocket_connect("/streams/1/chat?user_id=7&username=author") as author, \
-            client.websocket_connect("/streams/1/chat") as viewer:
+    with chat_client.websocket_connect("/streams/1/chat?user_id=7&username=author") as author, \
+            chat_client.websocket_connect("/streams/1/chat") as viewer:
         wait_joined(viewer)
         author.send_json({"content": "hello"})
         assert viewer.receive_json()["content"] == "hello"

@@ -61,9 +61,9 @@ def test_rate_limit_forgets_expired_entries(monkeypatch):
     assert list(manager.last_sent) == [(3, 1)]
     assert manager.can_send_message(1, 1)
 
-def test_live_chat_saves_then_broadcasts(saved_messages):
-    with client.websocket_connect("/streams/1/chat?user_id=1&username=author") as author, \
-            client.websocket_connect("/streams/1/chat") as viewer:
+def test_live_chat_saves_then_broadcasts(chat_client, saved_messages):
+    with chat_client.websocket_connect("/streams/1/chat?user_id=1&username=author") as author, \
+            chat_client.websocket_connect("/streams/1/chat") as viewer:
         wait_joined(viewer)
         author.send_json({"content": "  hello  "})
         received = viewer.receive_json()
@@ -132,8 +132,8 @@ def test_last_messages_oldest_first(monkeypatch):
     response = client.get("/streams/1/messages")
     assert response.status_code == 200
     assert [m["content"] for m in response.json()] == ["first", "second"]
-    # default limit
-    assert calls == [(1, 50)]
+    # the database is read for the whole cache, whatever the limit
+    assert calls == [(1, 100)]
 
 
 def test_last_messages_empty_stream(monkeypatch):

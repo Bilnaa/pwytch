@@ -5,7 +5,7 @@ from fastapi import APIRouter, HTTPException, Query, WebSocket
 from sqlalchemy.exc import SQLAlchemyError
 from starlette.websockets import WebSocketDisconnect
 
-from app import events
+from app import cache, events
 from app.connection_manager import connectionManager
 from app.models.message_model import Author, MessageModel
 from app.services.messages import get_last_messages, save_message
@@ -20,13 +20,19 @@ router = APIRouter(tags=["liveChat"])
 async def last_messages(
     stream_id: int, limit: int = Query(50, ge=1, le=100)
 ) -> list[MessageModel]:
+    cached = await cache.read_last(stream_id)
+    if cached is not None:
+        return cached[-limit:]
     try:
-        return await get_last_messages(stream_id, limit)
+        # Always the whole cache size, whatever the limit, so the cache can be filled
+        messages = await get_last_messages(stream_id, cache.CACHE_SIZE)
     except SQLAlchemyError:
         logger.exception("Could not read the messages of stream %s", stream_id)
         raise HTTPException(
             status_code=503, detail="Les messages n'ont pas pu être récupérés"
         ) from None
+    await cache.fill(stream_id, messages)
+    return messages[-limit:]
 
 
 @router.websocket("/streams/{stream_id}/chat")
@@ -127,6 +133,7 @@ async def live_chat(
                 continue
 
             await connectionManager.broadcast(stream_id, final_message)
+            await cache.append(final_message)
             # For search and stats: only a saved message is published
             events.publish_in_background(final_message)
 
