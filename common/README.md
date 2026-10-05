@@ -123,7 +123,7 @@ Format commun de toutes les réponses d'erreur (`ErrorResponse`) :
 
 | Erreur                       | `code`                                      | `message`                                   |
 |------------------------------|---------------------------------------------|---------------------------------------------|
-| `HTTPException`              | nom du statut HTTP (`not_found`, `unauthorized`, …) | le `detail`, ou le libellé du statut s'il n'y en a pas |
+| `HTTPException`              | nom du statut HTTP (`not_found`, `unauthorized`, …), `http_error` si le code n'est pas standard | le `detail`, ou le libellé du statut s'il n'y en a pas (`HTTP error` si le code n'est pas standard) |
 | Validation FastAPI (422)     | `validation_error`                          | le message de la première erreur            |
 | Exception non prévue (500)   | `internal_error`                            | `Internal server error`                     |
 
@@ -136,4 +136,4 @@ app = FastAPI(...)
 register_error_handlers(app)
 ```
 
-`register_internal_error_handler(app)` ne branche que le cas 500, sans toucher aux autres erreurs : c'est ce qu'utilisent les satellites tant qu'ils ne sont pas passés à `register_error_handlers`.
+`register_internal_error_handler(app)` ne branche que le cas 500, au format `{"detail": "Internal server error"}`, sans toucher aux autres erreurs : c'est ce qu'utilisent les satellites tant qu'ils ne sont pas passés à `register_error_handlers`. Toutes leurs erreurs restent ainsi en `detail`, le format que lisent encore main et le front.

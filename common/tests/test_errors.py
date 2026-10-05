@@ -22,6 +22,16 @@ def protected():
     raise HTTPException(status_code=401, headers={"WWW-Authenticate": "Bearer"})
 
 
+@app.get("/closed")
+def closed():
+    raise HTTPException(status_code=499)
+
+
+@app.get("/rejected")
+def rejected():
+    raise HTTPException(status_code=499, detail={"reason": "closed"})
+
+
 @app.get("/items/{item_id}")
 def item(item_id: int):
     return {"id": item_id}
@@ -54,6 +64,20 @@ def test_http_exception_without_detail_uses_status_phrase_and_keeps_headers():
     assert response.headers["WWW-Authenticate"] == "Bearer"
 
 
+def test_non_standard_status_without_detail_uses_generic_message():
+    response = client.get("/closed")
+
+    assert response.status_code == 499
+    assert response.json() == {"error": {"code": "http_error", "message": "HTTP error"}}
+
+
+def test_non_standard_status_with_non_text_detail_uses_generic_message():
+    response = client.get("/rejected")
+
+    assert response.status_code == 499
+    assert response.json() == {"error": {"code": "http_error", "message": "HTTP error"}}
+
+
 def test_unknown_route_returns_not_found():
     response = client.get("/nowhere")
 
@@ -73,7 +97,7 @@ def test_responses_match_error_response_model():
     ErrorResponse.model_validate(client.get("/missing").json())
 
 
-def test_internal_error_handler_alone_leaves_http_errors_untouched():
+def test_internal_error_handler_alone_keeps_detail_format():
     partial = FastAPI()
     register_internal_error_handler(partial)
 
@@ -81,6 +105,13 @@ def test_internal_error_handler_alone_leaves_http_errors_untouched():
     def partial_missing():
         raise HTTPException(status_code=404, detail="Not here")
 
-    response = TestClient(partial).get("/missing")
+    @partial.get("/boom")
+    def partial_boom():
+        raise RuntimeError("unexpected")
 
-    assert response.json() == {"detail": "Not here"}
+    partial_client = TestClient(partial, raise_server_exceptions=False)
+
+    assert partial_client.get("/missing").json() == {"detail": "Not here"}
+    response = partial_client.get("/boom")
+    assert response.status_code == 500
+    assert response.json() == {"detail": "Internal server error"}
