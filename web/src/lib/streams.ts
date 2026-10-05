@@ -41,6 +41,10 @@ export async function findMyOpenStream(userId: number): Promise<Stream | null> {
   return null
 }
 
+export function getStream(id: number): Promise<Stream> {
+  return api<Stream>(`/streams/${id}`)
+}
+
 // 100 is the max page size of main, enough for us
 export async function listLives(): Promise<Stream[]> {
   const page = await api<StreamPage>('/streams?status=live&size=100')

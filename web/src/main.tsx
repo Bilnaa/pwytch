@@ -5,10 +5,13 @@ import { createBrowserRouter, RouterProvider } from 'react-router'
 import { Layout } from '@/components/layout'
 import { RequireAuth } from '@/components/require-auth'
 import { AuthProvider } from '@/lib/auth'
+import { BookmarksPage } from '@/pages/bookmarks'
 import { GoLivePage } from '@/pages/go-live'
 import { HomePage } from '@/pages/home'
 import { LoginPage } from '@/pages/login'
 import { RegisterPage } from '@/pages/register'
+import { SearchPage } from '@/pages/search'
+import { VideoPage } from '@/pages/video'
 import { NotFoundPage } from '@/pages/not-found'
 import './index.css'
 
@@ -19,6 +22,8 @@ const router = createBrowserRouter([
       { path: '/', element: <HomePage /> },
       { path: '/login', element: <LoginPage /> },
       { path: '/register', element: <RegisterPage /> },
+      { path: '/search', element: <SearchPage /> },
+      { path: '/videos/:id', element: <VideoPage /> },
       {
         // channel of a streamer, like twitch. The fixed paths above (/login...) win over it
         path: '/:username',
@@ -27,7 +32,10 @@ const router = createBrowserRouter([
       },
       {
         element: <RequireAuth />,
-        children: [{ path: '/go-live', element: <GoLivePage /> }],
+        children: [
+          { path: '/go-live', element: <GoLivePage /> },
+          { path: '/bookmarks', element: <BookmarksPage /> },
+        ],
       },
       { path: '*', element: <NotFoundPage /> },
     ],

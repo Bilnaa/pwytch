@@ -84,6 +84,25 @@ Pour avoir un live à regarder sans webcam : `uv run python scripts/channels.py`
 
 Les erreurs de `live-chat` arrivent avec un `code` (`EMPTY_MESSAGE`, `CONTENT_TOO_LONG`...) traduit en message sous le champ. Si la connexion coupe (`main` redémarré, `live-chat` down), le chat se reconnecte toutes les 3 s, sauf sur 4401 (session expirée) et 4404 (live inconnu). Pas encore d'historique à l'arrivée ni des messages manqués pendant une coupure, en attendant la route de #84.
 
+## Recherche
+
+Une barre dans le header, sur toutes les pages comme sur Twitch (`components/search-bar.tsx`). Entrée ouvre `/search?q=`, et une fois sur la page les résultats suivent la saisie 300 ms après la dernière touche. Moins de 2 caractères : pas d'appel (`main` répond 422).
+
+Un seul appel, `GET /search?q=`, pour les deux sections : « Streamers » (badge LIVE s'il est en direct, lien vers sa chaîne) et « Messages ». Une section vide n'est pas affichée.
+
+Un message ne connaît que l'id de son live : il pointe vers `/videos/{id}` (`pages/video.tsx`), qui fait `GET /streams/{id}` au clic et renvoie sur la chaîne du streamer. Id inconnu : page 404.
+
+## Follows et bookmarks
+
+Comme sur Twitch, un streamer se suit et un replay se met de côté. Les deux sont des bookmarks côté API : un follow est un bookmark de type `streamer`, avec le nom du streamer en libellé.
+
+- Page d'une chaîne : bouton « Follow » / « Following » (`components/follow-button.tsx`), seulement si on est connecté et pas sur sa propre chaîne. Pour savoir si on suit déjà le streamer, il cherche son id dans `GET /bookmarks?target_type=streamer&size=100` (`bookmarks` ne filtre pas par `target_id`). Un deuxième clic supprime le bookmark. Un 409 (suivi depuis un autre onglet) recharge le follow existant.
+- `/bookmarks`, réservée aux comptes connectés, avec deux onglets paginés par 20 (`?tab=replays&page=2` dans l'URL). « Following » : les streamers suivis, avec un lien vers leur chaîne et « Unfollow ». Les noms viennent de `GET /users?id=...`, un appel pour toute la page. « Replays » : libellé et note modifiables, suppression avec confirmation. La confirmation s'affiche sous le texte, pas à la place du bouton, pour qu'un double clic ne supprime rien.
+
+Barre à gauche avec les chaînes suivies, comme sur Twitch (`components/followed-sidebar.tsx`), seulement si on est connecté et sur grand écran. Les chaînes en live d'abord (avec leur jeu), puis les autres par nom, grisées et marquées « Offline ». Trois appels : les follows, puis en même temps leurs noms (`GET /users?id=...`) et les lives en cours (`GET /streams?status=live`). Rafraîchie toutes les 15 s comme l'accueil, et tout de suite après un follow ou un unfollow (event `follows-changed` sur `window`).
+
+Le bouton pour mettre un replay de côté arrive avec les pages replays (#131).
+
 ## Pages et routes de l'API
 
 Comme l'API est sous `/api`, une page peut avoir le même chemin qu'une route de l'API (`/search` côté front, `/api/search` côté API). Recharger une page renvoie toujours le front.
