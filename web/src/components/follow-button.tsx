@@ -13,6 +13,8 @@ interface FollowButtonProps {
 }
 
 // Following a streamer = a bookmark of type streamer, like the heart on twitch
+// Give it key={streamerId}: going from a channel to another must not keep the
+// old follow for a moment, a click then would unfollow the previous channel
 export function FollowButton({ streamerId, username }: FollowButtonProps) {
   const { user } = useAuth()
   // undefined while we don't know yet, null when not followed

@@ -76,6 +76,13 @@ export function FollowedSidebar() {
   const { user } = useAuth()
   const [channels, setChannels] = useState<Channel[] | null>(null)
 
+  // another account logged in: don't show the follows of the previous one meanwhile
+  const [owner, setOwner] = useState(user?.id)
+  if (owner !== user?.id) {
+    setOwner(user?.id)
+    setChannels(null)
+  }
+
   useEffect(() => {
     if (!user) {
       return

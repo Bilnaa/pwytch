@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import { Link, NavLink, Outlet } from 'react-router'
-import { LogOut, Moon, Sun, User } from 'lucide-react'
+import { Bookmark, LogOut, Moon, Radio, Sun, User } from 'lucide-react'
 
 import { FollowedSidebar } from '@/components/followed-sidebar'
 import { SearchBar } from '@/components/search-bar'
@@ -57,12 +57,25 @@ function UserMenu() {
       <DropdownMenuTrigger asChild>
         <Button variant="ghost" size="sm">
           <User />
-          {user.display_name}
+          <span className="hidden md:inline">{user.display_name}</span>
         </Button>
       </DropdownMenuTrigger>
       <DropdownMenuContent align="end">
         <DropdownMenuLabel>@{user.username}</DropdownMenuLabel>
         <DropdownMenuSeparator />
+        {/* the nav of the header is hidden on a phone, its links are here instead */}
+        <DropdownMenuItem asChild className="md:hidden">
+          <Link to="/go-live">
+            <Radio />
+            Go live
+          </Link>
+        </DropdownMenuItem>
+        <DropdownMenuItem asChild className="md:hidden">
+          <Link to="/bookmarks">
+            <Bookmark />
+            Bookmarks
+          </Link>
+        </DropdownMenuItem>
         <DropdownMenuItem onSelect={logout}>
           <LogOut />
           Log out
@@ -78,14 +91,14 @@ export function Layout() {
   return (
     <div className="flex min-h-svh flex-col">
       <header className="sticky top-0 z-10 border-b bg-card shadow-sm">
-        <div className="flex h-12 items-center gap-6 px-4">
+        <div className="flex h-12 items-center gap-3 px-4 md:gap-6">
           <Link to="/" className="flex items-center gap-2 text-lg font-bold">
             <img src="/favicon.svg" alt="" className="size-7" />
-            <span>
+            <span className="hidden sm:inline">
               Pw<span className="text-primary">y</span>tch
             </span>
           </Link>
-          <nav className="flex gap-4">
+          <nav className="hidden gap-4 md:flex">
             <NavLink to="/" end className={navClass}>
               Lives
             </NavLink>

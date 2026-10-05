@@ -107,7 +107,7 @@ export function ChannelPage() {
         <div className="flex items-center gap-3">
           <Avatar username={user.display_name} />
           <p className="flex-1 font-semibold">{user.display_name}</p>
-          <FollowButton streamerId={user.id} username={user.username} />
+          <FollowButton key={user.id} streamerId={user.id} username={user.username} />
         </div>
       </div>
     )
@@ -127,7 +127,7 @@ export function ChannelPage() {
             <h1 className="truncate text-lg font-semibold">{stream.title}</h1>
             <p className="text-sm text-muted-foreground">{stream.game}</p>
           </div>
-          <FollowButton streamerId={user.id} username={user.username} />
+          <FollowButton key={user.id} streamerId={user.id} username={user.username} />
           <Badge className="bg-red-600 text-white">LIVE</Badge>
         </div>
       </div>
