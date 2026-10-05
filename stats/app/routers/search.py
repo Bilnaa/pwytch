@@ -7,7 +7,7 @@ from sqlalchemy import select
 
 from app.database import SessionDep
 from app.models import Counter
-from app.schemas import CounterResponse
+from app.schemas import SearchCountResponse
 from app.utils import get_item_id, get_item_type
 
 Limit = Annotated[int, Query(gt=0, le=500)]
@@ -17,11 +17,13 @@ router = APIRouter(tags=["search"])
 
 
 @router.get("/stats/search/{item_type}/{item_id}")
-async def get_searched(item_type: ItemType, item_id: str, session: SessionDep) -> CounterResponse:
+async def get_searched(
+    item_type: ItemType, item_id: str, session: SessionDep
+) -> SearchCountResponse:
     key = f"{item_type}:{item_id}"
     stmt = select(Counter.value).where(Counter.key == key, Counter.counter_type == SEARCH_HIT)
     count = await session.scalar(stmt)
-    response = CounterResponse(item_type=item_type, item_id=item_id, count=count or 0)
+    response = SearchCountResponse(item_type=item_type, item_id=item_id, count=count or 0)
     return response
 
 
@@ -30,7 +32,7 @@ async def get_top_searched(
     session: SessionDep,
     limit: Limit = 10,
     item_type: ItemType | None = None,
-) -> list[CounterResponse]:
+) -> list[SearchCountResponse]:
     stmt = (
         select(Counter)
         .where(Counter.counter_type == SEARCH_HIT)
@@ -47,7 +49,7 @@ async def get_top_searched(
     counters = await session.scalars(stmt)
 
     response = [
-        CounterResponse(
+        SearchCountResponse(
             item_id=get_item_id(counter.key),
             item_type=get_item_type(counter.key),
             count=counter.value,
