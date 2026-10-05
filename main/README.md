@@ -290,7 +290,7 @@ Les bookmarks sont propres à chaque utilisateur : toutes les routes demandent u
 
 | Route de `main` | Appel à `bookmarks` | Succès |
 |-----------------|---------------------|--------|
-| `GET /bookmarks` | `GET /bookmarks` | `200`, liste de bookmarks |
+| `GET /bookmarks?page=&size=&target_type=` | `GET /bookmarks?page=&size=&target_type=` | `200`, page de bookmarks, du plus récent au plus ancien |
 | `POST /bookmarks` | `POST /bookmarks` | `201`, le bookmark créé, `Location: /api/bookmarks/{id}` |
 | `GET /bookmarks/{bookmark_id}` | `GET /bookmarks/{bookmark_id}` | `200`, le bookmark |
 | `PATCH /bookmarks/{bookmark_id}` | `PATCH /bookmarks/{bookmark_id}` | `200`, le bookmark modifié. Seuls les champs envoyés sont transmis |
@@ -299,6 +299,21 @@ Les bookmarks sont propres à chaque utilisateur : toutes les routes demandent u
 ```json
 {"id": 3, "user_id": 1, "target_type": "replay", "target_id": 7, "label": "Run record", "note": null, "created_at": "2026-10-02T20:14:03Z", "updated_at": "2026-10-02T20:14:03Z"}
 ```
+
+`GET /bookmarks` renvoie ces objets paginés :
+
+```json
+{"items": [{"id": 3, "...": "..."}], "total": 1, "page": 1, "size": 20}
+```
+
+| Paramètre     | Défaut | Contraintes |
+|---------------|--------|-------------|
+| `page`        | `1`    | 1 à 2 147 483 647 |
+| `size`        | `20`   | 1 à 100 |
+| `target_type` | aucun  | `replay` ou `streamer`, ne garde que les bookmarks de ce type |
+| `bookmark_id` |        | 1 à 2 147 483 647 |
+
+Ce sont les bornes de `bookmarks`, à garder alignées : un paramètre hors bornes donne un `422` sans appeler `bookmarks`.
 
 `main` vérifie seulement la forme du corps (`target_type` vaut `replay` ou `streamer`, pas de champ en plus) : un corps mal formé donne `422` sans appeler `bookmarks`. Les longueurs de `label` et `note` sont vérifiées par `bookmarks`, dont le `422` est relayé tel quel, comme son `404` (bookmark absent ou d'un autre utilisateur) et son `409` (bookmark déjà existant). Les autres erreurs suivent le tableau de « Appeler un satellite ».
 

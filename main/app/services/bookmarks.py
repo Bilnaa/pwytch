@@ -1,17 +1,23 @@
 import httpx
+from common.pagination import Page
 from pydantic import TypeAdapter
 
 from app.models import User
-from app.schemas.bookmark import BookmarkCreate, BookmarkResponse, BookmarkUpdate
+from app.schemas.bookmark import BookmarkCreate, BookmarkResponse, BookmarkUpdate, TargetType
 from app.services import satellites
 
 BOOKMARK = TypeAdapter(BookmarkResponse)
-BOOKMARK_LIST = TypeAdapter(list[BookmarkResponse])
+BOOKMARK_PAGE = TypeAdapter(Page[BookmarkResponse])
 
 
-async def list_bookmarks(client: httpx.AsyncClient, user: User) -> list[BookmarkResponse]:
-    response = await satellites.send(client, "GET", "/bookmarks", user=user)
-    return satellites.parse(response, BOOKMARK_LIST)
+async def list_bookmarks(
+    client: httpx.AsyncClient, user: User, page: int, size: int, target_type: TargetType | None
+) -> Page[BookmarkResponse]:
+    params = {"page": page, "size": size}
+    if target_type is not None:
+        params["target_type"] = target_type
+    response = await satellites.send(client, "GET", "/bookmarks", user=user, params=params)
+    return satellites.parse(response, BOOKMARK_PAGE)
 
 
 async def create_bookmark(

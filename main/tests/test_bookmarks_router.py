@@ -19,6 +19,7 @@ BOOKMARK = {
     "updated_at": "2026-10-02T20:14:03Z",
 }
 CREATE = {"target_type": "replay", "target_id": 7, "label": "Run record"}
+PAGE = {"items": [BOOKMARK], "total": 1, "page": 1, "size": 20}
 
 
 @pytest.fixture
@@ -48,7 +49,7 @@ def recorded(use_bookmarks):
         if request.method == "POST":
             return httpx.Response(201, json=BOOKMARK, headers={"Location": "/bookmarks/3"})
         if request.url.path == "/bookmarks":
-            return httpx.Response(200, json=[BOOKMARK])
+            return httpx.Response(200, json=PAGE)
         return httpx.Response(200, json=BOOKMARK)
 
     use_bookmarks(handler)
@@ -80,10 +81,36 @@ def test_routes_send_the_identity(client, recorded, method, path, body):
     assert request.headers["X-User-Id"].isdigit()
 
 
-def test_list_returns_the_bookmarks(client, recorded):
+def test_list_returns_the_page_with_default_params(client, recorded):
     response = client.get("/bookmarks", headers=auth_headers(client))
     assert response.status_code == 200
-    assert response.json() == [BOOKMARK]
+    assert response.json() == PAGE
+    assert dict(recorded[0].url.params) == {"page": "1", "size": "20"}
+
+
+def test_list_relays_page_size_and_target_type(client, recorded):
+    client.get(
+        "/bookmarks",
+        params={"page": 2, "size": 5, "target_type": "streamer"},
+        headers=auth_headers(client),
+    )
+    assert dict(recorded[0].url.params) == {"page": "2", "size": "5", "target_type": "streamer"}
+
+
+@pytest.mark.parametrize(
+    "params",
+    [
+        {"page": 0},
+        {"page": 2_147_483_648},
+        {"size": 0},
+        {"size": 101},
+        {"target_type": "game"},
+    ],
+)
+def test_invalid_list_params_are_not_relayed(client, recorded, params):
+    response = client.get("/bookmarks", params=params, headers=auth_headers(client))
+    assert response.status_code == 422
+    assert recorded == []
 
 
 def test_create_returns_201_with_location(client, recorded):
@@ -98,6 +125,13 @@ def test_get_returns_the_bookmark(client, recorded):
     response = client.get("/bookmarks/3", headers=auth_headers(client))
     assert response.status_code == 200
     assert response.json() == BOOKMARK
+
+
+@pytest.mark.parametrize("bookmark_id", [0, 2_147_483_648])
+def test_invalid_bookmark_id_is_not_relayed(client, recorded, bookmark_id):
+    response = client.get(f"/bookmarks/{bookmark_id}", headers=auth_headers(client))
+    assert response.status_code == 422
+    assert recorded == []
 
 
 def test_update_only_sends_the_given_fields(client, recorded):
@@ -164,6 +198,10 @@ def test_routes_are_documented(client):
     paths = client.get("/openapi.json").json()["paths"]
     assert set(paths["/api/bookmarks"]) == {"get", "post"}
     assert set(paths["/api/bookmarks/{bookmark_id}"]) == {"get", "patch", "delete"}
+    listed = paths["/api/bookmarks"]["get"]["responses"]["200"]
+    assert listed["content"]["application/json"]["schema"] == {
+        "$ref": "#/components/schemas/Page_BookmarkResponse_"
+    }
     created = paths["/api/bookmarks"]["post"]["responses"]["201"]
     assert created["content"]["application/json"]["schema"] == {
         "$ref": "#/components/schemas/BookmarkResponse"
