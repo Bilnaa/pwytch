@@ -68,7 +68,7 @@ class SearchHit(BaseEvent):
     query: str = Field(min_length=1)
     hit_at: AwareDatetime
 
-
+# published by bookmarks, consumed by stats; one event per successful deletion
 class BookmarkDeleted(BaseEvent):
     bookmark_id: int
     user_id: int
