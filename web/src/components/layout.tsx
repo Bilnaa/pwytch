@@ -87,6 +87,9 @@ export function Layout() {
             <NavLink to="/" end className={navClass}>
               Lives
             </NavLink>
+            <NavLink to="/replays" className={navClass}>
+              Replays
+            </NavLink>
             {user && (
               <NavLink to="/go-live" className={navClass}>
                 Go live
