@@ -1,11 +1,12 @@
 # stats
 
-Compteurs globaux de la plateforme. `stats` écoute les events MQTT des autres services et tient un compteur par élément : combien de fois un élément a été trouvé par la recherche (#102), combien de fois il a été retiré des bookmarks, et combien de messages ont été envoyés dans le chat d'un stream. Le compteur des events du player suivra le même modèle. Le service n'est jamais exposé au front : tout passe par `main`.
+Compteurs globaux de la plateforme. `stats` écoute les events MQTT des autres services et tient un compteur par élément : combien de fois un élément a été trouvé par la recherche (#102), combien de fois il a été retiré des bookmarks, combien de messages ont été envoyés dans le chat d'un stream, et combien de play, pause et stop le player d'un stream a reçus. Le service n'est jamais exposé au front : tout passe par `main`.
 
 ```
 search ────MQTT search/hit──────────┐
 bookmarks ─MQTT bookmarks/deleted───┤
-live-chat ─MQTT chat/message────────┴──> stats (consumer) ──upsert──> Postgres, schéma stats
+live-chat ─MQTT chat/message────────┤
+main ──────MQTT player/event────────┴──> stats (consumer) ──upsert──> Postgres, schéma stats
                                                                             │
 front ──> main ──HTTP GET /stats/...──> stats (API) <───────────────────────┘
 ```
@@ -47,7 +48,7 @@ Les variables se mettent dans `stats/.env` (copier `.env.example`).
 | `counters.py`     | `increment_counter` : l'upsert commun à tous les compteurs |
 | `routers/`        | Routes de lecture des compteurs |
 | `models.py`       | Table `counter` |
-| `schemas.py`      | Réponses de l'API, une par compteur (`SearchCountResponse`, `BookmarkDeletedCountResponse`, `ChatMessageCountResponse`) |
+| `schemas.py`      | Réponses de l'API, une par compteur (`SearchCountResponse`, `BookmarkDeletedCountResponse`, `ChatMessageCountResponse`, `PlayerEventCountResponse`) |
 | `database.py`     | Engine async, sessions, dépendance `SessionDep` |
 | `utils.py`        | Découpage des clés `type:id` |
 
@@ -72,7 +73,7 @@ La table est générique : un nouveau compteur, c'est un nouveau `counter_type`,
 | `search/hit`        | `SearchHit`       | `{item_type}:{item_id}`   | Fait (#102) |
 | `bookmarks/deleted` | `BookmarkDeleted` | `{target_type}:{target_id}` | Fait |
 | `chat/message`      | `ChatMessage`     | `{stream_id}`             | Fait |
-| `player/event`      | `PlayerEvent`     | `{stream_id}:{event_type}` | À venir |
+| `player/event`      | `PlayerEvent`     | `{stream_id}:{event_type}` | Fait |
 
 Le client MQTT se connecte avec `client_id="stats"` : la session est persistante, le broker garde les events publiés pendant un arrêt de `stats` et les livre au redémarrage. Les doublons possibles en QoS 1 sont écartés par `MqttClient` grâce à l'`event_id`. Un handler qui échoue n'est pas marqué comme traité, l'event peut être retraité s'il est renvoyé.
 
@@ -87,8 +88,9 @@ Le client MQTT se connecte avec `client_id="stats"` : la session est persistante
 | `/stats/bookmarks/deleted/top`          | GET     | Cibles les plus retirées des bookmarks |
 | `/stats/chat/{stream_id}`               | GET     | Nombre de messages envoyés dans le chat d'un stream |
 | `/stats/chat/top`                       | GET     | Streams avec le plus de messages dans le chat |
+| `/stats/player/{stream_id}`             | GET     | Nombre de play, pause et stop du player d'un stream |
 
-Les routes ne vérifient pas l'identité : `stats` n'est joignable que par `main`, qui réserve les stats de recherche aux admins (`require_admin`). Les routes `/stats/bookmarks/deleted/...` et `/stats/chat/...` ne sont pas encore relayées par `main`.
+Les routes ne vérifient pas l'identité : `stats` n'est joignable que par `main`, qui réserve les stats de recherche aux admins (`require_admin`). Les routes `/stats/bookmarks/deleted/...`, `/stats/chat/...` et `/stats/player/...` ne sont pas encore relayées par `main`.
 
 ### `GET /stats/search/{item_type}/{item_id}`
 
@@ -180,8 +182,22 @@ Pas de filtre : un message n'a pas de type. Même tri que les autres tops : comp
 
 `/stats/chat/top` est déclarée avant `/stats/chat/{stream_id}` : les deux chemins ont le même nombre de segments, et FastAPI essaie les routes dans l'ordre. Dans l'autre sens, `top` serait lu comme un `stream_id` et la route répondrait toujours `422`.
 
+### `GET /stats/player/{stream_id}`
+
+`stream_id` est un entier de 1 à 2³¹ − 1 (sinon `422`). La route renvoie les trois compteurs du stream en une réponse, avec `0` pour un type d'event jamais reçu. Pas de classement : le ticket ne demande que le détail par stream.
+
+    curl http://localhost:8006/stats/player/12
+
+```json
+{"stream_id": 12, "play": 88, "pause": 31, "stop": 0}
+```
+
+Un stream a jusqu'à trois lignes en base (`12:play`, `12:pause`, `12:stop`). La route les lit en une requête, avec les trois clés exactes (`key IN (...)`) : le stream `1` ne récupère donc jamais les lignes du stream `12`.
+
+Les types d'events (`play`, `pause`, `stop`) sont écrits à trois endroits qui doivent rester alignés : le `Literal` de `PlayerEvent.event_type` dans `common`, la liste `EVENT_TYPES` de `routers/player.py`, et les champs de `PlayerEventCountResponse`. Un nouveau type ajouté dans `common` serait compté en base, mais n'apparaîtrait pas dans la réponse tant que les deux autres ne sont pas mis à jour.
+
 ## Tests
 
     uv run pytest
 
-Les tests n'ont besoin ni de Postgres ni de Mosquitto : ils tournent sur SQLite en mémoire (`aiosqlite`), sans schéma (`schema_translate_map`). L'upsert Postgres passe aussi sur SQLite. Les routes sont testées avec un `AsyncClient` dont la session est remplacée, les handlers avec `monkeypatch` sur `SessionLocal`. Un fichier de tests par compteur : `test_search.py`, `test_bookmarks.py` et `test_chat.py`.
+Les tests n'ont besoin ni de Postgres ni de Mosquitto : ils tournent sur SQLite en mémoire (`aiosqlite`), sans schéma (`schema_translate_map`). L'upsert Postgres passe aussi sur SQLite. Les routes sont testées avec un `AsyncClient` dont la session est remplacée, les handlers avec `monkeypatch` sur `SessionLocal`. Un fichier de tests par compteur : `test_search.py`, `test_bookmarks.py`, `test_chat.py` et `test_player.py`.

@@ -17,3 +17,10 @@ class BookmarkDeletedCountResponse(BaseModel):
 class ChatMessageCountResponse(BaseModel):
     stream_id: int
     count: int
+
+
+class PlayerEventCountResponse(BaseModel):
+    stream_id: int
+    play: int
+    pause: int
+    stop: int
