@@ -11,6 +11,7 @@ Bibliothèque partagée entre les services : les contrats que plusieurs services
 | `common.mqtt`        | `MqttClient` : client asynchrone avec reconnexion, `publish` et `subscribe` |
 | `common.pagination`  | `Page[T]` : réponse paginée (`items`, `total`, `page`, `size`)              |
 | `common.identity`    | `UserIdentity`, `to_headers` et la dépendance FastAPI `CurrentUser`         |
+| `common.errors`      | `register_internal_error_handler` : toute exception non prévue renvoie un 500 en JSON |
 
 Exemple :
 

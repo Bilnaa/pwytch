@@ -2,6 +2,7 @@ import logging
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 
+from common.errors import register_internal_error_handler
 from common.mqtt import MqttClient
 from fastapi import FastAPI
 from sqlalchemy.exc import SQLAlchemyError
@@ -36,6 +37,7 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
 
 
 app = FastAPI(title="stats", lifespan=lifespan)
+register_internal_error_handler(app)
 
 app.include_router(health.router)
 
