@@ -301,7 +301,7 @@ Les bookmarks sont propres à chaque utilisateur : toutes les routes demandent u
 
 | Route de `main` | Appel à `bookmarks` | Succès |
 |-----------------|---------------------|--------|
-| `GET /bookmarks?page=&size=&target_type=` | `GET /bookmarks?page=&size=&target_type=` | `200`, page de bookmarks, du plus récent au plus ancien |
+| `GET /bookmarks?page=&size=&target_type=&target_id=` | `GET /bookmarks?page=&size=&target_type=&target_id=` | `200`, page de bookmarks, du plus récent au plus ancien |
 | `POST /bookmarks` | `POST /bookmarks` | `201`, le bookmark créé, `Location: /api/bookmarks/{id}` |
 | `GET /bookmarks/{bookmark_id}` | `GET /bookmarks/{bookmark_id}` | `200`, le bookmark |
 | `PATCH /bookmarks/{bookmark_id}` | `PATCH /bookmarks/{bookmark_id}` | `200`, le bookmark modifié. Seuls les champs envoyés sont transmis |
@@ -322,6 +322,7 @@ Les bookmarks sont propres à chaque utilisateur : toutes les routes demandent u
 | `page`        | `1`    | 1 à 2 147 483 647 |
 | `size`        | `20`   | 1 à 100 |
 | `target_type` | aucun  | `replay` ou `streamer`, ne garde que les bookmarks de ce type |
+| `target_id`   | aucun  | 1 à 2 147 483 647, ne garde que les bookmarks de cette cible (combinable avec `target_type`) |
 | `bookmark_id` |        | 1 à 2 147 483 647 |
 
 Ce sont les bornes de `bookmarks`, à garder alignées : un paramètre hors bornes donne un `422` sans appeler `bookmarks`.

@@ -97,6 +97,11 @@ def test_list_relays_page_size_and_target_type(client, auth_headers, recorded):
     assert dict(recorded[0].url.params) == {"page": "2", "size": "5", "target_type": "streamer"}
 
 
+def test_list_relays_target_id(client, auth_headers, recorded):
+    client.get("/bookmarks", params={"target_id": 7}, headers=auth_headers)
+    assert dict(recorded[0].url.params) == {"page": "1", "size": "20", "target_id": "7"}
+
+
 @pytest.mark.parametrize(
     "params",
     [
@@ -105,6 +110,8 @@ def test_list_relays_page_size_and_target_type(client, auth_headers, recorded):
         {"size": 0},
         {"size": 101},
         {"target_type": "game"},
+        {"target_id": 0},
+        {"target_id": 2_147_483_648},
     ],
 )
 def test_invalid_list_params_are_not_relayed(client, auth_headers, recorded, params):
@@ -200,6 +207,8 @@ def test_bookmarks_failure(client, auth_headers, use_bookmarks, failure, code):
 def test_routes_are_documented(client):
     paths = client.get("/openapi.json").json()["paths"]
     assert set(paths["/api/bookmarks"]) == {"get", "post"}
+    list_params = {param["name"] for param in paths["/api/bookmarks"]["get"]["parameters"]}
+    assert "target_id" in list_params
     assert set(paths["/api/bookmarks/{bookmark_id}"]) == {"get", "patch", "delete"}
     listed = paths["/api/bookmarks"]["get"]["responses"]["200"]
     assert listed["content"]["application/json"]["schema"] == {
