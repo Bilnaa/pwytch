@@ -117,6 +117,27 @@ Renvoie un `ReplayResult`, même format qu'un élément de la liste.
 - 404 `{"detail": "Replay not found"}` : replay inconnu ou live encore en cours.
 - 422 : `stream_id` non numérique, ≤ 0 ou au-delà de 2 147 483 647. Comme partout avec FastAPI, une chaîne numérique est convertie : `42.0` ou `+42` donnent le replay 42.
 
+## Conversion `.mp4`
+
+`replay` lit la playlist HLS d'un live terminé directement chez `stream`, sans dossier partagé, et la recopie dans un `.mp4` sans réencoder :
+
+    ffmpeg -nostdin -y -loglevel error -i {STREAM_URL}/lives/{stream_id}/index.m3u8 -c copy -f mp4 {REPLAYS_DIR}/{stream_id}.mp4.part
+
+| `mp4_status` | Sens                                                                |
+|--------------|---------------------------------------------------------------------|
+| `none`       | Pas de `.mp4`, aucune conversion en cours                           |
+| `processing` | ffmpeg tourne                                                       |
+| `ready`      | `REPLAYS_DIR/{stream_id}.mp4` est prêt                              |
+| `failed`     | ffmpeg a échoué ; la fin de son stderr est dans les logs en `ERROR` |
+
+- **Une seule conversion par replay** : `none` passe à `processing` par une seule requête `UPDATE ... WHERE mp4_status = 'none'`. Deux demandes simultanées ne lancent qu'un ffmpeg, même avec plusieurs workers.
+- **Jamais de fichier incomplet servi** : ffmpeg écrit dans `{stream_id}.mp4.part`, renommé en `.mp4` seulement si ffmpeg finit avec le code 0. En cas d'échec, le `.part` est supprimé.
+- **Délai maximal** : au-delà de `CONVERSION_TIMEOUT_S` (600 s), ffmpeg est tué et le replay passe à `failed`. ffmpeg absent de la machine donne aussi `failed`.
+- **Au démarrage** : les `*.mp4.part` restants sont supprimés et les lignes en `processing` repassent à `none` (un arrêt du service a tué leur ffmpeg). `REPLAYS_DIR` est créé s'il manque. Base coupée : un `WARNING`, et le service démarre quand même.
+- L'image Docker installe ffmpeg. En local, il faut `ffmpeg` dans le `PATH`.
+
+Vérifié avec un vrai ffmpeg sur une playlist servie par `stream` (H.264 + AAC, 3 segments) : `.mp4` de 12 s, codecs `h264` et `aac`, sans option de flux audio en plus. Sur un live inconnu, ffmpeg écrit `Server returned 404 Not Found` et le replay passe à `failed`.
+
 ## Topics consommés
 
 Souscrits en QoS 1 avec le `client_id` fixe `replay` : la session est persistante, le broker garde les messages publiés pendant que `replay` est arrêté. Un message en cours de traitement au moment de l'arrêt est perdu (voir « Dettes connues »). Les modèles viennent de `common.events`.
@@ -165,4 +186,7 @@ Les tests n'ont besoin ni de Postgres ni de Mosquitto : ils tournent sur SQLite 
 - **Ligne invisible pour toujours** : un `stream/ended` en erreur, sans playlist, reçu avant son `stream/started` ne supprime rien ; la ligne créée ensuite par `stream/started` n'a jamais de `ended_at`. Sans effet pour l'utilisateur.
 - **Identifiants de live réutilisés en dev** : si la base de `main` est recréée, les `stream_id` repartent de 1 alors que celle de `replay` garde ses lignes. Le nouveau live 1 reprend la ligne de l'ancien replay 1 : il est listé comme terminé pendant qu'il tourne, et son vrai `stream/ended` est ignoré comme doublon. Recréer la base de `replay` en même temps que celle de `main` (`DROP TABLE replays;`).
 - **Pagination par décalage** : `page` et `size` se traduisent en `OFFSET`. Si un live se termine entre deux appels, la liste se décale d'un cran et un replay apparaît sur deux pages ; `total` et `items` sont lus par deux requêtes séparées. Le client dédoublonne par `stream_id` ; une pagination par curseur sera nécessaire pour un défilement infini.
+- **Les `.mp4` ne sont jamais supprimés** : ils restent dans `REPLAYS_DIR` (volume `replays-data` en conteneur) tant que personne ne les efface.
+- **Conversion interrompue non reprise** : un arrêt du service pendant ffmpeg remet la ligne à `none` au démarrage, et la conversion repart seulement à la prochaine demande.
+- **Statut bloqué en `processing`** si la base tombe pendant une conversion : le statut final n'est pas écrit (erreur journalisée), et le prochain démarrage le remet à `none`.
 - **Pas de migration** : `create_all` crée les tables absentes mais ne modifie pas une table existante. Après un changement de colonne, supprimer la table en local : `DROP TABLE replays;`. Alembic sera nécessaire au premier changement de schéma sur une base qui a des données à garder.

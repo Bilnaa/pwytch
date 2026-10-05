@@ -1,7 +1,7 @@
-from sqlalchemy import and_, func, select
+from sqlalchemy import and_, func, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.infra.models import Replay
+from app.infra.models import Mp4Status, Replay
 
 # Seul endroit qui dit ce qu'est un replay visible : un live terminé. duration_s est écrit avec
 # ended_at ; une ligne écrite hors handler sans lui ferait planter ReplayResult (500).
@@ -33,3 +33,32 @@ async def list_replays(
         .limit(size)
     )
     return list(replays), total
+
+
+async def claim_conversion(session: AsyncSession, stream_id: int) -> bool:
+    """Passe none → processing en une requête : seul le gagnant lance ffmpeg."""
+    result = await session.execute(
+        update(Replay)
+        .where(Replay.stream_id == stream_id, FINISHED, Replay.mp4_status == Mp4Status.NONE)
+        .values(mp4_status=Mp4Status.PROCESSING)
+    )
+    await session.commit()
+    return result.rowcount == 1
+
+
+async def set_mp4_status(session: AsyncSession, stream_id: int, status: Mp4Status) -> None:
+    await session.execute(
+        update(Replay).where(Replay.stream_id == stream_id).values(mp4_status=status)
+    )
+    await session.commit()
+
+
+async def reset_processing(session: AsyncSession) -> int:
+    """Au démarrage : une conversion « processing » a été tuée avec l'ancien process."""
+    result = await session.execute(
+        update(Replay)
+        .where(Replay.mp4_status == Mp4Status.PROCESSING)
+        .values(mp4_status=Mp4Status.NONE)
+    )
+    await session.commit()
+    return result.rowcount
