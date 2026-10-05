@@ -30,6 +30,7 @@ from app.routers import (
     lives,
     replays,
     search,
+    stats,
     streams,
     users,
 )
@@ -123,6 +124,7 @@ api.include_router(search.router)
 api.include_router(replays.router)
 api.include_router(users.router)
 api.include_router(bookmarks.router)
+api.include_router(stats.router)
 
 
 @api.get("")

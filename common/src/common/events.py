@@ -5,6 +5,8 @@ from uuid import UUID, uuid4
 
 from pydantic import AwareDatetime, BaseModel, Field, StringConstraints
 
+PlayerEventType = Literal["play", "pause", "stop"]
+
 
 class BaseEvent(BaseModel):
     # consumers drop an event whose event_id they already saw (QoS 1 can deliver twice)
@@ -31,7 +33,7 @@ class StreamEnded(BaseEvent):
 
 class PlayerEvent(BaseEvent):
     stream_id: int
-    event_type: Literal["play", "pause", "stop"]
+    event_type: PlayerEventType
     user_id: int | None
     occurred_at: datetime
 
