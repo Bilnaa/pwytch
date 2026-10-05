@@ -10,6 +10,7 @@ from app.connection_manager import WAITING_TIME, ConnectionManager, connectionMa
 from app.main import app
 from app.models.message_model import Author, MessageModel
 from app.routers import live_chat
+from tests.helpers import wait_joined
 
 client = TestClient(app)
 
@@ -63,6 +64,7 @@ def test_rate_limit_forgets_expired_entries(monkeypatch):
 def test_live_chat_saves_then_broadcasts(saved_messages):
     with client.websocket_connect("/streams/1/chat?user_id=1&username=author") as author, \
             client.websocket_connect("/streams/1/chat") as viewer:
+        wait_joined(viewer)
         author.send_json({"content": "  hello  "})
         received = viewer.receive_json()
         assert author.receive_json() == received

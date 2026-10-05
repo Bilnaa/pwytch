@@ -5,6 +5,7 @@ from fastapi import APIRouter, HTTPException, Query, WebSocket
 from sqlalchemy.exc import SQLAlchemyError
 from starlette.websockets import WebSocketDisconnect
 
+from app import events
 from app.connection_manager import connectionManager
 from app.models.message_model import Author, MessageModel
 from app.services.messages import get_last_messages, save_message
@@ -126,6 +127,8 @@ async def live_chat(
                 continue
 
             await connectionManager.broadcast(stream_id, final_message)
+            # For search and stats: only a saved message is published
+            events.publish_in_background(final_message)
 
     except WebSocketDisconnect:
         pass

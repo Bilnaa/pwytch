@@ -4,6 +4,7 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI
 from sqlalchemy.exc import SQLAlchemyError
 
+from app import events
 from app.db import engine, init_db
 from app.routers import health, live_chat
 
@@ -13,12 +14,16 @@ logger = logging.getLogger(__name__)
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
+    # Connects in the background: the service starts even if the broker is down
+    await events.mqtt.start()
     # Service starts even if Postgres is down as init_db is retried on the first message
     try:
         await init_db()
     except SQLAlchemyError:
         logger.warning("Database unavailable at startup, live_chat schema not created yet")
     yield
+    await events.wait_pending()
+    await events.mqtt.stop()
     await engine.dispose()
 
 
