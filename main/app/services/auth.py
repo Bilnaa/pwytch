@@ -110,6 +110,11 @@ def get_user_by_username(db: Session, username: str) -> User:
     return user
 
 
+def get_users_by_ids(db: Session, user_ids: list[int]) -> list[User]:
+    # unknown ids are left out, the caller only gets the users that exist
+    return list(db.scalars(select(User).where(User.id.in_(user_ids)).order_by(User.id)))
+
+
 def make_admin(db: Session, username: str) -> User:
     user = get_user_by_username(db, username)
     user.role = ADMIN_ROLE

@@ -72,6 +72,7 @@ Toute l'API est sous `/api` (ex. `/api/auth/login`, `ws://localhost:8000/api/str
 | `/streams/{stream_id}/chat` | WebSocket | Relaie le chat du live avec `live-chat` dans les deux sens (jeton facultatif en query, sans jeton : lecture seule) |
 | `/streams/{stream_id}/messages` | HTTP GET | Renvoie les derniers messages du chat d'un live via `live-chat` |
 | `/lives/{stream_id}/{filename}` | HTTP GET | Relaie la playlist ou un segment HLS d'un live depuis `stream` |
+| `/users?id=` | HTTP GET | Plusieurs utilisateurs par id (`?id=1&id=7`), les id inconnus sont ignorés |
 | `/users/{username}` | HTTP GET | Profil public d'un utilisateur (`id`, `username`, `display_name`), 404 s'il n'existe pas |
 | `/search` | HTTP GET | Cherche des streamers et des messages du chat de tous les lives via `search` |
 | `/bookmarks` | HTTP GET, POST | Liste ou crée les bookmarks de l'utilisateur via `bookmarks` (protégé) |
@@ -253,6 +254,10 @@ Dès le premier morceau relayé à `stream`, la session passe de `created` à `l
 | 504  | `stream` n'a pas répondu à temps |
 
 Les erreurs viennent du helper commun, voir « Appeler un satellite ».
+
+### `GET /users?id=`
+
+Pas besoin d'être connecté. `?id=1&id=7` (1 à 100 id) renvoie la liste des profils publics trouvés, triés par id. Un id inconnu est simplement absent de la liste. Un bookmark de streamer ne contient que son id : le front s'en sert pour avoir les noms de toute une page de follows en un appel, et faire le lien vers leur chaîne.
 
 ### `GET /users/{username}`
 
