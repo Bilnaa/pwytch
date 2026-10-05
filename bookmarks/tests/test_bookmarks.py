@@ -2,6 +2,8 @@ from http import HTTPStatus
 
 import pytest
 from app.utils import LIMIT_INTEGER
+from common.mqtt import NotConnectedError
+from common.topics import BOOKMARK_DELETED
 
 OWNER_ID = 1
 OTHER_USER_ID = 2
@@ -378,3 +380,48 @@ def test_list_bookmarks_invalid_pagination_unprocessable_entity(client, params):
     response = client.get("/bookmarks", headers=create_header(OWNER_ID), params=params)
 
     assert response.status_code == HTTPStatus.UNPROCESSABLE_ENTITY
+
+
+def test_delete_bookmark_publishes_event(
+    client, bookmark_payload, bookmark_id, fake_mqtt
+):
+    response = client.delete(
+        f"/bookmarks/{bookmark_id}", headers=create_header(OWNER_ID)
+    )
+
+    assert response.status_code == HTTPStatus.NO_CONTENT
+    fake_mqtt.publish.assert_awaited_once()
+
+    topic, event = fake_mqtt.publish.await_args.args
+    assert topic == BOOKMARK_DELETED
+    assert event.bookmark_id == bookmark_id
+    assert event.user_id == OWNER_ID
+    assert event.target_type == bookmark_payload["target_type"]
+    assert event.target_id == bookmark_payload["target_id"]
+
+
+def test_delete_unknown_bookmark_publishes_nothing(client, fake_mqtt):
+    response = client.delete("/bookmarks/999", headers=create_header(OWNER_ID))
+
+    assert response.status_code == HTTPStatus.NOT_FOUND
+    fake_mqtt.publish.assert_not_awaited()
+
+
+def test_delete_other_user_bookmark_publishes_nothing(client, bookmark_id, fake_mqtt):
+    response = client.delete(
+        f"/bookmarks/{bookmark_id}", headers=create_header(OTHER_USER_ID)
+    )
+
+    assert response.status_code == HTTPStatus.NOT_FOUND
+    fake_mqtt.publish.assert_not_awaited()
+
+
+def test_delete_bookmark_succeeds_when_broker_is_down(client, bookmark_id, fake_mqtt):
+    fake_mqtt.publish.side_effect = NotConnectedError("broker down")
+
+    response = client.delete(
+        f"/bookmarks/{bookmark_id}", headers=create_header(OWNER_ID)
+    )
+
+    assert response.status_code == HTTPStatus.NO_CONTENT
+    fake_mqtt.publish.assert_awaited_once()
