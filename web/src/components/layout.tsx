@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import { Link, NavLink, Outlet } from 'react-router'
-import { Bookmark, LogOut, Moon, Radio, Sun, User } from 'lucide-react'
+import { Bookmark, History, LogOut, Moon, Radio, Sun, User } from 'lucide-react'
 
 import { FollowedSidebar } from '@/components/followed-sidebar'
 import { SearchBar } from '@/components/search-bar'
@@ -65,6 +65,12 @@ function UserMenu() {
         <DropdownMenuSeparator />
         {/* the nav of the header is hidden on a phone, its links are here instead */}
         <DropdownMenuItem asChild className="md:hidden">
+          <Link to="/replays">
+            <History />
+            Replays
+          </Link>
+        </DropdownMenuItem>
+        <DropdownMenuItem asChild className="md:hidden">
           <Link to="/go-live">
             <Radio />
             Go live
@@ -101,6 +107,9 @@ export function Layout() {
           <nav className="hidden gap-4 md:flex">
             <NavLink to="/" end className={navClass}>
               Lives
+            </NavLink>
+            <NavLink to="/replays" className={navClass}>
+              Replays
             </NavLink>
             {user && (
               <>
