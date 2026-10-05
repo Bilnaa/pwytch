@@ -176,10 +176,16 @@ def test_download_pending_conversion_is_relayed_as_is(client, use_replay):
 
 
 def test_download_uses_its_own_timeout(client, use_replay, monkeypatch):
+    monkeypatch.setattr(replay_settings, "replay_timeout_seconds", 4)
     monkeypatch.setattr(replay_settings, "replay_download_timeout_seconds", 123)
 
     def handler(request):
-        assert request.extensions["timeout"]["read"] == 123
+        assert request.extensions["timeout"] == {
+            "connect": 4,
+            "read": 123,
+            "write": 4,
+            "pool": 4,
+        }
         return httpx.Response(200, content=b"", headers={"content-type": "video/mp4"})
 
     use_replay(handler)
@@ -196,7 +202,7 @@ def test_download_unknown_replay_404_is_relayed(client, use_replay):
 @pytest.mark.parametrize(
     ("failure", "status_code"),
     [
-        (httpx.Response(500), 502),
+        (httpx.Response(503), 502),
         (httpx.ConnectError("refused"), 503),
         (httpx.ReadTimeout("too slow"), 504),
     ],
@@ -209,6 +215,14 @@ def test_download_failures_are_mapped(client, use_replay, failure, status_code):
 
     use_replay(handler)
     assert client.get("/replays/7/download").status_code == status_code
+
+
+def test_download_failed_conversion_500_is_relayed(client, use_replay):
+    failed = {"detail": "Conversion failed, try again"}
+    use_replay(lambda request: httpx.Response(500, json=failed))
+    response = client.get("/replays/7/download")
+    assert response.status_code == 500
+    assert response.json() == failed
 
 
 @pytest.mark.parametrize("stream_id", ["0", "2147483648", "abc"])

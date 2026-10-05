@@ -43,7 +43,11 @@ async def open_replay_download(client: httpx.AsyncClient, stream_id: int) -> Rep
         "GET",
         f"/replays/{stream_id}/download",
         stream=True,
-        timeout=replay_settings.replay_download_timeout_seconds,
+        timeout=httpx.Timeout(
+            replay_settings.replay_timeout_seconds,
+            read=replay_settings.replay_download_timeout_seconds,
+        ),
+        relayed_errors={500},
     )
     return ReplayDownload(
         content=upstream.aiter_bytes(),

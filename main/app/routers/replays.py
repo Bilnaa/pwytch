@@ -57,6 +57,7 @@ async def get_replay(
         200: {"description": "The mp4 file, as an attachment", "content": {"video/mp4": {}}},
         202: {"description": "Conversion in progress, retry later", "model": ConversionPending},
         404: {"description": "Unknown replay or live still in progress"},
+        500: {"description": "Conversion failed; the next request starts it again"},
         **ERRORS,
     },
 )
