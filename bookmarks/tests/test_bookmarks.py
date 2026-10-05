@@ -442,3 +442,34 @@ def test_delete_bookmark_publishes_after_broker_reconnects(client, bookmark_id, 
 
     assert response.status_code == HTTPStatus.NO_CONTENT
     assert fake_mqtt.publish.await_count == 2
+
+
+def test_list_bookmarks_filter_by_target_id(client, bookmark_payload, bookmark_id):
+    # bookmark_id targets 123
+    other_id = create_bookmark(client, bookmark_payload, target_id=456)
+
+    body = list_bookmarks(client, target_id=456)
+
+    assert [bookmark["id"] for bookmark in body["items"]] == [other_id]
+    assert body["total"] == 1
+
+
+def test_list_bookmarks_filter_by_target_type_and_target_id(
+    client, bookmark_payload, bookmark_id
+):
+    # bookmark_id is a streamer 123: create a replay with the same target_id
+    replay_id = create_bookmark(client, bookmark_payload, target_type="replay", target_id=123)
+
+    body = list_bookmarks(client, target_type="replay", target_id=123)
+
+    assert [bookmark["id"] for bookmark in body["items"]] == [replay_id]
+    assert body["total"] == 1
+
+
+@pytest.mark.parametrize("target_id", [0, -1, LIMIT_INTEGER + 1, "abc"])
+def test_list_bookmarks_invalid_target_id_unprocessable_entity(client, target_id):
+    response = client.get(
+        "/bookmarks", headers=create_header(OWNER_ID), params={"target_id": target_id}
+    )
+
+    assert response.status_code == HTTPStatus.UNPROCESSABLE_ENTITY

@@ -83,14 +83,23 @@ Le `PATCH` est partiel : seuls les champs envoyés sont modifiés.
 | Param         | Défaut | Rôle |
 |---------------|--------|------|
 | `target_type` | aucun  | `streamer` ou `replay` pour ne garder qu'un type |
+| `target_id`   | aucun  | Id de la cible, de 1 à 2³¹ − 1 (sinon `422`), pour ne garder que les bookmarks de cette cible |
 | `page`        | `1`    | Numéro de page, à partir de 1 |
 | `size`        | `20`   | Taille de page, de 1 à 100 |
 
-La réponse suit le format `Page` de `common` ; `total` compte tous les bookmarks qui correspondent au filtre, pas seulement ceux de la page. Les bookmarks sont triés du plus récent au plus ancien (`created_at` puis `id`), un ordre stable d'une page à l'autre.
+Les filtres se combinent (ET). La réponse suit le format `Page` de `common` ; `total` compte tous les bookmarks qui correspondent aux filtres, pas seulement ceux de la page. Les bookmarks sont triés du plus récent au plus ancien (`created_at` puis `id`), un ordre stable d'une page à l'autre.
 
 ```json
 {"items": [{"id": 3, "user_id": 1, "target_type": "streamer", "target_id": 42, "label": "Mon streamer", "note": null, "created_at": "...", "updated_at": "..."}], "total": 1, "page": 1, "size": 20}
 ```
+
+#### Savoir si une cible est enregistrée
+
+La page d'un replay ou d'un streamer affiche une étoile pleine si l'utilisateur l'a déjà enregistré. Elle ne connaît que l'id de la cible (le replay `42`), pas celui du bookmark : `GET /bookmarks/{id}` ne convient pas, son `{id}` est le numéro du bookmark. Le front filtre donc la liste sur la cible :
+
+    GET /bookmarks?target_type=replay&target_id=42
+
+Un même utilisateur ne peut bookmarker une cible qu'une fois : la réponse contient 0 ou 1 bookmark, quel que soit le nombre de bookmarks de l'utilisateur. `total: 1` donne l'étoile pleine (et l'`id` du bookmark, pour le `DELETE`), `total: 0` l'étoile vide. `target_type` est nécessaire : le streamer `42` et le replay `42` sont deux cibles différentes.
 
 ## Event `bookmarks/deleted`
 
