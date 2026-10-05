@@ -3,8 +3,11 @@ from httpx import ASGITransport, AsyncClient
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 from sqlalchemy.pool import StaticPool
 
+from app import conversion
+from app.conversion import Mp4Converter
 from app.infra.db import get_session, init_db
 from app.main import app
+from tests.fake_ffmpeg import FakeFfmpeg
 
 
 @pytest.fixture
@@ -30,6 +33,18 @@ async def session(engine):
 def session_factory(engine):
     # Mêmes options que la fabrique de prod dans app.infra.db.
     return async_sessionmaker(engine, expire_on_commit=False)
+
+
+@pytest.fixture
+def converter(session_factory, tmp_path):
+    return Mp4Converter(session_factory, "http://stream", tmp_path, timeout_s=0.05)
+
+
+@pytest.fixture
+def fake_ffmpeg(monkeypatch):
+    fake = FakeFfmpeg()
+    monkeypatch.setattr(conversion.asyncio, "create_subprocess_exec", fake)
+    return fake
 
 
 @pytest.fixture
