@@ -1,15 +1,21 @@
 import asyncio
 from urllib.parse import urlencode
 
+import httpx
 from fastapi import WebSocket
+from pydantic import TypeAdapter
 from sqlalchemy.orm import Session
 from websockets.asyncio.client import connect
 from websockets.exceptions import WebSocketException
 
 from app.config import live_chat_settings
 from app.models import User
+from app.schemas.chat import ChatMessage
 from app.services import auth as auth_service
+from app.services import satellites
 from app.services import streams as streams_service
+
+MESSAGES = TypeAdapter(list[ChatMessage])
 
 
 class ChatUnavailableError(Exception):
@@ -76,3 +82,13 @@ async def run_chat(websocket: WebSocket, db: Session, stream_id: int, user: User
     url = chat_url(stream_id, user)
     db.close()
     await relay(websocket, url)
+
+
+async def get_messages(
+    client: httpx.AsyncClient, db: Session, stream_id: int, limit: int
+) -> list[ChatMessage]:
+    streams_service.get_stream(db, stream_id)
+    response = await satellites.send(
+        client, "GET", f"/streams/{stream_id}/messages", params={"limit": limit}
+    )
+    return satellites.parse(response, MESSAGES)

@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
 
-import { getToken, wsUrl } from '@/lib/api'
+import { api, getToken, wsUrl } from '@/lib/api'
 
 export interface ChatMessage {
   id: string
@@ -17,6 +17,19 @@ export const MAX_LENGTH = 500
 const MAX_MESSAGES = 200
 
 const RETRY_MS = 3000
+
+// The history comes back while the socket may already have pushed new messages,
+// so both lists are put together without the doubles and sorted again
+function mergeMessages(old: ChatMessage[], loaded: ChatMessage[]): ChatMessage[] {
+  const byId = new Map<string, ChatMessage>()
+  for (const message of [...old, ...loaded]) {
+    byId.set(message.id, message)
+  }
+  const merged = [...byId.values()]
+  // as dates: main and live-chat may not write sent_at the same way
+  merged.sort((a, b) => Date.parse(a.sent_at) - Date.parse(b.sent_at))
+  return merged.slice(-MAX_MESSAGES)
+}
 
 // Close codes of main where trying again won't change anything (see main/README.md).
 // Any other close (main restarted, live-chat down, network lost) reconnects
@@ -41,7 +54,6 @@ export function useChat(streamId: number, loggedIn: boolean) {
   const socketRef = useRef<WebSocket | null>(null)
 
   useEffect(() => {
-    // TODO(#84, Bilnaa, 2026-10-04): load the last messages once main has GET /streams/{id}/chat/messages
     let path = `/streams/${streamId}/chat`
     const token = getToken()
     if (loggedIn && token) {
@@ -57,6 +69,11 @@ export function useChat(streamId: number, loggedIn: boolean) {
       socket.onopen = () => {
         setConnected(true)
         setError('')
+        // loaded once the socket is open, so nothing falls between the two. On a
+        // reconnect it also brings back what was sent while we were away
+        api<ChatMessage[]>(`/streams/${streamId}/messages`)
+          .then((loaded) => setMessages((old) => mergeMessages(old, loaded)))
+          .catch(() => {})
       }
 
       socket.onmessage = (event) => {
@@ -74,7 +91,6 @@ export function useChat(streamId: number, loggedIn: boolean) {
           setError(CLOSE_MESSAGES[event.code])
           return
         }
-        // messages sent while we were away are lost, until the history of #84
         setError('Chat disconnected, reconnecting...')
         retry = window.setTimeout(connect, RETRY_MS)
       }

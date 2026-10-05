@@ -1,3 +1,4 @@
+import asyncio
 import logging
 
 import pytest
@@ -17,7 +18,9 @@ def broken_session_factory():
 
 
 @pytest.mark.anyio
-async def test_ffmpeg_reads_the_playlist_of_stream_and_copies_the_streams(converter, tmp_path):
+async def test_ffmpeg_reads_the_playlist_of_stream_and_copies_the_streams(
+    converter, tmp_path
+):
     assert converter.ffmpeg_args(42) == [
         "ffmpeg", "-nostdin", "-y", "-loglevel", "error",
         "-i", "http://stream/lives/42/index.m3u8",
@@ -84,7 +87,9 @@ async def test_missing_ffmpeg_marks_failed(converter, fake_ffmpeg, session, capl
 
 @pytest.mark.anyio
 async def test_convert_never_raises(fake_ffmpeg, tmp_path, caplog):
-    broken_converter = Mp4Converter(broken_session_factory, "http://stream", tmp_path, 1)
+    broken_converter = Mp4Converter(
+        broken_session_factory, "http://stream", tmp_path, 1
+    )
 
     await broken_converter.convert(42)
 
@@ -111,19 +116,64 @@ async def test_reset_interrupted_resets_processing_and_removes_part_files(
 async def test_reset_interrupted_creates_the_replays_dir(session_factory, tmp_path):
     replays_dir = tmp_path / "replays"
 
-    await Mp4Converter(session_factory, "http://stream", replays_dir, 1).reset_interrupted()
+    await Mp4Converter(
+        session_factory, "http://stream", replays_dir, 1
+    ).reset_interrupted()
 
     assert replays_dir.is_dir()
 
 
 @pytest.mark.anyio
-async def test_reset_interrupted_with_database_down_does_not_stop_the_start(tmp_path, caplog):
+async def test_reset_interrupted_with_database_down_does_not_stop_the_start(
+    tmp_path, caplog
+):
     # Même règle que try_init_db : une base coupée n'empêche pas le service de démarrer.
-    broken_converter = Mp4Converter(broken_session_factory, "http://stream", tmp_path, 1)
+    broken_converter = Mp4Converter(
+        broken_session_factory, "http://stream", tmp_path, 1
+    )
     (tmp_path / "1.mp4.part").write_bytes(b"partial mp4")
 
     await broken_converter.reset_interrupted()
 
     assert not (tmp_path / "1.mp4.part").exists()
-    warnings = [record for record in caplog.records if record.levelno == logging.WARNING]
+    warnings = [
+        record for record in caplog.records if record.levelno == logging.WARNING
+    ]
     assert len(warnings) == 1
+
+
+@pytest.mark.anyio
+async def test_late_finish_keeps_the_status_set_meanwhile(
+    converter, fake_ffmpeg, session, caplog
+):
+    await add_replay(session, 42, mp4_status=Mp4Status.NONE)
+
+    await converter.convert(42)
+
+    assert (await reload(session, 42)).mp4_status is Mp4Status.NONE
+    warnings = [
+        record for record in caplog.records if record.levelno == logging.WARNING
+    ]
+    assert len(warnings) == 1
+
+
+@pytest.mark.anyio
+async def test_cancelled_conversion_kills_ffmpeg_and_removes_the_part_file(
+    session_factory, fake_ffmpeg, session, tmp_path
+):
+    # Annulation à l'arrêt du service : ffmpeg ne doit pas rester orphelin.
+    await add_replay(session, 42, mp4_status=Mp4Status.PROCESSING)
+    slow_converter = Mp4Converter(
+        session_factory, "http://stream", tmp_path, timeout_s=60
+    )
+    fake_ffmpeg.hang = True
+
+    conversion_task = asyncio.create_task(slow_converter.convert(42))
+    while not fake_ffmpeg.processes:
+        await asyncio.sleep(0)
+    conversion_task.cancel()
+
+    with pytest.raises(asyncio.CancelledError):
+        await conversion_task
+    assert fake_ffmpeg.processes[0].killed
+    assert not (tmp_path / "42.mp4.part").exists()

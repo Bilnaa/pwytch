@@ -53,6 +53,21 @@ async def set_mp4_status(session: AsyncSession, stream_id: int, status: Mp4Statu
     await session.commit()
 
 
+async def finish_conversion(session: AsyncSession, stream_id: int, status: Mp4Status) -> bool:
+    """Écrit le résultat seulement si la ligne est toujours « processing ».
+
+    Faux si elle a été remise à none entre-temps : le résultat d'un ffmpeg qui finit en
+    retard n'écrase pas un statut plus récent.
+    """
+    result = await session.execute(
+        update(Replay)
+        .where(Replay.stream_id == stream_id, Replay.mp4_status == Mp4Status.PROCESSING)
+        .values(mp4_status=status)
+    )
+    await session.commit()
+    return result.rowcount == 1
+
+
 async def reset_processing(session: AsyncSession) -> int:
     """Au démarrage : une conversion « processing » a été tuée avec l'ancien process."""
     result = await session.execute(

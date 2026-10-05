@@ -15,6 +15,22 @@ def create_header(user_id: int) -> dict[str, str]:
     }
 
 
+def create_bookmark(client, bookmark_payload, **overrides) -> int:
+    response = client.post(
+        "/bookmarks",
+        headers=create_header(OWNER_ID),
+        json={**bookmark_payload, **overrides},
+    )
+    assert response.status_code == HTTPStatus.CREATED
+    return response.json()["id"]
+
+
+def list_bookmarks(client, **params):
+    response = client.get("/bookmarks", headers=create_header(OWNER_ID), params=params)
+    assert response.status_code == HTTPStatus.OK
+    return response.json()
+
+
 @pytest.fixture
 def bookmark_payload():
     return {
@@ -222,3 +238,143 @@ def test_delete_bookmark_unauthorized(client, bookmark_id):
     response = client.delete(f"/bookmarks/{bookmark_id}")
 
     assert response.status_code == HTTPStatus.UNAUTHORIZED
+
+
+def test_list_bookmarks_empty(client):
+    response = client.get("/bookmarks", headers=create_header(OWNER_ID))
+ 
+    assert response.status_code == HTTPStatus.OK
+    assert response.json() == {"items": [], "total": 0, "page": 1, "size": 20}
+ 
+ 
+def test_list_bookmarks_only_returns_current_user_bookmarks(
+    client, bookmark_payload, bookmark_id
+):
+    other_response = client.post(
+        "/bookmarks",
+        headers=create_header(OTHER_USER_ID),
+        json=bookmark_payload,
+    )
+    assert other_response.status_code == HTTPStatus.CREATED
+ 
+    response = client.get("/bookmarks", headers=create_header(OWNER_ID))
+ 
+    assert response.status_code == HTTPStatus.OK
+    assert [bookmark["id"] for bookmark in response.json()["items"]] == [bookmark_id]
+    assert response.json()["total"] == 1
+ 
+def test_list_bookmarks_most_recent_first(client, bookmark_payload, bookmark_id):
+    second_response = client.post(
+        "/bookmarks",
+        headers=create_header(OWNER_ID),
+        json={**bookmark_payload, "target_id": 456},
+    )
+    assert second_response.status_code == HTTPStatus.CREATED
+    second_id = second_response.json()["id"]
+ 
+    response = client.get("/bookmarks", headers=create_header(OWNER_ID))
+ 
+    assert response.status_code == HTTPStatus.OK
+    assert [bookmark["id"] for bookmark in response.json()["items"]] == [second_id, bookmark_id] 
+
+ 
+def test_list_bookmarks_unauthorized(client):
+    response = client.get("/bookmarks")
+ 
+    assert response.status_code == HTTPStatus.UNAUTHORIZED
+ 
+ 
+def test_get_bookmark_success(client, bookmark_payload, bookmark_id):
+    response = client.get(
+        f"/bookmarks/{bookmark_id}", headers=create_header(OWNER_ID)
+    )
+ 
+    assert response.status_code == HTTPStatus.OK
+    response_json = response.json()
+    assert response_json["id"] == bookmark_id
+    assert response_json["user_id"] == OWNER_ID
+    assert {key: response_json[key] for key in bookmark_payload} == bookmark_payload
+ 
+ 
+def test_get_bookmark_not_found(client):
+    response = client.get("/bookmarks/999", headers=create_header(OWNER_ID))
+ 
+    assert response.status_code == HTTPStatus.NOT_FOUND
+ 
+ 
+def test_get_other_user_bookmark_not_found(client, bookmark_id):
+    response = client.get(
+        f"/bookmarks/{bookmark_id}", headers=create_header(OTHER_USER_ID)
+    )
+ 
+    assert response.status_code == HTTPStatus.NOT_FOUND
+ 
+ 
+@pytest.mark.parametrize("invalid_id", [0, -1, LIMIT_INTEGER + 1])
+def test_get_bookmark_invalid_id_unprocessable_entity(client, invalid_id):
+    response = client.get(
+        f"/bookmarks/{invalid_id}", headers=create_header(OWNER_ID)
+    )
+ 
+    assert response.status_code == HTTPStatus.UNPROCESSABLE_ENTITY
+ 
+ 
+def test_get_bookmark_unauthorized(client, bookmark_id):
+    response = client.get(f"/bookmarks/{bookmark_id}")
+ 
+    assert response.status_code == HTTPStatus.UNAUTHORIZED
+
+
+def test_list_bookmarks_filter_streamer(client, bookmark_payload, bookmark_id):
+    second_streamer_id = create_bookmark(client, bookmark_payload, target_id=456)
+    create_bookmark(client, bookmark_payload, target_type="replay", target_id=789)
+
+    body = list_bookmarks(client, target_type="streamer")
+
+    assert {bookmark["target_type"] for bookmark in body["items"]} == {"streamer"}
+    assert {bookmark["id"] for bookmark in body["items"]} == {bookmark_id, second_streamer_id}
+    assert body["total"] == 2
+
+
+def test_list_bookmarks_filter_replay(client, bookmark_payload, bookmark_id):
+    replay_id = create_bookmark(client, bookmark_payload, target_type="replay", target_id=789)
+
+    body = list_bookmarks(client, target_type="replay")
+
+    assert [bookmark["id"] for bookmark in body["items"]] == [replay_id]
+    assert body["total"] == 1
+
+
+def test_list_bookmarks_second_page(client, bookmark_payload, bookmark_id):
+    second_id = create_bookmark(client, bookmark_payload, target_id=456)
+    create_bookmark(client, bookmark_payload, target_id=789)
+    create_bookmark(client, bookmark_payload, target_id=1011)
+
+    body = list_bookmarks(client, page=2, size=2)
+
+    assert [bookmark["id"] for bookmark in body["items"]] == [second_id, bookmark_id]
+    assert body["total"] == 4
+
+
+def test_list_bookmarks_page_after_the_end(client, bookmark_id):
+    body = list_bookmarks(client, page=10)
+
+    assert body["items"] == []
+    assert body["total"] == 1
+
+
+def test_list_bookmarks_unknown_target_type_unprocessable_entity(client):
+    response = client.get(
+        "/bookmarks", headers=create_header(OWNER_ID), params={"target_type": "chaussette"}
+    )
+
+    assert response.status_code == HTTPStatus.UNPROCESSABLE_ENTITY
+
+
+@pytest.mark.parametrize(
+    "params", [{"size": 0}, {"size": 101}, {"page": 0}, {"page": LIMIT_INTEGER + 1}]
+)
+def test_list_bookmarks_invalid_pagination_unprocessable_entity(client, params):
+    response = client.get("/bookmarks", headers=create_header(OWNER_ID), params=params)
+
+    assert response.status_code == HTTPStatus.UNPROCESSABLE_ENTITY
