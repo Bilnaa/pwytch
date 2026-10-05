@@ -2,6 +2,7 @@ import { useState } from 'react'
 import { Link, NavLink, Outlet } from 'react-router'
 import { LogOut, Moon, Sun, User } from 'lucide-react'
 
+import { FollowedSidebar } from '@/components/followed-sidebar'
 import { SearchBar } from '@/components/search-bar'
 import { Button } from '@/components/ui/button'
 import {
@@ -108,9 +109,12 @@ export function Layout() {
           </div>
         </div>
       </header>
-      <main className="mx-auto w-full max-w-6xl flex-1 px-4 py-6">
-        <Outlet />
-      </main>
+      <div className="flex flex-1">
+        <FollowedSidebar />
+        <main className="mx-auto w-full max-w-6xl min-w-0 flex-1 px-4 py-6">
+          <Outlet />
+        </main>
+      </div>
     </div>
   )
 }

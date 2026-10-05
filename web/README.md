@@ -99,6 +99,8 @@ Comme sur Twitch, un streamer se suit et un replay se met de côté. Les deux so
 - Page d'une chaîne : bouton « Follow » / « Following » (`components/follow-button.tsx`), seulement si on est connecté et pas sur sa propre chaîne. Pour savoir si on suit déjà le streamer, il cherche son id dans `GET /bookmarks?target_type=streamer&size=100` (`bookmarks` ne filtre pas par `target_id`). Un deuxième clic supprime le bookmark. Un 409 (suivi depuis un autre onglet) recharge le follow existant.
 - `/bookmarks`, réservée aux comptes connectés, avec deux onglets paginés par 20 (`?tab=replays&page=2` dans l'URL). « Following » : les streamers suivis, avec un lien vers leur chaîne et « Unfollow ». Les noms viennent de `GET /users?id=...`, un appel pour toute la page. « Replays » : libellé et note modifiables, suppression avec confirmation. La confirmation s'affiche sous le texte, pas à la place du bouton, pour qu'un double clic ne supprime rien.
 
+Barre à gauche avec les chaînes suivies, comme sur Twitch (`components/followed-sidebar.tsx`), seulement si on est connecté et sur grand écran. Les chaînes en live d'abord (avec leur jeu), puis les autres par nom, grisées et marquées « Offline ». Trois appels : les follows, puis en même temps leurs noms (`GET /users?id=...`) et les lives en cours (`GET /streams?status=live`). Rafraîchie toutes les 15 s comme l'accueil, et tout de suite après un follow ou un unfollow (event `follows-changed` sur `window`).
+
 Le bouton pour mettre un replay de côté arrive avec les pages replays (#131).
 
 ## Pages et routes de l'API

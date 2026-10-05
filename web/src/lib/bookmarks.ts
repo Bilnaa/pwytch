@@ -63,3 +63,10 @@ export async function findFollow(streamerId: number): Promise<Bookmark | null> {
   }
   return null
 }
+
+// Sent after a follow or an unfollow, so the sidebar updates without waiting for its refresh
+export const FOLLOWS_CHANGED = 'follows-changed'
+
+export function notifyFollowsChanged(): void {
+  window.dispatchEvent(new Event(FOLLOWS_CHANGED))
+}

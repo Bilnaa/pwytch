@@ -8,6 +8,7 @@ import { errorMessage } from '@/lib/api'
 import {
   deleteBookmark,
   listBookmarks,
+  notifyFollowsChanged,
   updateBookmark,
   type Bookmark,
   type BookmarkPage,
@@ -126,6 +127,7 @@ function FollowRow({ bookmark, username, onDeleted }: {
   async function handleUnfollow() {
     try {
       await deleteBookmark(bookmark.id)
+      notifyFollowsChanged()
       onDeleted()
     } catch (err) {
       setError(errorMessage(err))
