@@ -1,6 +1,8 @@
 from http import HTTPStatus
 
 import pytest
+from app import events
+from app.events import MAX_ATTEMPTS
 from app.utils import LIMIT_INTEGER
 from common.mqtt import NotConnectedError
 from common.topics import BOOKMARK_DELETED
@@ -416,12 +418,27 @@ def test_delete_other_user_bookmark_publishes_nothing(client, bookmark_id, fake_
     fake_mqtt.publish.assert_not_awaited()
 
 
-def test_delete_bookmark_succeeds_when_broker_is_down(client, bookmark_id, fake_mqtt):
+def test_delete_bookmark_succeeds_when_broker_is_down(client, bookmark_id, fake_mqtt, monkeypatch):
     fake_mqtt.publish.side_effect = NotConnectedError("broker down")
+
+    monkeypatch.setattr(events, "RETRY_DELAY_SECONDS", 0)
 
     response = client.delete(
         f"/bookmarks/{bookmark_id}", headers=create_header(OWNER_ID)
     )
 
     assert response.status_code == HTTPStatus.NO_CONTENT
-    fake_mqtt.publish.assert_awaited_once()
+    assert fake_mqtt.publish.await_count == MAX_ATTEMPTS
+
+
+def test_delete_bookmark_publishes_after_broker_reconnects(client, bookmark_id, fake_mqtt, monkeypatch):
+    fake_mqtt.publish.side_effect = [NotConnectedError("broker down"), None]
+
+    monkeypatch.setattr(events, "RETRY_DELAY_SECONDS", 0)
+
+    response = client.delete(
+        f"/bookmarks/{bookmark_id}", headers=create_header(OWNER_ID)
+    )
+
+    assert response.status_code == HTTPStatus.NO_CONTENT
+    assert fake_mqtt.publish.await_count == 2
