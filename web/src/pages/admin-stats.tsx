@@ -69,14 +69,24 @@ function userLink(id: number, users: Map<number, PublicUser>): ReactNode {
   return <Link to={`/${user.username}`} className="hover:underline">{user.display_name}</Link>
 }
 
+// /videos/{id} always goes to the channel, so an ended live goes straight to its replay
+function streamUrl(id: number, live: boolean): string {
+  if (live) {
+    return `/videos/${id}`
+  }
+  return `/replays/${id}`
+}
+
 function streamLink(id: number, streams: Map<number, Stream>): ReactNode {
   const stream = streams.get(id)
   // the id tells apart two lives of a channel with the same title
   let title = `Stream #${id}`
+  let live = false
   if (stream) {
     title = `${stream.title} (${stream.streamer.username}) #${id}`
+    live = stream.status === 'live'
   }
-  return <Link to={`/videos/${id}`} className="hover:underline">{title}</Link>
+  return <Link to={streamUrl(id, live)} className="hover:underline">{title}</Link>
 }
 
 // Each section loads on its own: one service down only empties its own section
@@ -125,7 +135,7 @@ async function loadChat(): Promise<RankingRow[]> {
 }
 
 async function loadPlayer(): Promise<PlayerData> {
-  // lives come from stream, replays from replay: one can be down without the other
+  // lives come from main, replays from replay: replay can be down without the lives
   const [lives, replays] = await Promise.all([
     listLives().catch(() => null),
     listReplays(1).catch(() => null),
@@ -265,7 +275,7 @@ function PlayerTable() {
               {data.rows.map((row) => (
                 <tr key={row.streamId} className="border-b last:border-0">
                   <td className="p-3">
-                    <Link to={`/videos/${row.streamId}`} className="hover:underline">
+                    <Link to={streamUrl(row.streamId, row.live)} className="hover:underline">
                       {row.title}
                     </Link>
                     <span className="text-muted-foreground"> · {row.streamer}</span>
