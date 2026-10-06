@@ -36,6 +36,22 @@ async def get_replay_route(session: SessionDep, stream_id: ReplayId) -> ReplayRe
 
 
 @router.get(
+    "/{stream_id}/video",
+    summary="Play the replay mp4 in the browser, with Range requests to seek",
+    response_class=FileResponse,
+    responses={
+        200: {"description": "The whole mp4", "content": {"video/mp4": {}}},
+        206: {"description": "The part asked by the Range header", "content": {"video/mp4": {}}},
+        404: {"description": "Unknown replay, live still in progress or mp4 not ready"},
+    },
+)
+async def replay_video_route(session: SessionDep, converter: ConverterDep, stream_id: ReplayId):
+    mp4_path = await replay_service.video_path(session, converter, stream_id)
+    # Sans filename : servi inline, FileResponse répond aux en-têtes Range par un 206.
+    return FileResponse(mp4_path, media_type="video/mp4")
+
+
+@router.get(
     "/{stream_id}/download",
     summary="Download the replay as mp4, converted on the first request",
     response_class=FileResponse,

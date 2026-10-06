@@ -18,6 +18,8 @@ const RETRY_MS = 3000
 
 interface HlsPlayerProps {
   src: string
+  // a replay plays its mp4 ('video/mp4'), a live its HLS playlist
+  type?: 'application/x-mpegurl' | 'video/mp4'
   // 'on-demand' for a replay: full progress bar, and a missing playlist is not retried
   streamType?: 'live' | 'on-demand'
   onPlay?: () => void
@@ -28,6 +30,7 @@ interface HlsPlayerProps {
 
 export function HlsPlayer({
   src,
+  type = 'application/x-mpegurl',
   streamType = 'live',
   onPlay,
   onPause,
@@ -91,7 +94,7 @@ export function HlsPlayer({
   return (
     <MediaPlayer
       ref={playerRef}
-      src={{ src, type: 'application/x-mpegurl' }}
+      src={{ src, type }}
       streamType={streamType}
       autoPlay
       playsInline

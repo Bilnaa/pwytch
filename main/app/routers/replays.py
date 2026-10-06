@@ -1,7 +1,7 @@
 from typing import Annotated
 
 import httpx
-from fastapi import APIRouter, Depends, Path, Query
+from fastapi import APIRouter, Depends, Header, Path, Query
 from fastapi.responses import StreamingResponse
 from starlette.background import BackgroundTask
 
@@ -50,8 +50,34 @@ async def get_replay(
 
 
 @router.get(
+    "/{stream_id}/video",
+    summary="Relay the mp4 played by the replay page, with Range requests to seek",
+    response_class=StreamingResponse,
+    responses={
+        200: {"description": "The whole mp4", "content": {"video/mp4": {}}},
+        206: {"description": "The part asked by the Range header", "content": {"video/mp4": {}}},
+        404: {"description": "Unknown replay, live still in progress or mp4 not ready"},
+        **ERRORS,
+    },
+)
+async def replay_video(
+    client: Annotated[httpx.AsyncClient, Depends(get_replay_client)],
+    stream_id: ReplayId,
+    range_header: Annotated[str | None, Header(alias="range")] = None,
+):
+    video = await replays_service.open_replay_video(client, stream_id, range_header)
+    return StreamingResponse(
+        video.content,
+        status_code=video.status_code,
+        media_type=video.media_type,
+        headers=video.headers,
+        background=BackgroundTask(video.close),
+    )
+
+
+@router.get(
     "/{stream_id}/download",
-    summary="Relay the mp4 of a replay, converted by replay on the first request",
+    summary="Relay the mp4 of a replay, converted by replay when the live ends",
     response_class=StreamingResponse,
     responses={
         200: {"description": "The mp4 file, as an attachment", "content": {"video/mp4": {}}},

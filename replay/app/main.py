@@ -23,10 +23,12 @@ async def lifespan(app: FastAPI):
         session_factory, settings.lives_dir, settings.replays_dir, settings.conversion_timeout_s
     )
     await app.state.converter.reset_interrupted()
-    app.state.mqtt = create_mqtt_client(settings, session_factory)
+    await app.state.converter.start_unconverted()
+    app.state.mqtt = create_mqtt_client(settings, session_factory, app.state.converter)
     await app.state.mqtt.start()
     yield
     await app.state.mqtt.stop()
+    await app.state.converter.stop()
     await engine.dispose()
 
 

@@ -11,6 +11,8 @@ from app.services import satellites
 REPLAY_PAGE = TypeAdapter(ReplayPage)
 REPLAY = TypeAdapter(ReplayResponse)
 RELAYED_DOWNLOAD_HEADERS = ("content-disposition", "retry-after")
+# what the browser needs to seek in the video with Range requests
+RELAYED_VIDEO_HEADERS = ("accept-ranges", "content-range", "content-length")
 
 
 @dataclass
@@ -56,6 +58,37 @@ async def open_replay_download(client: httpx.AsyncClient, stream_id: int) -> Rep
         headers={
             name: upstream.headers[name]
             for name in RELAYED_DOWNLOAD_HEADERS
+            if name in upstream.headers
+        },
+        close=upstream.aclose,
+    )
+
+
+async def open_replay_video(
+    client: httpx.AsyncClient, stream_id: int, range_header: str | None
+) -> ReplayDownload:
+    """Streams the mp4 played by the replay page, a part of it when the browser seeks."""
+    headers = {}
+    if range_header:
+        headers["range"] = range_header
+    upstream = await satellites.send(
+        client,
+        "GET",
+        f"/replays/{stream_id}/video",
+        headers=headers,
+        stream=True,
+        timeout=httpx.Timeout(
+            replay_settings.replay_timeout_seconds,
+            read=replay_settings.replay_download_timeout_seconds,
+        ),
+    )
+    return ReplayDownload(
+        content=upstream.aiter_bytes(),
+        status_code=upstream.status_code,
+        media_type=upstream.headers.get("content-type"),
+        headers={
+            name: upstream.headers[name]
+            for name in RELAYED_VIDEO_HEADERS
             if name in upstream.headers
         },
         close=upstream.aclose,

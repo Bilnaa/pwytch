@@ -14,7 +14,7 @@ from app.repositories.replay_repository import (
 )
 from app.schemas import ConversionPending, ReplayResult
 from app.services.conversion_service import Mp4Converter
-from app.services.exceptions import ConversionFailed, ReplayNotFound
+from app.services.exceptions import ConversionFailed, ReplayNotFound, VideoNotReady
 
 
 @dataclass(frozen=True)
@@ -38,6 +38,17 @@ async def get_replay(session: AsyncSession, stream_id: int) -> ReplayResult:
     if replay is None:
         raise ReplayNotFound
     return ReplayResult.model_validate(replay, from_attributes=True)
+
+
+async def video_path(session: AsyncSession, converter: Mp4Converter, stream_id: int) -> Path:
+    """Le .mp4 à lire dans le player ; jamais de conversion lancée ici."""
+    replay = await find_replay(session, stream_id)
+    if replay is None:
+        raise ReplayNotFound
+    mp4_path = converter.mp4_path(stream_id)
+    if replay.mp4_status is not Mp4Status.READY or not mp4_path.is_file():
+        raise VideoNotReady
+    return mp4_path
 
 
 async def prepare_download(

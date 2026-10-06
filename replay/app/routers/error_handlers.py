@@ -1,7 +1,7 @@
 from fastapi import FastAPI, Request
 from fastapi.responses import JSONResponse
 
-from app.services.exceptions import ConversionFailed, ReplayNotFound
+from app.services.exceptions import ConversionFailed, ReplayNotFound, VideoNotReady
 
 
 def register_error_handlers(app: FastAPI) -> None:
@@ -10,6 +10,10 @@ def register_error_handlers(app: FastAPI) -> None:
     @app.exception_handler(ReplayNotFound)
     async def replay_not_found(request: Request, exc: ReplayNotFound) -> JSONResponse:
         return JSONResponse({"detail": "Replay not found"}, status_code=404)
+
+    @app.exception_handler(VideoNotReady)
+    async def video_not_ready(request: Request, exc: VideoNotReady) -> JSONResponse:
+        return JSONResponse({"detail": "Replay video not ready"}, status_code=404)
 
     @app.exception_handler(ConversionFailed)
     async def conversion_failed(request: Request, exc: ConversionFailed) -> JSONResponse:

@@ -14,7 +14,7 @@ export interface Replay {
   ended_at: string
   duration_s: number
   mp4_status: Mp4Status
-  // relative to main's API root: give it to apiUrl()
+  // the mp4 of the replay, relative to main's API root: give it to apiUrl()
   playback_url: string
 }
 
@@ -50,9 +50,10 @@ export type DownloadAnswer =
   | { state: 'pending'; retryAfterMs: number }
   | { state: 'failed' }
 
-const DEFAULT_RETRY_MS = 5000
+export const DEFAULT_RETRY_MS = 5000
 
-// Asks for the mp4. The first call starts the conversion: 202 until it's done.
+// Asks for the mp4. replay converts it when the live ends: 202 while it's still converting.
+// If the conversion never started, this call starts it (safety net)
 // Only called when the mp4 isn't ready: on a 200 the body is dropped unread
 export async function requestDownload(id: number): Promise<DownloadAnswer> {
   const response = await fetch(downloadUrl(id))

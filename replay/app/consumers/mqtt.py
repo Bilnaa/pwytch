@@ -6,6 +6,7 @@ from common.topics import STREAM_ENDED, STREAM_STARTED
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from app.core.config import Settings
+from app.services.conversion_service import Mp4Converter
 from app.services.live_event_service import on_stream_ended, on_stream_started
 
 # Avec un client_id, le broker garde les messages QoS 1 reçus pendant un redémarrage.
@@ -27,12 +28,17 @@ def with_session[E: BaseEvent](
 
 
 def create_mqtt_client(
-    app_settings: Settings, session_factory: async_sessionmaker[AsyncSession]
+    app_settings: Settings,
+    session_factory: async_sessionmaker[AsyncSession],
+    converter: Mp4Converter,
 ) -> MqttClient:
     mqtt = MqttClient(app_settings.mqtt_host, app_settings.mqtt_port, client_id=MQTT_CLIENT_ID)
 
     async def on_ended(session: AsyncSession, event: StreamEnded) -> None:
         await on_stream_ended(session, event, app_settings.lives_dir)
+        # Le .mp4 est prêt avant le premier téléchargement. Un event en double ou un live
+        # en erreur sans replay ne lance rien : start ne convertit qu'un replay terminé.
+        await converter.start(event.stream_id)
 
     mqtt.subscribe(STREAM_STARTED, StreamStarted, with_session(session_factory, on_stream_started))
     mqtt.subscribe(STREAM_ENDED, StreamEnded, with_session(session_factory, on_ended))
