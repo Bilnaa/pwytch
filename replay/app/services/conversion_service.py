@@ -6,8 +6,13 @@ from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from app.models import Mp4Status
-from app.repositories.replay_repository import finish_conversion, reset_processing
-from app.services.lives_storage import playlist_path
+from app.repositories.replay_repository import (
+    claim_conversion,
+    finish_conversion,
+    list_unconverted,
+    reset_processing,
+)
+from app.services.lives_storage import playlist_is_complete, playlist_path
 
 logger = logging.getLogger(__name__)
 
@@ -29,6 +34,9 @@ class Mp4Converter:
         self.lives_dir = lives_dir
         self.replays_dir = replays_dir
         self.timeout_s = timeout_s
+        # Conversions lancées hors requête HTTP : gardées pour ne pas être perdues et
+        # pour être annulées à l'arrêt du service.
+        self.tasks: set[asyncio.Task] = set()
 
     def mp4_path(self, stream_id: int) -> Path:
         return self.replays_dir / f"{stream_id}.mp4"
@@ -62,6 +70,41 @@ class Mp4Converter:
         except Exception:
             # Statut resté en processing : le prochain démarrage le remet à none.
             logger.exception("Conversion of replay %s could not be finished", stream_id)
+
+    async def start(self, stream_id: int) -> None:
+        """Lance la conversion d'un live terminé, sans attendre ffmpeg.
+
+        Rien si le live tourne encore, si la conversion est déjà lancée (par une autre
+        fin de live ou un téléchargement) ou déjà faite : le claim none → processing ne
+        réussit qu'une fois, et seulement pour un replay terminé.
+        """
+        if not playlist_is_complete(self.lives_dir, stream_id):
+            logger.info("Replay %s not converted yet, playlist not finished", stream_id)
+            return
+        async with self.session_factory() as session:
+            claimed = await claim_conversion(session, stream_id)
+        if not claimed:
+            return
+        task = asyncio.create_task(self.convert(stream_id))
+        self.tasks.add(task)
+        task.add_done_callback(self.tasks.discard)
+
+    async def start_unconverted(self) -> None:
+        """Au démarrage, après reset_interrupted : reprend les replays restés en none."""
+        try:
+            async with self.session_factory() as session:
+                stream_ids = await list_unconverted(session)
+            for stream_id in stream_ids:
+                await self.start(stream_id)
+        # Même règle que reset_interrupted : le téléchargement relancera la conversion.
+        except (SQLAlchemyError, OSError) as exc:
+            logger.warning("Unconverted replays not started, database unavailable: %s", exc)
+
+    async def stop(self) -> None:
+        """À l'arrêt : tue les ffmpeg en cours, leur ligne reste en processing."""
+        for task in self.tasks:
+            task.cancel()
+        await asyncio.gather(*self.tasks, return_exceptions=True)
 
     async def reset_interrupted(self) -> None:
         """Au démarrage : un arrêt pendant ffmpeg laisse des .part et des lignes « processing ».

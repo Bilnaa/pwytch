@@ -102,3 +102,11 @@ async def reset_processing(session: AsyncSession) -> int:
     )
     await session.commit()
     return result.rowcount
+
+
+async def list_unconverted(session: AsyncSession) -> list[int]:
+    """Au démarrage : replays terminés dont la conversion n'a jamais eu lieu ou a été tuée."""
+    stream_ids = await session.scalars(
+        select(Replay.stream_id).where(FINISHED, Replay.mp4_status == Mp4Status.NONE)
+    )
+    return list(stream_ids)

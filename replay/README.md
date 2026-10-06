@@ -1,6 +1,6 @@
 # replay
 
-Replays des lives terminés (#94, #115, #95, #97, #98). `replay` apprend le début et la fin de chaque live par MQTT (`stream/started`, `stream/ended`), garde un replay par live dans sa base, et convertit un replay en `.mp4` à la demande en lisant la playlist HLS que `stream` a écrite dans `LIVES_DIR`.
+Replays des lives terminés (#94, #115, #95, #97, #98, #250). `replay` apprend le début et la fin de chaque live par MQTT (`stream/started`, `stream/ended`), garde un replay par live dans sa base, et convertit chaque replay en `.mp4` dès la fin du live en lisant la playlist HLS que `stream` a écrite dans `LIVES_DIR`.
 
 ```
 stream ──MQTT stream/started, stream/ended──> replay (consumer) ──> Postgres, base replay
@@ -81,7 +81,7 @@ Une table, `replays`, une ligne par live. `stream_id` est la clé et l'identifia
 | `/health`               | GET     | Renvoie `{"status": "ok"}`             |
 | `/replays`              | GET     | Liste des replays, paginée             |
 | `/replays/{stream_id}`  | GET     | Détail d'un replay                     |
-| `/replays/{stream_id}/download` | GET | Téléchargement en `.mp4`, converti à la première demande |
+| `/replays/{stream_id}/download` | GET | Téléchargement en `.mp4`, converti dès la fin du live |
 
 Un replay est un live terminé (`ended_at` et `duration_s` renseignés) : un live en cours n'apparaît dans aucune route. Son identifiant est le `stream_id` du live.
 
@@ -136,27 +136,25 @@ Renvoie un `ReplayResult`, même format qu'un élément de la liste.
 
 ### `GET /replays/{stream_id}/download`
 
-Le `.mp4` n'est produit qu'à la demande : le premier appel lance la conversion et répond 202, le client redemande après `Retry-After`.
+La conversion est lancée dès la fin du live (voir « Conversion `.mp4` ») : le `.mp4` est en général prêt avant le premier téléchargement. Sinon (conversion encore en cours, ou jamais lancée), la route répond 202 et le client redemande après `Retry-After`.
 
 | État du replay                       | Réponse                                                                                       |
 |--------------------------------------|-----------------------------------------------------------------------------------------------|
 | Inconnu ou live en cours             | 404 `{"detail": "Replay not found"}`                                                          |
 | `ready`, fichier présent             | 200, le fichier en `video/mp4`, `Content-Disposition: attachment; filename="replay-{id}.mp4"` |
 | `ready`, fichier disparu             | statut remis à `none`, puis comme `none`                                                      |
-| `none`                               | conversion lancée, 202 `{"stream_id": id, "mp4_status": "processing"}`, `Retry-After: 5`     |
+| `none`                               | conversion lancée (filet de sécurité), 202 `{"stream_id": id, "mp4_status": "processing"}`, `Retry-After: 5`     |
 | `processing`                         | 202, même corps et même en-tête, aucun second ffmpeg                                          |
 | `failed`                             | 500 `{"detail": "Conversion failed, try again"}`, statut remis à `none` : l'appel suivant relance la conversion |
 
 422 : `stream_id` non numérique, ≤ 0 ou au-delà de 2 147 483 647.
 
-La conversion tourne en tâche de fond, après l'envoi du 202, avec ses propres sessions : la session de la requête est déjà rendue. `main` relaie le 202 tel quel (#99).
+Lancée par cette route, la conversion tourne en tâche de fond, après l'envoi du 202, avec ses propres sessions : la session de la requête est déjà rendue. `main` relaie le 202 tel quel (#99).
 
 Vérification manuelle, avec un replay terminé dont la playlist est servie par `stream` :
 
 ```bash
-curl -i localhost:8003/replays/1/download      # 202, Retry-After: 5
-sleep 5
-curl -OJ localhost:8003/replays/1/download     # replay-1.mp4
+curl -OJ localhost:8003/replays/1/download     # replay-1.mp4, ou 202 si ffmpeg tourne encore
 ```
 
 ## Conversion `.mp4`
@@ -172,10 +170,12 @@ curl -OJ localhost:8003/replays/1/download     # replay-1.mp4
 | `ready`      | `REPLAYS_DIR/{stream_id}.mp4` est prêt                              |
 | `failed`     | ffmpeg a échoué ; la fin de son stderr est dans les logs en `ERROR` |
 
+- **Dès la fin du live** : à la réception de `stream/ended`, `replay` lance la conversion sans attendre ffmpeg, si la playlist contient `#EXT-X-ENDLIST`. `stream` écrit cette ligne avant de publier l'event, donc la playlist est complète. `replay` n'appelle jamais `stream` : il sait que le live est fini par l'event et par la playlist. Un live encore en cours (sans `ended_at`) n'est jamais converti, même si ses segments sont déjà dans `LIVES_DIR`. Un `stream/ended` en double ou un live en erreur sans replay ne lance rien.
+- **Pendant la conversion** : la ligne est en `processing`. Un téléchargement répond 202 sans lancer de second ffmpeg ; `stream` peut continuer ses autres lives, `-c copy` coûte surtout du disque et pas du CPU.
 - **Une seule conversion par replay** : `none` passe à `processing` par une seule requête `UPDATE ... WHERE mp4_status = 'none'`. Deux demandes simultanées ne lancent qu'un ffmpeg. Le résultat n'est écrit que si la ligne est toujours en `processing` : un ffmpeg qui finit après une remise à zéro n'écrase pas le statut.
 - **Jamais de fichier incomplet servi** : ffmpeg écrit dans `{stream_id}.mp4.part`, renommé en `.mp4` seulement si ffmpeg finit avec le code 0. En cas d'échec, le `.part` est supprimé.
 - **Délai maximal** : au-delà de `CONVERSION_TIMEOUT_S` (600 s), ffmpeg est tué et le replay passe à `failed`. ffmpeg absent de la machine donne aussi `failed`. À l'arrêt du service, la conversion en cours est annulée : ffmpeg est tué et son `.part` supprimé, la ligne reste en `processing` jusqu'au démarrage suivant.
-- **Au démarrage** : les `*.mp4.part` restants sont supprimés et les lignes en `processing` repassent à `none` (un arrêt du service a tué leur ffmpeg). Ce nettoyage suppose un seul process `replay` : il viserait aussi les conversions d'un autre process. C'est déjà la règle à cause du `client_id` MQTT (voir « Dettes connues »). `REPLAYS_DIR` est créé s'il manque. Base coupée : un `WARNING`, et le service démarre quand même.
+- **Au démarrage** : les `*.mp4.part` restants sont supprimés et les lignes en `processing` repassent à `none` (un arrêt du service a tué leur ffmpeg), puis la conversion des replays terminés restés en `none` est relancée. Ce nettoyage suppose un seul process `replay` : il viserait aussi les conversions d'un autre process. C'est déjà la règle à cause du `client_id` MQTT (voir « Dettes connues »). `REPLAYS_DIR` est créé s'il manque. Base coupée : un `WARNING`, et le service démarre quand même ; la conversion repartira au premier téléchargement.
 - L'image Docker installe ffmpeg. En local, il faut `ffmpeg` dans le `PATH`.
 
 Vérifié avec un vrai ffmpeg sur une playlist écrite par `stream` dans `LIVES_DIR` (H.264 + AAC, 9 segments) : `.mp4` de 28 s, codecs `h264` et `aac`, sans option de flux audio en plus. Sans playlist, ffmpeg écrit `Error opening input: No such file or directory` et le replay passe à `failed`. En conteneur, `/code/lives` est bien en lecture seule (`Read-only file system`).
@@ -230,6 +230,7 @@ Les tests n'ont besoin ni de Postgres ni de Mosquitto : ils tournent sur SQLite 
 - **Identifiants de live réutilisés en dev** : si la base de `main` est recréée, les `stream_id` repartent de 1 alors que celle de `replay` garde ses lignes. Le nouveau live 1 reprend la ligne de l'ancien replay 1 : il est listé comme terminé pendant qu'il tourne, et son vrai `stream/ended` est ignoré comme doublon. Recréer la base de `replay` en même temps que celle de `main` (`DROP TABLE replays;`).
 - **Pagination par décalage** : `page` et `size` se traduisent en `OFFSET`. Si un live se termine entre deux appels, la liste se décale d'un cran et un replay apparaît sur deux pages ; `total` et `items` sont lus par deux requêtes séparées. Le client dédoublonne par `stream_id` ; une pagination par curseur sera nécessaire pour un défilement infini.
 - **Les `.mp4` ne sont jamais supprimés** : ils restent dans `REPLAYS_DIR` (volume `replays-data` en conteneur) tant que personne ne les efface.
-- **Conversion interrompue non reprise** : un arrêt du service pendant ffmpeg remet la ligne à `none` au démarrage, et la conversion repart seulement à la prochaine demande.
+- **Conversions en parallèle sans limite** : chaque fin de live et chaque replay repris au démarrage lance son ffmpeg tout de suite. Sans réencodage le coût reste faible, mais beaucoup de replays en attente au démarrage lancent autant de ffmpeg à la fois.
+- **Conversion ratée non relancée** : un replay en `failed` n'est pas repris au démarrage ; il repart au prochain téléchargement.
 - **Statut bloqué en `processing`** si la base tombe pendant une conversion : le statut final n'est pas écrit (erreur journalisée), et le prochain démarrage le remet à `none`.
 - **Pas de migration** : `create_all` crée les tables absentes mais ne modifie pas une table existante. Après un changement de colonne, supprimer la table en local : `DROP TABLE replays;`. Alembic sera nécessaire au premier changement de schéma sur une base qui a des données à garder.
