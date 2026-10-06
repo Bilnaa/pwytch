@@ -49,12 +49,16 @@ async def send(
     user: User | None = None,
     params: dict[str, Any] | None = None,
     json: Any = None,
+    headers: dict[str, str] | None = None,
     stream: bool = False,
     timeout: Any = httpx.USE_CLIENT_DEFAULT,
     relayed_errors: Collection[int] = (),
 ) -> httpx.Response:
+    request_headers = identity_headers(user)
+    if headers:
+        request_headers.update(headers)
     request = client.build_request(
-        method, path, params=params, json=json, headers=identity_headers(user), timeout=timeout
+        method, path, params=params, json=json, headers=request_headers, timeout=timeout
     )
     try:
         response = await client.send(request, stream=stream)

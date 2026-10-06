@@ -80,6 +80,7 @@ Toute l'API est sous `/api` (ex. `/api/auth/login`, `ws://localhost:8000/api/str
 | `/bookmarks/{bookmark_id}` | HTTP GET, PATCH, DELETE | Lit, modifie ou supprime un bookmark de l'utilisateur via `bookmarks` (protégé) |
 | `/replays` | HTTP GET | Liste paginée des replays via `replay`, filtrable par streamer |
 | `/replays/{stream_id}` | HTTP GET | Renvoie un replay via `replay` |
+| `/replays/{stream_id}/video` | HTTP GET | Relaie le `.mp4` lu par la page replay, avec les requêtes `Range` (206) pour avancer dans la vidéo |
 | `/stats/search/top` | HTTP GET | Éléments les plus trouvés par la recherche via `stats` (admin) |
 | `/stats/search/{item_type}/{item_id}` | HTTP GET | Nombre de fois qu'un élément a été trouvé par la recherche via `stats` (admin) |
 | `/stats/bookmarks/deleted/top` | HTTP GET | Replays et streamers les plus retirés des bookmarks via `stats` (admin) |
@@ -401,14 +402,14 @@ Les replays sont triés du plus récent au plus ancien (fin du live). Un replay 
 
 ```json
 {
-  "items": [{"stream_id": 7, "streamer_id": 42, "streamer_name": "Célèste", "title": "Speedrun any%", "game": "Celeste", "started_at": "2026-10-02T19:00:00Z", "ended_at": "2026-10-02T20:02:05Z", "duration_s": 3725.4, "mp4_status": "none", "playback_url": "/lives/7/index.m3u8"}],
+  "items": [{"stream_id": 7, "streamer_id": 42, "streamer_name": "Célèste", "title": "Speedrun any%", "game": "Celeste", "started_at": "2026-10-02T19:00:00Z", "ended_at": "2026-10-02T20:02:05Z", "duration_s": 3725.4, "mp4_status": "none", "playback_url": "/replays/7/video"}],
   "total": 1,
   "page": 1,
   "size": 20
 }
 ```
 
-`GET /replays/{stream_id}` renvoie un seul de ces objets. `playback_url` est relatif à `/api` : le front le lit via le relais HLS `/lives/{stream_id}/{filename}`.
+`GET /replays/{stream_id}` renvoie un seul de ces objets. `playback_url` est relatif à `/api` : c'est le `.mp4` du replay, relayé par `/replays/{stream_id}/video`. Un replay ne lit jamais le HLS de `stream`. `main` transmet l'en-tête `Range` à `replay` et renvoie le 206 avec `Content-Range`, `Accept-Ranges` et `Content-Length`, en streaming. Tant que le `.mp4` n'est pas prêt, la route répond 404 et le front affiche « Preparing the replay... ».
 
 | Code | Cas |
 |------|-----|

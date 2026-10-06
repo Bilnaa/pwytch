@@ -16,7 +16,7 @@ REPLAY = {
     "ended_at": "2026-10-02T20:02:05Z",
     "duration_s": 3725.4,
     "mp4_status": "none",
-    "playback_url": "/lives/7/index.m3u8",
+    "playback_url": "/replays/7/video",
 }
 PAGE = {"items": [REPLAY], "total": 1, "page": 1, "size": 20}
 
@@ -232,3 +232,42 @@ def test_invalid_download_id_is_not_relayed(client, use_replay, stream_id):
 
     use_replay(handler)
     assert client.get(f"/replays/{stream_id}/download").status_code == 422
+
+
+def test_video_range_is_forwarded_and_206_relayed(client, use_replay):
+    def handler(request):
+        assert request.url.path == "/replays/7/video"
+        assert request.headers["range"] == "bytes=2-5"
+        return httpx.Response(
+            206,
+            content=b"2345",
+            headers={
+                "content-type": "video/mp4",
+                "content-range": "bytes 2-5/10",
+                "accept-ranges": "bytes",
+            },
+        )
+
+    use_replay(handler)
+    response = client.get("/replays/7/video", headers={"Range": "bytes=2-5"})
+    assert response.status_code == 206
+    assert response.content == b"2345"
+    assert response.headers["content-range"] == "bytes 2-5/10"
+    assert response.headers["accept-ranges"] == "bytes"
+
+
+def test_video_without_range_sends_no_range(client, use_replay):
+    def handler(request):
+        assert "range" not in request.headers
+        return httpx.Response(200, content=b"mp4", headers={"content-type": "video/mp4"})
+
+    use_replay(handler)
+    assert client.get("/replays/7/video").status_code == 200
+
+
+def test_video_not_ready_404_is_relayed(client, use_replay):
+    not_ready = {"detail": "Replay video not ready"}
+    use_replay(lambda request: httpx.Response(404, json=not_ready))
+    response = client.get("/replays/7/video")
+    assert response.status_code == 404
+    assert response.json() == not_ready

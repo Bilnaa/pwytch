@@ -16,7 +16,7 @@ class ReplayResponse(BaseModel):
     ended_at: datetime
     duration_s: float = Field(examples=[3725.4])
     mp4_status: Mp4Status
-    playback_url: str = Field(examples=["/lives/7/index.m3u8"])
+    playback_url: str = Field(examples=["/replays/7/video"])
 
 
 class ReplayPage(BaseModel):
