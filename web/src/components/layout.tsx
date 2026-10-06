@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import { Link, NavLink, Outlet } from 'react-router'
-import { Bookmark, History, LogOut, Moon, Radio, Sun, User } from 'lucide-react'
+import { Bookmark, ChartColumn, History, LogOut, Moon, Radio, Sun, User } from 'lucide-react'
 
 import { FollowedSidebar } from '@/components/followed-sidebar'
 import { SearchBar } from '@/components/search-bar'
@@ -82,6 +82,15 @@ function UserMenu() {
             Bookmarks
           </Link>
         </DropdownMenuItem>
+        {/* hidden for everyone else, main answers 403 to them anyway */}
+        {user.role === 'admin' && (
+          <DropdownMenuItem asChild>
+            <Link to="/admin/stats">
+              <ChartColumn />
+              Stats
+            </Link>
+          </DropdownMenuItem>
+        )}
         <DropdownMenuItem onSelect={logout}>
           <LogOut />
           Log out

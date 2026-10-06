@@ -5,6 +5,7 @@ import { createBrowserRouter, RouterProvider } from 'react-router'
 import { Layout } from '@/components/layout'
 import { RequireAuth } from '@/components/require-auth'
 import { AuthProvider } from '@/lib/auth'
+import { AdminStatsPage } from '@/pages/admin-stats'
 import { BookmarksPage } from '@/pages/bookmarks'
 import { GoLivePage } from '@/pages/go-live'
 import { HomePage } from '@/pages/home'
@@ -42,6 +43,7 @@ const router = createBrowserRouter([
         children: [
           { path: '/go-live', element: <GoLivePage /> },
           { path: '/bookmarks', element: <BookmarksPage /> },
+          { path: '/admin/stats', element: <AdminStatsPage /> },
         ],
       },
       { path: '*', element: <NotFoundPage /> },
