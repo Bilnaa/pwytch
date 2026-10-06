@@ -1,9 +1,10 @@
 # bookmarks
 
-Bookmarks des utilisateurs : un utilisateur enregistre un streamer ou un replay avec un label et une note (#91), puis liste et relit ses bookmarks (#92). Chaque suppression réussie est publiée sur `bookmarks/deleted` pour `stats` (#117). Le service n'est jamais exposé au front : tout passe par `main`, qui authentifie l'utilisateur et transmet son identité.
+Bookmarks des utilisateurs : un utilisateur enregistre un streamer ou un replay avec un label et une note (#91), puis liste et relit ses bookmarks (#92), lectures mises en cache dans Redis. Chaque suppression réussie est publiée sur `bookmarks/deleted` pour `stats` (#117). Le service n'est jamais exposé au front : tout passe par `main`, qui authentifie l'utilisateur et transmet son identité.
 
 ```
 front ──> main ──HTTP /bookmarks + X-User-*──> bookmarks ──> Postgres, table bookmark
+                                                   ├──────> Redis, cache des lectures
                                                    └──MQTT bookmarks/deleted──> stats
 ```
 
@@ -22,7 +23,7 @@ En image Docker, le build se lance depuis la racine du repo, car l'image embarqu
 
     docker build -f bookmarks/Dockerfile -t bookmarks .
 
-Au démarrage, le service crée sa table si elle n'existe pas, puis se connecte au broker. Sans broker, le service démarre quand même : le client MQTT réessaie de se connecter toutes les 5 secondes.
+Au démarrage, le service crée sa table si elle n'existe pas, puis se connecte au broker. Sans broker, le service démarre quand même : le client MQTT réessaie de se connecter toutes les 5 secondes. Sans Redis aussi : les lectures passent par la base (voir « Cache »).
 
 ## Configuration
 
@@ -33,6 +34,7 @@ Les variables se mettent dans `bookmarks/.env` (copier `.env.example`).
 | `DATABASE_URL` | `postgresql+psycopg://postgres:postgres@localhost:5432/microservices` | Base Postgres       |
 | `MQTT_HOST`    | `localhost`                                                           | Hôte du broker MQTT |
 | `MQTT_PORT`    | `1883`                                                                | Port du broker MQTT |
+| `REDIS_URL`    | `redis://localhost:6379/0`                                            | Cache des lectures  |
 
 ## Identité
 
@@ -117,8 +119,33 @@ Un `404` ne publie rien. La publication se fait en tâche de fond (`BackgroundTa
 
 Si le client MQTT n'est pas connecté (juste après le démarrage, pendant une reconnexion, broker coupé), la publication est retentée jusqu'à 10 fois, toutes les 5 secondes, ce qui couvre une reconnexion du client. Au-delà, l'event est perdu et une erreur est journalisée. Il est aussi perdu si `bookmarks` s'arrête pendant les tentatives, car l'event n'existe qu'en mémoire. Les compteurs de `stats` peuvent donc être légèrement sous-estimés : compromis accepté, la suppression passant avant la statistique. Des comptes exacts demanderaient une outbox (event enregistré dans la même transaction que la suppression, publié ensuite).
 
+## Cache
+
+La liste (`GET /bookmarks`) et le détail (`GET /bookmarks/{id}`) sont mis en cache dans Redis (`app/cache.py`), le temps d'une navigation : chaque réponse garde la même entrée pendant 60 secondes.
+
+- La route lit Redis d'abord ; si la clé est absente, elle lit la base, écrit la réponse en cache, puis répond
+- Le header `X-Cache` dit d'où vient la réponse : `HIT` (Redis) ou `MISS` (base)
+- Chaque création, modification ou suppression rend **tout** le cache de l'utilisateur inaccessible, après le `commit` (voir « Version par utilisateur ») : un nouveau bookmark change le `total` et décale les pages, il est plus sûr de tout relire que de corriger chaque entrée. Le cache des autres utilisateurs ne bouge pas
+- Si Redis est indisponible, le cache est ignoré (un warning est journalisé) : les routes répondent depuis la base. Le client fait un seul essai (`retry=Retry(NoBackoff(), 0)`) avec des timeouts courts (0,5 s), pour qu'une panne de Redis ne ralentisse pas les routes
+
+| Clé | Contenu |
+|-----|---------|
+| `bookmarks:user:{user_id}:version` | Version du cache de l'utilisateur (entier, `0` si absente) |
+| `bookmarks:user:{user_id}:v{version}:bookmark:{bookmark_id}` | Détail d'un bookmark |
+| `bookmarks:user:{user_id}:v{version}:list:{target_type}:{target_id}:{page}:{size}` | Une page de la liste, `all` pour un filtre absent |
+
+Tous les paramètres de la liste sont dans la clé : deux requêtes avec des filtres ou une pagination différents n'ont jamais la même entrée.
+
+### Version par utilisateur
+
+Une écriture ne supprime pas les clés : elle incrémente la version de l'utilisateur (`INCR`), qui fait partie du nom des clés. Les entrées de l'ancienne version ne sont plus jamais lues, et disparaissent au bout de 60 secondes.
+
+Supprimer les clés laisserait passer une course : un `GET` lit l'ancienne liste en base, un `POST` commite et vide le cache, puis le `GET` écrit l'ancienne liste en cache, servie pendant 60 secondes. Avec la version, le `GET` lit la version **avant** la base : si une écriture a lieu pendant sa lecture, il écrit sous l'ancienne version, que plus personne ne lit.
+
+Le cache est par utilisateur, car un bookmark n'appartient qu'à un utilisateur : il sert surtout les relectures pendant une navigation (la requête de l'étoile part à chaque page de replay ou de streamer).
+
 ## Tests
 
     uv run pytest
 
-Les tests n'ont besoin ni de Postgres ni de Mosquitto : ils tournent sur SQLite en mémoire, et le client MQTT est remplacé par un `AsyncMock`. Ils vérifient l'event publié (topic et champs), l'absence d'event sur un `404`, et le retry quand le broker est coupé ou revient.
+Les tests n'ont besoin ni de Postgres, ni de Mosquitto, ni de Redis : ils tournent sur SQLite en mémoire, le client MQTT est remplacé par un `AsyncMock` et Redis par `fakeredis`. Ils vérifient l'event publié (topic et champs), l'absence d'event sur un `404`, le retry quand le broker est coupé ou revient, et le cache : `MISS` puis `HIT`, une entrée par combinaison de paramètres, le vidage après chaque écriture, l'isolation entre utilisateurs, la course entre une lecture et une écriture, et les routes qui répondent quand Redis est coupé.

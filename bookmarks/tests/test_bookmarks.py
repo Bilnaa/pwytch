@@ -1,8 +1,11 @@
 from http import HTTPStatus
 
+import fakeredis
 import pytest
 from app import events
+from app.cache import get_redis, get_version, list_key, write
 from app.events import MAX_ATTEMPTS
+from app.main import app
 from app.utils import LIMIT_INTEGER
 from common.mqtt import NotConnectedError
 from common.topics import BOOKMARK_DELETED
@@ -473,3 +476,116 @@ def test_list_bookmarks_invalid_target_id_unprocessable_entity(client, target_id
     )
 
     assert response.status_code == HTTPStatus.UNPROCESSABLE_ENTITY
+
+def test_get_bookmark_cache_miss_then_hit(client, bookmark_id):
+    url = f"/bookmarks/{bookmark_id}"
+    headers = create_header(OWNER_ID)
+
+    first = client.get(url, headers=headers)
+    second = client.get(url, headers=headers)
+
+    assert first.headers["X-Cache"] == "MISS"
+    assert second.headers["X-Cache"] == "HIT"
+    assert second.json() == first.json()
+
+
+def test_list_bookmarks_cache_miss_then_hit(client, bookmark_id):
+    headers = create_header(OWNER_ID)
+
+    first = client.get("/bookmarks", headers=headers)
+    second = client.get("/bookmarks", headers=headers)
+
+    assert first.headers["X-Cache"] == "MISS"
+    assert second.headers["X-Cache"] == "HIT"
+    assert second.json() == first.json()
+
+
+def test_list_cache_depends_on_query_params(client, bookmark_id):
+    headers = create_header(OWNER_ID)
+    client.get("/bookmarks", headers=headers)
+
+    response = client.get("/bookmarks", headers=headers, params={"target_type": "replay"})
+
+    assert response.headers["X-Cache"] == "MISS"
+
+
+def test_create_invalidates_list_cache(client, bookmark_payload, bookmark_id):
+    headers = create_header(OWNER_ID)
+    client.get("/bookmarks", headers=headers)
+
+    create_bookmark(client, bookmark_payload, target_id=456)
+    response = client.get("/bookmarks", headers=headers)
+
+    assert response.headers["X-Cache"] == "MISS"
+    assert response.json()["total"] == 2
+
+
+def test_update_invalidates_detail_cache(client, bookmark_id):
+    url = f"/bookmarks/{bookmark_id}"
+    headers = create_header(OWNER_ID)
+    client.get(url, headers=headers)
+
+    client.patch(url, headers=headers, json={"label": "new label"})
+    response = client.get(url, headers=headers)
+
+    assert response.headers["X-Cache"] == "MISS"
+    assert response.json()["label"] == "new label"
+
+
+def test_delete_invalidates_detail_cache(client, bookmark_id):
+    url = f"/bookmarks/{bookmark_id}"
+    headers = create_header(OWNER_ID)
+    client.get(url, headers=headers)
+
+    client.delete(url, headers=headers)
+    response = client.get(url, headers=headers)
+
+    assert response.status_code == HTTPStatus.NOT_FOUND
+
+
+def test_other_user_changes_keep_cache(client, bookmark_payload, bookmark_id):
+    alice = create_header(OWNER_ID)
+    bob = create_header(OTHER_USER_ID)
+    client.get("/bookmarks", headers=alice)
+
+    client.post("/bookmarks", headers=bob, json=bookmark_payload)
+    response = client.get("/bookmarks", headers=alice)
+
+    assert response.headers["X-Cache"] == "HIT"
+
+
+def test_routes_work_when_redis_is_down(client, bookmark_payload, bookmark_id):
+    server = fakeredis.FakeServer()
+    server.connected = False
+    app.dependency_overrides[get_redis] = lambda: fakeredis.FakeRedis(
+        server=server, decode_responses=True
+    )
+    headers = create_header(OWNER_ID)
+
+    detail = client.get(f"/bookmarks/{bookmark_id}", headers=headers)
+    created = client.post(
+        "/bookmarks", headers=headers, json={**bookmark_payload, "target_id": 456}
+    )
+
+    assert detail.status_code == HTTPStatus.OK
+    assert detail.json()["id"] == bookmark_id
+    assert detail.headers["X-Cache"] == "MISS"
+    assert created.status_code == HTTPStatus.CREATED
+
+
+
+def test_stale_response_written_after_a_write_is_never_read(
+    client, fake_redis, bookmark_payload, bookmark_id
+):
+    # a slow GET reads the version before a concurrent POST...
+    old_version = get_version(fake_redis, OWNER_ID)
+    create_bookmark(client, bookmark_payload, target_id=456)
+
+    # ...then caches its old list (1 bookmark) after the POST
+    stale = '{"items": [], "total": 1, "page": 1, "size": 20}'
+    write(fake_redis, list_key(OWNER_ID, old_version, None, None, 1, 20), stale)
+
+    response = client.get("/bookmarks", headers=create_header(OWNER_ID))
+
+    assert response.headers["X-Cache"] == "MISS"
+    assert response.json()["total"] == 2
