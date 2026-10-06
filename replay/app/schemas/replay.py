@@ -21,9 +21,10 @@ class ReplayResult(BaseModel):
     @computed_field
     @property
     def playback_url(self) -> str:
-        # Relatif à la racine de l'API de main (/api), qui relaie la playlist de stream :
-        # le front le passe à apiUrl(), qui ajoute l'origine et /api.
-        return f"/lives/{self.stream_id}/index.m3u8"
+        # Le .mp4 du replay, relatif à la racine de l'API de main (/api), qui le relaie :
+        # le front le passe à apiUrl(), qui ajoute l'origine et /api. Un replay ne lit
+        # jamais le HLS de stream.
+        return f"/replays/{self.stream_id}/video"
 
 
 class ConversionPending(BaseModel):

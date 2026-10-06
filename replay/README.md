@@ -81,6 +81,7 @@ Une table, `replays`, une ligne par live. `stream_id` est la clé et l'identifia
 | `/health`               | GET     | Renvoie `{"status": "ok"}`             |
 | `/replays`              | GET     | Liste des replays, paginée             |
 | `/replays/{stream_id}`  | GET     | Détail d'un replay                     |
+| `/replays/{stream_id}/video`    | GET | Lecture du `.mp4` dans le player, `inline`, avec `Range` (206) |
 | `/replays/{stream_id}/download` | GET | Téléchargement en `.mp4`, converti dès la fin du live |
 
 Un replay est un live terminé (`ended_at` et `duration_s` renseignés) : un live en cours n'apparaît dans aucune route. Son identifiant est le `stream_id` du live.
@@ -112,7 +113,7 @@ Renvoie une `Page[ReplayResult]` (`common.pagination`), du replay le plus récem
       "ended_at": "2026-10-04T21:30:00Z",
       "duration_s": 5400.0,
       "mp4_status": "none",
-      "playback_url": "/lives/42/index.m3u8"
+      "playback_url": "/replays/42/video"
     }
   ],
   "total": 3,
@@ -121,7 +122,7 @@ Renvoie une `Page[ReplayResult]` (`common.pagination`), du replay le plus récem
 }
 ```
 
-- `playback_url` est relatif à la racine de l'API de `main` (`/api`), qui relaie la playlist de `stream`. URL complète : `{origine de main}/api/lives/42/index.m3u8` ; côté front, `apiUrl(playback_url)`. Sans le `/api`, `main` renvoie la page du front et le lecteur reçoit un 404.
+- `playback_url` est le `.mp4` du replay, relatif à la racine de l'API de `main` (`/api`), qui le relaie. URL complète : `{origine de main}/api/replays/42/video` ; côté front, `apiUrl(playback_url)`. Un replay ne lit jamais le HLS de `stream`. Sans le `/api`, `main` renvoie la page du front et le lecteur reçoit un 404.
 - `streamer_name`, `title`, `game` et `started_at` peuvent valoir `null` (voir « Dettes connues »).
 - `mp4_status` : `none`, `processing`, `ready` ou `failed`, l'état de la conversion en `.mp4`.
 
@@ -133,6 +134,16 @@ Renvoie un `ReplayResult`, même format qu'un élément de la liste.
 
 - 404 `{"detail": "Replay not found"}` : replay inconnu ou live encore en cours.
 - 422 : `stream_id` non numérique, ≤ 0 ou au-delà de 2 147 483 647. Comme partout avec FastAPI, une chaîne numérique est convertie : `42.0` ou `+42` donnent le replay 42.
+
+### `GET /replays/{stream_id}/video`
+
+Le `.mp4` lu par la page replay, servi `inline` (sans `Content-Disposition: attachment`). `FileResponse` répond aux en-têtes `Range` par un 206 avec `Content-Range` : le player avance dans la vidéo sans la télécharger en entier. Cette route ne lance jamais de conversion.
+
+| État du replay                          | Réponse                                         |
+|-----------------------------------------|-------------------------------------------------|
+| Inconnu ou live en cours                | 404 `{"detail": "Replay not found"}`            |
+| `ready`, fichier présent                | 200 (ou 206 avec `Range`), `video/mp4`          |
+| `none`, `processing`, `failed`, ou `ready` sans fichier | 404 `{"detail": "Replay video not ready"}` |
 
 ### `GET /replays/{stream_id}/download`
 

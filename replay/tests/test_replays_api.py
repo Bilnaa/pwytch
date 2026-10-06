@@ -162,7 +162,7 @@ async def test_detail_has_exact_fields(client, session):
     assert body["title"] == "Speedrun Any%"
     assert body["duration_s"] == 5400.0
     assert body["mp4_status"] == "none"
-    assert body["playback_url"] == "/lives/42/index.m3u8"
+    assert body["playback_url"] == "/replays/42/video"
 
 
 @pytest.mark.anyio
