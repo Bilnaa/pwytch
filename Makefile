@@ -3,8 +3,9 @@
 TEMPLATE := cookiecutter-fastapi
 RUFF := ruff@0.16.10
 SERVICES := $(patsubst %/pyproject.toml,%,$(wildcard */pyproject.toml))
+APPS := main stream live-chat replay search bookmarks stats web
 
-.PHONY: help init dev infra-up infra-down test lint clear main stream live-chat replay search bookmarks stats web web-build
+.PHONY: help init dev infra-up infra-down up test lint clear main stream live-chat replay search bookmarks stats web web-build
 
 help: ## Show this help
 	@grep -E '^[a-zA-Z_-]+:.*## ' $(MAKEFILE_LIST) | awk 'BEGIN {FS = ":.*## "}; {printf "  %-12s %s\n", $$1, $$2}'
@@ -33,6 +34,9 @@ infra-up: ## Start postgres, redis and mosquitto
 
 infra-down: ## Stop the infra
 	docker compose down
+
+up: infra-up ## Start the infra, every service and the front in one terminal (Ctrl+C stops them)
+	$(MAKE) -j $(words $(APPS)) $(APPS)
 
 test: ## Run the tests of every service, fails if one of them fails
 	@failed=""; \
