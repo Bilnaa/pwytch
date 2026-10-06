@@ -3,11 +3,10 @@ from http import HTTPStatus
 import fakeredis
 import pytest
 from app import events
-from app.cache import get_redis
+from app.cache import get_redis, get_version, list_key, write
 from app.events import MAX_ATTEMPTS
 from app.main import app
 from app.utils import LIMIT_INTEGER
-from app.cache import get_version, list_key, write
 from common.mqtt import NotConnectedError
 from common.topics import BOOKMARK_DELETED
 

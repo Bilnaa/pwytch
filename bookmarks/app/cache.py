@@ -1,8 +1,8 @@
 import logging
 
 from redis import Redis, RedisError
-from redis.retry import Retry
 from redis.backoff import NoBackoff
+from redis.retry import Retry
 
 from app.config import settings
 from app.schemas import TargetType
