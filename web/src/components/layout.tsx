@@ -143,7 +143,7 @@ export function Layout() {
             {/* next to the profile like on twitch, only the icon on a phone */}
             {user && (
               <Button asChild size="sm">
-                <Link to="/go-live">
+                <Link to="/go-live" aria-label="Go live">
                   <Radio />
                   <span className="hidden sm:inline">Go live</span>
                 </Link>

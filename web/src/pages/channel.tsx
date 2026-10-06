@@ -90,10 +90,15 @@ export function ChannelPage() {
     return null
   }
   if (lookup.error) {
-    return <p className="text-sm text-destructive">{lookup.error}</p>
+    // the route is full width (see main.tsx), so the padding of the layout is ours to add
+    return <p className="px-4 py-6 text-sm text-destructive">{lookup.error}</p>
   }
   if (!lookup.user) {
-    return <NotFoundPage />
+    return (
+      <div className="px-4 py-6">
+        <NotFoundPage />
+      </div>
+    )
   }
   const user = lookup.user
   const stream = lookup.stream
