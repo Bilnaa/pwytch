@@ -3,12 +3,12 @@ import { Link, useParams } from 'react-router'
 
 import { Avatar } from '@/components/avatar'
 import { DownloadButton } from '@/components/download-button'
-import { HlsPlayer } from '@/components/hls-player'
+import { ReplayVideo } from '@/components/replay-video'
 import { SaveReplayButton } from '@/components/save-replay-button'
 import { Badge } from '@/components/ui/badge'
 import { ApiError, errorMessage } from '@/lib/api'
 import { formatDate, formatDuration } from '@/lib/format'
-import { getReplay, playbackUrl, type Replay } from '@/lib/replays'
+import { getReplay, type Replay } from '@/lib/replays'
 import { NotFoundPage } from '@/pages/not-found'
 
 interface Lookup {
@@ -72,7 +72,8 @@ export function ReplayPage() {
 
   return (
     <div className="space-y-4">
-      <HlsPlayer src={playbackUrl(replay)} streamType="on-demand" />
+      {/* key: another replay starts from its own status, without the polling of this one */}
+      <ReplayVideo key={`video-${replay.stream_id}`} replay={replay} />
 
       <div className="flex items-start gap-3">
         <Avatar username={streamerName ?? '?'} />

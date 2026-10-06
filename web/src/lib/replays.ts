@@ -14,7 +14,7 @@ export interface Replay {
   ended_at: string
   duration_s: number
   mp4_status: Mp4Status
-  // relative to main's API root: give it to apiUrl()
+  // the mp4 of the replay, relative to main's API root: give it to apiUrl()
   playback_url: string
 }
 
