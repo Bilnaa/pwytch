@@ -36,9 +36,13 @@ export function HlsPlayer({
   const playerRef = useRef<MediaPlayerInstance>(null)
   const hlsRef = useRef<HLSProvider | null>(null)
   const retryRef = useRef<number | undefined>(undefined)
+  const playRef = useRef<number | undefined>(undefined)
 
   useEffect(() => {
-    return () => window.clearTimeout(retryRef.current)
+    return () => {
+      window.clearTimeout(retryRef.current)
+      window.clearTimeout(playRef.current)
+    }
   }, [src])
 
   function onProviderChange(provider: MediaProviderAdapter | null) {
@@ -61,14 +65,26 @@ export function HlsPlayer({
     retryRef.current = window.setTimeout(() => hlsRef.current?.instance?.loadSource(src), RETRY_MS)
   }
 
-  // browsers block autoplay with sound, the viewer can unmute with the controls
+  // vidstack never autoplays when the OS asks for reduced motion, and browsers
+  // block autoplay with sound, so we start the video ourselves.
+  // On the next tick: until then vidstack still refuses play() as an autoplay
   function onAutoPlayFail() {
+    window.clearTimeout(playRef.current)
+    playRef.current = window.setTimeout(startPlaying, 0)
+  }
+
+  // muted only if the browser refuses the sound, the viewer can unmute with the controls
+  async function startPlaying() {
     const player = playerRef.current
     if (!player) {
       return
     }
-    player.muted = true
-    player.play().catch(() => {})
+    try {
+      await player.play()
+    } catch {
+      player.muted = true
+      player.play().catch(() => {})
+    }
   }
 
   // height capped like on twitch, so the title stays visible under the player
@@ -79,6 +95,8 @@ export function HlsPlayer({
       streamType={streamType}
       autoPlay
       playsInline
+      // volume and mute kept in the localStorage from one video to the next
+      storage="pwytch-player"
       className="aspect-video max-h-[calc(100svh-12rem)] w-full overflow-hidden rounded-lg bg-black"
       onProviderChange={onProviderChange}
       onHlsError={onHlsError}

@@ -4,7 +4,7 @@ import { Heart } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { ApiError, errorMessage } from '@/lib/api'
 import { useAuth } from '@/lib/auth'
-import { createBookmark, deleteBookmark, findFollow, notifyFollowsChanged, type Bookmark } from '@/lib/bookmarks'
+import { createBookmark, deleteBookmark, findBookmark, notifyFollowsChanged, type Bookmark } from '@/lib/bookmarks'
 import { cn } from '@/lib/utils'
 
 interface FollowButtonProps {
@@ -27,7 +27,7 @@ export function FollowButton({ streamerId, username }: FollowButtonProps) {
       return
     }
     let cancelled = false
-    findFollow(streamerId)
+    findBookmark('streamer', streamerId)
       .then((found) => {
         if (!cancelled) {
           setFollow(found)
@@ -59,7 +59,7 @@ export function FollowButton({ streamerId, username }: FollowButtonProps) {
     } catch (err) {
       // 409: followed from another tab in the meantime, get that bookmark
       if (err instanceof ApiError && err.status === 409) {
-        setFollow(await findFollow(streamerId).catch(() => null))
+        setFollow(await findBookmark('streamer', streamerId).catch(() => null))
       } else {
         setError(errorMessage(err))
       }

@@ -1,11 +1,18 @@
 import os
 
+import fakeredis
+
 os.environ.setdefault("DATABASE_URL", "sqlite://")
 
+from unittest.mock import AsyncMock
+
 import pytest
+from app.cache import get_redis
 from app.database import get_session
+from app.dependencies import get_mqtt
 from app.main import app
 from app.models import Base
+from common.mqtt import MqttClient
 from fastapi.testclient import TestClient
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
@@ -26,7 +33,21 @@ def db_session():
 
 
 @pytest.fixture
-def client(db_session):
+def fake_redis():
+    return fakeredis.FakeRedis(decode_responses=True)
+
+
+@pytest.fixture
+def client(db_session, fake_mqtt, fake_redis):
     app.dependency_overrides[get_session] = lambda: db_session
+    app.dependency_overrides[get_mqtt] = lambda: fake_mqtt
+    app.dependency_overrides[get_redis] = lambda: fake_redis
+
+
     yield TestClient(app)
     app.dependency_overrides.clear()
+
+
+@pytest.fixture
+def fake_mqtt():
+    return AsyncMock(spec=MqttClient)

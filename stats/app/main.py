@@ -3,18 +3,18 @@ from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 
 from common.errors import register_internal_error_handler
-from common.events import SearchHit
+from common.events import BookmarkDeleted, ChatMessage, PlayerEvent, SearchHit
 from common.mqtt import MqttClient
-from common.topics import SEARCH_HIT
+from common.topics import BOOKMARK_DELETED, CHAT_MESSAGE, PLAYER_EVENT, SEARCH_HIT
 from fastapi import FastAPI
 from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.schema import CreateSchema
 
 from app.config import settings
 from app.database import engine
-from app.handlers import on_search_hit
+from app.handlers import on_bookmark_deleted, on_chat_message, on_player_event, on_search_hit
 from app.models import SCHEMA_NAME, Base
-from app.routers import health, search
+from app.routers import bookmarks, chat, health, player, search
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -32,6 +32,10 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     client = MqttClient(host=settings.mqtt_host, port=settings.mqtt_port, client_id="stats")
 
     client.subscribe(SEARCH_HIT, SearchHit, on_search_hit)
+    client.subscribe(BOOKMARK_DELETED, BookmarkDeleted, on_bookmark_deleted)
+    client.subscribe(CHAT_MESSAGE, ChatMessage, on_chat_message)
+    client.subscribe(PLAYER_EVENT, PlayerEvent, on_player_event)
+
     await client.start()
     try:
         yield
@@ -45,6 +49,9 @@ register_internal_error_handler(app)
 
 app.include_router(health.router)
 app.include_router(search.router)
+app.include_router(bookmarks.router)
+app.include_router(chat.router)
+app.include_router(player.router)
 
 
 @app.get("/")

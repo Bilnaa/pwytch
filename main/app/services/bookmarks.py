@@ -11,11 +11,18 @@ BOOKMARK_PAGE = TypeAdapter(Page[BookmarkResponse])
 
 
 async def list_bookmarks(
-    client: httpx.AsyncClient, user: User, page: int, size: int, target_type: TargetType | None
+    client: httpx.AsyncClient,
+    user: User,
+    page: int,
+    size: int,
+    target_type: TargetType | None,
+    target_id: int | None,
 ) -> Page[BookmarkResponse]:
     params = {"page": page, "size": size}
     if target_type is not None:
         params["target_type"] = target_type
+    if target_id is not None:
+        params["target_id"] = target_id
     response = await satellites.send(client, "GET", "/bookmarks", user=user, params=params)
     return satellites.parse(response, BOOKMARK_PAGE)
 

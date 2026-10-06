@@ -93,7 +93,9 @@ function ReplayRow({ bookmark, onChanged, onDeleted }: {
   return (
     <li className="flex items-start gap-3 rounded-lg border p-3">
       <div className="min-w-0 flex-1">
-        <p className="font-semibold">{bookmark.label}</p>
+        <Link to={`/replays/${bookmark.target_id}`} className="font-semibold hover:text-primary">
+          {bookmark.label}
+        </Link>
         {bookmark.note && <p className="text-sm text-muted-foreground">{bookmark.note}</p>}
         <p className="text-xs text-muted-foreground">Saved {new Date(bookmark.created_at).toLocaleDateString()}</p>
         {error && <p className="text-xs text-destructive">{error}</p>}

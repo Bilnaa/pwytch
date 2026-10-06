@@ -1,7 +1,14 @@
 from http import HTTPStatus
 
+import fakeredis
 import pytest
+from app import events
+from app.cache import get_redis, get_version, list_key, write
+from app.events import MAX_ATTEMPTS
+from app.main import app
 from app.utils import LIMIT_INTEGER
+from common.mqtt import NotConnectedError
+from common.topics import BOOKMARK_DELETED
 
 OWNER_ID = 1
 OTHER_USER_ID = 2
@@ -378,3 +385,207 @@ def test_list_bookmarks_invalid_pagination_unprocessable_entity(client, params):
     response = client.get("/bookmarks", headers=create_header(OWNER_ID), params=params)
 
     assert response.status_code == HTTPStatus.UNPROCESSABLE_ENTITY
+
+
+def test_delete_bookmark_publishes_event(
+    client, bookmark_payload, bookmark_id, fake_mqtt
+):
+    response = client.delete(
+        f"/bookmarks/{bookmark_id}", headers=create_header(OWNER_ID)
+    )
+
+    assert response.status_code == HTTPStatus.NO_CONTENT
+    fake_mqtt.publish.assert_awaited_once()
+
+    topic, event = fake_mqtt.publish.await_args.args
+    assert topic == BOOKMARK_DELETED
+    assert event.bookmark_id == bookmark_id
+    assert event.user_id == OWNER_ID
+    assert event.target_type == bookmark_payload["target_type"]
+    assert event.target_id == bookmark_payload["target_id"]
+
+
+def test_delete_unknown_bookmark_publishes_nothing(client, fake_mqtt):
+    response = client.delete("/bookmarks/999", headers=create_header(OWNER_ID))
+
+    assert response.status_code == HTTPStatus.NOT_FOUND
+    fake_mqtt.publish.assert_not_awaited()
+
+
+def test_delete_other_user_bookmark_publishes_nothing(client, bookmark_id, fake_mqtt):
+    response = client.delete(
+        f"/bookmarks/{bookmark_id}", headers=create_header(OTHER_USER_ID)
+    )
+
+    assert response.status_code == HTTPStatus.NOT_FOUND
+    fake_mqtt.publish.assert_not_awaited()
+
+
+def test_delete_bookmark_succeeds_when_broker_is_down(client, bookmark_id, fake_mqtt, monkeypatch):
+    fake_mqtt.publish.side_effect = NotConnectedError("broker down")
+
+    monkeypatch.setattr(events, "RETRY_DELAY_SECONDS", 0)
+
+    response = client.delete(
+        f"/bookmarks/{bookmark_id}", headers=create_header(OWNER_ID)
+    )
+
+    assert response.status_code == HTTPStatus.NO_CONTENT
+    assert fake_mqtt.publish.await_count == MAX_ATTEMPTS
+
+
+def test_delete_bookmark_publishes_after_broker_reconnects(client, bookmark_id, fake_mqtt, monkeypatch):
+    fake_mqtt.publish.side_effect = [NotConnectedError("broker down"), None]
+
+    monkeypatch.setattr(events, "RETRY_DELAY_SECONDS", 0)
+
+    response = client.delete(
+        f"/bookmarks/{bookmark_id}", headers=create_header(OWNER_ID)
+    )
+
+    assert response.status_code == HTTPStatus.NO_CONTENT
+    assert fake_mqtt.publish.await_count == 2
+
+
+def test_list_bookmarks_filter_by_target_id(client, bookmark_payload, bookmark_id):
+    # bookmark_id targets 123
+    other_id = create_bookmark(client, bookmark_payload, target_id=456)
+
+    body = list_bookmarks(client, target_id=456)
+
+    assert [bookmark["id"] for bookmark in body["items"]] == [other_id]
+    assert body["total"] == 1
+
+
+def test_list_bookmarks_filter_by_target_type_and_target_id(
+    client, bookmark_payload, bookmark_id
+):
+    # bookmark_id is a streamer 123: create a replay with the same target_id
+    replay_id = create_bookmark(client, bookmark_payload, target_type="replay", target_id=123)
+
+    body = list_bookmarks(client, target_type="replay", target_id=123)
+
+    assert [bookmark["id"] for bookmark in body["items"]] == [replay_id]
+    assert body["total"] == 1
+
+
+@pytest.mark.parametrize("target_id", [0, -1, LIMIT_INTEGER + 1, "abc"])
+def test_list_bookmarks_invalid_target_id_unprocessable_entity(client, target_id):
+    response = client.get(
+        "/bookmarks", headers=create_header(OWNER_ID), params={"target_id": target_id}
+    )
+
+    assert response.status_code == HTTPStatus.UNPROCESSABLE_ENTITY
+
+def test_get_bookmark_cache_miss_then_hit(client, bookmark_id):
+    url = f"/bookmarks/{bookmark_id}"
+    headers = create_header(OWNER_ID)
+
+    first = client.get(url, headers=headers)
+    second = client.get(url, headers=headers)
+
+    assert first.headers["X-Cache"] == "MISS"
+    assert second.headers["X-Cache"] == "HIT"
+    assert second.json() == first.json()
+
+
+def test_list_bookmarks_cache_miss_then_hit(client, bookmark_id):
+    headers = create_header(OWNER_ID)
+
+    first = client.get("/bookmarks", headers=headers)
+    second = client.get("/bookmarks", headers=headers)
+
+    assert first.headers["X-Cache"] == "MISS"
+    assert second.headers["X-Cache"] == "HIT"
+    assert second.json() == first.json()
+
+
+def test_list_cache_depends_on_query_params(client, bookmark_id):
+    headers = create_header(OWNER_ID)
+    client.get("/bookmarks", headers=headers)
+
+    response = client.get("/bookmarks", headers=headers, params={"target_type": "replay"})
+
+    assert response.headers["X-Cache"] == "MISS"
+
+
+def test_create_invalidates_list_cache(client, bookmark_payload, bookmark_id):
+    headers = create_header(OWNER_ID)
+    client.get("/bookmarks", headers=headers)
+
+    create_bookmark(client, bookmark_payload, target_id=456)
+    response = client.get("/bookmarks", headers=headers)
+
+    assert response.headers["X-Cache"] == "MISS"
+    assert response.json()["total"] == 2
+
+
+def test_update_invalidates_detail_cache(client, bookmark_id):
+    url = f"/bookmarks/{bookmark_id}"
+    headers = create_header(OWNER_ID)
+    client.get(url, headers=headers)
+
+    client.patch(url, headers=headers, json={"label": "new label"})
+    response = client.get(url, headers=headers)
+
+    assert response.headers["X-Cache"] == "MISS"
+    assert response.json()["label"] == "new label"
+
+
+def test_delete_invalidates_detail_cache(client, bookmark_id):
+    url = f"/bookmarks/{bookmark_id}"
+    headers = create_header(OWNER_ID)
+    client.get(url, headers=headers)
+
+    client.delete(url, headers=headers)
+    response = client.get(url, headers=headers)
+
+    assert response.status_code == HTTPStatus.NOT_FOUND
+
+
+def test_other_user_changes_keep_cache(client, bookmark_payload, bookmark_id):
+    alice = create_header(OWNER_ID)
+    bob = create_header(OTHER_USER_ID)
+    client.get("/bookmarks", headers=alice)
+
+    client.post("/bookmarks", headers=bob, json=bookmark_payload)
+    response = client.get("/bookmarks", headers=alice)
+
+    assert response.headers["X-Cache"] == "HIT"
+
+
+def test_routes_work_when_redis_is_down(client, bookmark_payload, bookmark_id):
+    server = fakeredis.FakeServer()
+    server.connected = False
+    app.dependency_overrides[get_redis] = lambda: fakeredis.FakeRedis(
+        server=server, decode_responses=True
+    )
+    headers = create_header(OWNER_ID)
+
+    detail = client.get(f"/bookmarks/{bookmark_id}", headers=headers)
+    created = client.post(
+        "/bookmarks", headers=headers, json={**bookmark_payload, "target_id": 456}
+    )
+
+    assert detail.status_code == HTTPStatus.OK
+    assert detail.json()["id"] == bookmark_id
+    assert detail.headers["X-Cache"] == "MISS"
+    assert created.status_code == HTTPStatus.CREATED
+
+
+
+def test_stale_response_written_after_a_write_is_never_read(
+    client, fake_redis, bookmark_payload, bookmark_id
+):
+    # a slow GET reads the version before a concurrent POST...
+    old_version = get_version(fake_redis, OWNER_ID)
+    create_bookmark(client, bookmark_payload, target_id=456)
+
+    # ...then caches its old list (1 bookmark) after the POST
+    stale = '{"items": [], "total": 1, "page": 1, "size": 20}'
+    write(fake_redis, list_key(OWNER_ID, old_version, None, None, 1, 20), stale)
+
+    response = client.get("/bookmarks", headers=create_header(OWNER_ID))
+
+    assert response.headers["X-Cache"] == "MISS"
+    assert response.json()["total"] == 2

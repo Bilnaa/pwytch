@@ -1,11 +1,15 @@
 # stats
 
-Compteurs globaux de la plateforme. `stats` écoute les events MQTT des autres services et tient un compteur par élément : combien de fois un élément a été trouvé par la recherche (#102). Les compteurs des messages du chat, des events du player et des suppressions de bookmarks suivront le même modèle. Le service n'est jamais exposé au front : tout passe par `main`.
+Compteurs globaux de la plateforme. `stats` écoute les events MQTT des autres services et tient un compteur par élément : combien de fois un élément a été trouvé par la recherche (#102), combien de fois il a été retiré des bookmarks, combien de messages ont été envoyés dans le chat d'un stream, et combien de play, pause et stop le player d'un stream a reçus. Le service n'est jamais exposé au front : tout passe par `main`.
 
 ```
-search ──MQTT search/hit──> stats (consumer) ──upsert──> Postgres, schéma stats
-                                                              │
-front ──> main ──HTTP GET /stats/...──> stats (API) <─────────┘
+search ────MQTT search/hit──────────┐
+bookmarks ─MQTT bookmarks/deleted───┤
+live-chat ─MQTT chat/message────────┤
+main ──────MQTT player/event────────┴──> stats (consumer) ──upsert──> Postgres, schéma stats
+                                                                            │
+front ──> main ──HTTP GET /stats/...──> stats (API) <───────────────────────┘
+                                             └──> Redis, cache des lectures (5 s)
 ```
 
 ## Lancer
@@ -23,7 +27,7 @@ En image Docker, le build se lance depuis la racine du repo, car l'image embarqu
 
     docker build -f stats/Dockerfile -t stats .
 
-Au démarrage, le service crée son schéma et ses tables s'ils n'existent pas, puis se connecte au broker. Il démarre aussi sans Postgres (un warning est journalisé) et sans broker (le client MQTT réessaie toutes les 5 secondes). Si Postgres était absent au démarrage, les tables ne sont créées qu'au redémarrage suivant.
+Au démarrage, le service crée son schéma et ses tables s'ils n'existent pas, puis se connecte au broker. Il démarre aussi sans Postgres (un warning est journalisé) et sans broker (le client MQTT réessaie toutes les 5 secondes). Si Postgres était absent au démarrage, les tables ne sont créées qu'au redémarrage suivant. Sans Redis, les routes lisent la base (voir « Cache »).
 
 ## Configuration
 
@@ -32,7 +36,7 @@ Les variables se mettent dans `stats/.env` (copier `.env.example`).
 | Variable       | Défaut                                                                 | Rôle                                   |
 |----------------|------------------------------------------------------------------------|----------------------------------------|
 | `DATABASE_URL` | `postgresql+psycopg://postgres:postgres@localhost:5432/microservices`  | Base Postgres (driver async psycopg 3) |
-| `REDIS_URL`    | `redis://localhost:6379/0`                                             | Cache des lectures (pas encore utilisé) |
+| `REDIS_URL`    | `redis://localhost:6379/0`                                             | Cache des lectures                      |
 | `MQTT_HOST`    | `localhost`                                                            | Hôte du broker MQTT                    |
 | `MQTT_PORT`    | `1883`                                                                 | Port du broker MQTT                    |
 
@@ -45,8 +49,9 @@ Les variables se mettent dans `stats/.env` (copier `.env.example`).
 | `counters.py`     | `increment_counter` : l'upsert commun à tous les compteurs |
 | `routers/`        | Routes de lecture des compteurs |
 | `models.py`       | Table `counter` |
-| `schemas.py`      | Réponses de l'API (`CounterResponse`) |
+| `schemas.py`      | Réponses de l'API, une par compteur (`SearchCountResponse`, `BookmarkDeletedCountResponse`, `ChatMessageCountResponse`, `PlayerEventCountResponse`) |
 | `database.py`     | Engine async, sessions, dépendance `SessionDep` |
+| `cache.py`        | Client Redis async, dépendance `RedisDep`, clé de cache d'une requête, lecture et écriture |
 | `utils.py`        | Découpage des clés `type:id` |
 
 ## Compteurs
@@ -61,16 +66,16 @@ Tous les compteurs sont dans une seule table, `stats.counter` :
 
 Le couple (`counter_type`, `key`) est unique. Chaque event fait un upsert (`INSERT ... ON CONFLICT DO UPDATE SET value = value + 1`) : la ligne est créée à 1 au premier event, puis incrémentée par Postgres. Il n'y a pas de lecture préalable, donc deux events simultanés ne perdent pas d'incrément.
 
-La table est générique : un nouveau compteur, c'est un nouveau `counter_type`, sans nouvelle table. La clé est un détail de stockage, l'API renvoie `item_type` et `item_id` séparés.
+La table est générique : un nouveau compteur, c'est un nouveau `counter_type`, sans nouvelle table. La clé est un détail de stockage : l'API la redécoupe et renvoie le type et l'id séparés, avec les noms du domaine (`item_type` / `item_id` pour la recherche, `target_type` / `target_id` pour les bookmarks).
 
 ### Events consommés
 
 | Topic               | Modèle            | Clé                       | État |
 |---------------------|-------------------|---------------------------|------|
 | `search/hit`        | `SearchHit`       | `{item_type}:{item_id}`   | Fait (#102) |
-| `bookmarks/deleted` | `BookmarkDeleted` | `{target_type}:{target_id}` | À venir |
-| `chat/message`      | `ChatMessage`     | `{stream_id}`             | À venir |
-| `player/event`      | `PlayerEvent`     | `{stream_id}:{event_type}` | À venir |
+| `bookmarks/deleted` | `BookmarkDeleted` | `{target_type}:{target_id}` | Fait |
+| `chat/message`      | `ChatMessage`     | `{stream_id}`             | Fait |
+| `player/event`      | `PlayerEvent`     | `{stream_id}:{event_type}` | Fait |
 
 Le client MQTT se connecte avec `client_id="stats"` : la session est persistante, le broker garde les events publiés pendant un arrêt de `stats` et les livre au redémarrage. Les doublons possibles en QoS 1 sont écartés par `MqttClient` grâce à l'`event_id`. Un handler qui échoue n'est pas marqué comme traité, l'event peut être retraité s'il est renvoyé.
 
@@ -81,6 +86,13 @@ Le client MQTT se connecte avec `client_id="stats"` : la session est persistante
 | `/health`                               | GET     | Renvoie `{"status": "ok"}` |
 | `/stats/search/{item_type}/{item_id}`   | GET     | Nombre de fois où un élément a été trouvé par la recherche |
 | `/stats/search/top`                     | GET     | Éléments les plus trouvés par la recherche |
+| `/stats/bookmarks/deleted/{target_type}/{target_id}` | GET | Nombre de fois où une cible a été retirée des bookmarks |
+| `/stats/bookmarks/deleted/top`          | GET     | Cibles les plus retirées des bookmarks |
+| `/stats/chat/{stream_id}`               | GET     | Nombre de messages envoyés dans le chat d'un stream |
+| `/stats/chat/top`                       | GET     | Streams avec le plus de messages dans le chat |
+| `/stats/player/{stream_id}`             | GET     | Nombre de play, pause et stop du player d'un stream |
+
+Les routes ne vérifient pas l'identité : `stats` n'est joignable que par `main`, qui réserve les stats de recherche aux admins (`require_admin`). Les routes `/stats/bookmarks/deleted/...`, `/stats/chat/...` et `/stats/player/...` ne sont pas encore relayées par `main`.
 
 ### `GET /stats/search/{item_type}/{item_id}`
 
@@ -99,7 +111,7 @@ Le client MQTT se connecte avec `client_id="stats"` : la session est persistante
 | `item_type` | aucun  | `streamer` ou `message` pour ne garder qu'un type, tous les types sinon |
 | `limit`     | `10`   | Nombre d'éléments, entre 1 et 500 (sinon `422`) |
 
-Le classement est trié par compteur décroissant, puis par clé en cas d'égalité : l'ordre est le même d'un appel à l'autre.
+Le classement est trié par compteur décroissant, puis par clé en cas d'égalité : l'ordre est le même d'un appel à l'autre. La clé est du texte, les égalités suivent donc l'ordre alphabétique et non numérique (`streamer:10` avant `streamer:9`).
 
     curl "http://localhost:8006/stats/search/top?item_type=streamer&limit=3"
 
@@ -113,8 +125,113 @@ Le classement est trié par compteur décroissant, puis par clé en cas d'égali
 
 `stats` ne connaît que des ids : les noms des streamers sont à demander au service concerné.
 
+### `GET /stats/bookmarks/deleted/{target_type}/{target_id}`
+
+`target_type` vaut `streamer` ou `replay`, `target_id` est un entier de 1 à 2³¹ − 1 (sinon `422`). Une cible jamais retirée des bookmarks renvoie `count: 0`, pas un `404`.
+
+    curl http://localhost:8006/stats/bookmarks/deleted/streamer/42
+
+```json
+{"target_type": "streamer", "target_id": 42, "count": 3}
+```
+
+### `GET /stats/bookmarks/deleted/top`
+
+| Param         | Défaut | Rôle |
+|---------------|--------|------|
+| `target_type` | aucun  | `streamer` ou `replay` pour ne garder qu'un type, tous les types sinon |
+| `limit`       | `10`   | Nombre d'éléments, entre 1 et 500 (sinon `422`) |
+
+Même tri que le top de la recherche : compteur décroissant, puis clé texte en cas d'égalité. Comme `target_id` est renvoyé en nombre, attention : à égalité, `replay:10` passe avant `replay:9`.
+
+    curl "http://localhost:8006/stats/bookmarks/deleted/top?target_type=replay&limit=2"
+
+```json
+[
+  {"target_type": "replay", "target_id": 7, "count": 5},
+  {"target_type": "replay", "target_id": 12, "count": 2}
+]
+```
+
+`bookmarks` peut perdre un event si le broker reste coupé longtemps (voir le README de `bookmarks`) : ce compteur peut donc être légèrement sous-estimé.
+
+### `GET /stats/chat/{stream_id}`
+
+`stream_id` est un entier de 1 à 2³¹ − 1 (sinon `422`). Un stream sans message renvoie `count: 0`, pas un `404`. `stats` ne vérifie pas que le stream existe.
+
+    curl http://localhost:8006/stats/chat/12
+
+```json
+{"stream_id": 12, "count": 1530}
+```
+
+### `GET /stats/chat/top`
+
+| Param   | Défaut | Rôle |
+|---------|--------|------|
+| `limit` | `10`   | Nombre de streams, entre 1 et 500 (sinon `422`) |
+
+Pas de filtre : un message n'a pas de type. Même tri que les autres tops : compteur décroissant, puis clé texte en cas d'égalité (`10` passe avant `9`).
+
+    curl "http://localhost:8006/stats/chat/top?limit=2"
+
+```json
+[
+  {"stream_id": 12, "count": 1530},
+  {"stream_id": 3, "count": 412}
+]
+```
+
+`/stats/chat/top` est déclarée avant `/stats/chat/{stream_id}` : les deux chemins ont le même nombre de segments, et FastAPI essaie les routes dans l'ordre. Dans l'autre sens, `top` serait lu comme un `stream_id` et la route répondrait toujours `422`.
+
+### `GET /stats/player/{stream_id}`
+
+`stream_id` est un entier de 1 à 2³¹ − 1 (sinon `422`). La route renvoie les trois compteurs du stream en une réponse, avec `0` pour un type d'event jamais reçu. Pas de classement : le ticket ne demande que le détail par stream.
+
+    curl http://localhost:8006/stats/player/12
+
+```json
+{"stream_id": 12, "play": 88, "pause": 31, "stop": 0}
+```
+
+Un stream a jusqu'à trois lignes en base (`12:play`, `12:pause`, `12:stop`). La route les lit en une requête, avec les trois clés exactes (`key IN (...)`) : le stream `1` ne récupère donc jamais les lignes du stream `12`.
+
+Les types d'events (`play`, `pause`, `stop`) sont écrits à trois endroits qui doivent rester alignés : le `Literal` de `PlayerEvent.event_type` dans `common`, la liste `EVENT_TYPES` de `routers/player.py`, et les champs de `PlayerEventCountResponse`. Un nouveau type ajouté dans `common` serait compté en base, mais n'apparaîtrait pas dans la réponse tant que les deux autres ne sont pas mis à jour.
+
+## Cache
+
+Les 7 routes de lecture (`GET /stats/...`, hors `/health`) sont mises en cache dans Redis (`app/cache.py`). Les stats sont les mêmes pour tous les admins : une seule entrée par requête, partagée.
+
+- La route lit Redis d'abord ; si la clé est absente, elle lit la base, écrit la réponse en cache, puis répond
+- Le header `X-Cache` dit d'où vient la réponse : `HIT` (Redis) ou `MISS` (base)
+- Une requête invalide (`422`) n'est pas mise en cache
+- Si Redis est indisponible, le cache est ignoré (un warning est journalisé) : les routes répondent depuis la base. Le client fait un seul essai (`retry=Retry(NoBackoff(), 0)`) avec des timeouts courts (0,5 s), pour qu'une panne de Redis ne ralentisse pas les routes
+
+### Expiration plutôt qu'invalidation
+
+Une entrée expire au bout de **5 secondes** (`CACHE_TTL_SECONDS`) : une stat peut donc avoir jusqu'à 5 s de retard. Les handlers ne vident pas le cache quand un compteur change :
+
+- les compteurs changent en permanence (chaque message du chat, chaque résultat de recherche) : vider le cache à chaque event le rendrait presque inutile
+- un event touche plusieurs entrées (le détail, et chaque top avec ses combinaisons de `limit` et de filtre) : il faudrait toutes les retrouver
+- avec un TTL, une lecture qui croise un event ne peut pas laisser une valeur périmée plus de 5 s
+
+Pour une statistique, quelques secondes de retard ne gênent pas l'admin.
+
+### Clés
+
+La clé est l'URL de la requête, préfixée par `stats:`, avec les paramètres de la query triés :
+
+| Requête | Clé |
+|---------|-----|
+| `GET /stats/chat/12` | `stats:/stats/chat/12` |
+| `GET /stats/search/top?limit=3&item_type=streamer` | `stats:/stats/search/top?item_type=streamer&limit=3` |
+
+Chaque route et chaque combinaison de paramètres a sa propre entrée, sans fonction de clé par route. Grâce au tri, `?limit=3&item_type=streamer` et `?item_type=streamer&limit=3` partagent la même entrée. Le préfixe `stats:` évite toute collision avec les clés de `bookmarks` dans le même Redis.
+
 ## Tests
 
     uv run pytest
 
-Les tests n'ont besoin ni de Postgres ni de Mosquitto : ils tournent sur SQLite en mémoire (`aiosqlite`), sans schéma (`schema_translate_map`). L'upsert Postgres passe aussi sur SQLite. Les routes sont testées avec un `AsyncClient` dont la session est remplacée, le handler avec `monkeypatch` sur `SessionLocal`.
+Les tests n'ont besoin ni de Postgres, ni de Mosquitto, ni de Redis : ils tournent sur SQLite en mémoire (`aiosqlite`), sans schéma (`schema_translate_map`), et Redis est remplacé par `fakeredis` (`FakeAsyncRedis`). L'upsert Postgres passe aussi sur SQLite. Les routes sont testées avec un `AsyncClient` dont la session est remplacée, les handlers avec `monkeypatch` sur `SessionLocal`. Un fichier de tests par compteur : `test_search.py`, `test_bookmarks.py`, `test_chat.py` et `test_player.py`.
+
+`test_cache.py` vérifie le cache sur les 7 routes : `MISS` puis `HIT`, le TTL court, la relecture en base après expiration, une entrée par combinaison de paramètres, l'ordre des paramètres sans effet, une requête invalide jamais mise en cache, et les routes qui répondent avec Redis coupé. Les tests des handlers vident le cache (`flushall`) entre deux lectures : sinon la seconde lecture renverrait la valeur en cache.

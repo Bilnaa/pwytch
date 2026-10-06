@@ -27,7 +27,7 @@ make dev        # copie les .env.example en .env et installe chaque service
 make infra-up   # PostgreSQL, Redis et Mosquitto
 ```
 
-Puis un terminal par service :
+Puis `make up` lance l'infra, tous les services et le front dans le même terminal (Ctrl+C arrête tout). Les logs sont mélangés : pour suivre un service de près, un terminal par service :
 
 ```bash
 make main

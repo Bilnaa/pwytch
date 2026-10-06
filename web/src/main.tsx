@@ -5,6 +5,7 @@ import { createBrowserRouter, RouterProvider } from 'react-router'
 import { Layout } from '@/components/layout'
 import { RequireAuth } from '@/components/require-auth'
 import { AuthProvider } from '@/lib/auth'
+import { AdminStatsPage } from '@/pages/admin-stats'
 import { BookmarksPage } from '@/pages/bookmarks'
 import { GoLivePage } from '@/pages/go-live'
 import { HomePage } from '@/pages/home'
@@ -36,12 +37,15 @@ const router = createBrowserRouter([
         path: '/:username',
         // the player (vidstack + hls.js) is heavy, it's only loaded when someone opens a channel
         lazy: async () => ({ Component: (await import('@/pages/channel')).ChannelPage }),
+        // the chat is glued to the right edge like on twitch, so no centered column
+        handle: { fullWidth: true },
       },
       {
         element: <RequireAuth />,
         children: [
           { path: '/go-live', element: <GoLivePage /> },
           { path: '/bookmarks', element: <BookmarksPage /> },
+          { path: '/admin/stats', element: <AdminStatsPage /> },
         ],
       },
       { path: '*', element: <NotFoundPage /> },

@@ -112,7 +112,7 @@ async def test_get_top_invalid_limit_returns_422(client, limit):
 
 @pytest.mark.anyio
 async def test_on_search_hit_creates_then_increments_counter(
-    client, session_factory, monkeypatch
+    client, session_factory, fake_redis, monkeypatch
 ):
     # the handler opens its own session: point it to the test database
     monkeypatch.setattr(handlers, "SessionLocal", session_factory)
@@ -130,6 +130,7 @@ async def test_on_search_hit_creates_then_increments_counter(
     assert first_response.json()["count"] == 1
 
     await on_search_hit(hit)
+    await fake_redis.flushall()
     second_response = await client.get("/stats/search/streamer/42")
 
     assert second_response.status_code == HTTPStatus.OK

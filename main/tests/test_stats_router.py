@@ -8,6 +8,9 @@ from app.services.auth import make_admin
 from tests.test_streams_router import auth_headers
 
 COUNTER = {"item_type": "streamer", "item_id": "42", "count": 3}
+BOOKMARK_DELETED = {"target_type": "replay", "target_id": 7, "count": 2}
+CHAT_MESSAGES = {"stream_id": 12, "count": 40}
+PLAYER_EVENTS = {"stream_id": 12, "play": 5, "pause": 2, "stop": 1}
 
 
 @pytest.fixture
@@ -79,12 +82,56 @@ def test_top_relays_limit_and_item_type(client, use_stats, admin_headers):
 
 
 @pytest.mark.parametrize(
+    "path, sent_params, answer",
+    [
+        ("/stats/bookmarks/deleted/replay/7", {}, BOOKMARK_DELETED),
+        ("/stats/bookmarks/deleted/top", {"limit": "10"}, [BOOKMARK_DELETED]),
+        ("/stats/chat/12", {}, CHAT_MESSAGES),
+        ("/stats/chat/top", {"limit": "10"}, [CHAT_MESSAGES]),
+        ("/stats/player/12", {}, PLAYER_EVENTS),
+    ],
+)
+def test_other_stats_are_relayed(client, use_stats, admin_headers, path, sent_params, answer):
+    def handler(request):
+        assert request.url.path == path
+        assert dict(request.url.params) == sent_params
+        return httpx.Response(200, json=answer)
+
+    use_stats(handler)
+    response = client.get(path, headers=admin_headers)
+
+    assert response.status_code == 200
+    assert response.json() == answer
+
+
+def test_bookmarks_top_relays_limit_and_target_type(client, use_stats, admin_headers):
+    def handler(request):
+        assert dict(request.url.params) == {"limit": "5", "target_type": "streamer"}
+        return httpx.Response(200, json=[])
+
+    use_stats(handler)
+    response = client.get(
+        "/stats/bookmarks/deleted/top",
+        params={"limit": 5, "target_type": "streamer"},
+        headers=admin_headers,
+    )
+
+    assert response.status_code == 200
+
+
+@pytest.mark.parametrize(
     "path",
     [
         "/stats/search/top?limit=0",
         "/stats/search/top?limit=501",
         "/stats/search/top?item_type=replay",
         "/stats/search/replay/42",
+        "/stats/bookmarks/deleted/top?target_type=message",
+        "/stats/bookmarks/deleted/message/7",
+        "/stats/bookmarks/deleted/replay/0",
+        "/stats/chat/top?limit=501",
+        "/stats/chat/2147483648",
+        "/stats/player/0",
     ],
 )
 def test_invalid_params_are_not_relayed(client, use_stats, admin_headers, path):
@@ -92,7 +139,10 @@ def test_invalid_params_are_not_relayed(client, use_stats, admin_headers, path):
     assert client.get(path, headers=admin_headers).status_code == 422
 
 
-@pytest.mark.parametrize("path", ["/stats/search/top", "/stats/search/streamer/42"])
+@pytest.mark.parametrize(
+    "path",
+    ["/stats/search/top", "/stats/bookmarks/deleted/top", "/stats/chat/top", "/stats/player/12"],
+)
 def test_user_gets_403(client, use_stats, path):
     use_stats(never_called)
     response = client.get(path, headers=auth_headers(client))

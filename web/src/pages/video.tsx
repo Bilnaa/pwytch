@@ -12,7 +12,7 @@ interface Lookup {
 }
 
 // /videos/{id}, like twitch: a live known only by its id (a chat message in the
-// search) is sent to its channel
+// search, the admin stats) is sent to its channel, or to its replay once it has ended
 export function VideoPage() {
   const { id = '' } = useParams()
   const [lookup, setLookup] = useState<Lookup | null>(null)
@@ -50,6 +50,8 @@ export function VideoPage() {
   if (!lookup.stream) {
     return <NotFoundPage />
   }
-  // TODO(#131, Bilnaa, 2026-10-05): send an ended live to its replay instead
+  if (lookup.stream.status === 'ended') {
+    return <Navigate to={`/replays/${lookup.stream.id}`} replace />
+  }
   return <Navigate to={`/${lookup.stream.streamer.username}`} replace />
 }

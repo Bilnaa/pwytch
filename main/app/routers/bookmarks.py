@@ -16,6 +16,7 @@ CurrentUser = Annotated[User, Depends(get_current_user)]
 
 MAX_POSTGRES_INTEGER = 2_147_483_647
 BookmarkId = Annotated[int, Path(ge=1, le=MAX_POSTGRES_INTEGER)]
+TargetId = Annotated[int, Query(ge=1, le=MAX_POSTGRES_INTEGER)]
 
 
 @router.get(
@@ -29,8 +30,11 @@ async def list_bookmarks(
     page: Annotated[int, Query(ge=1, le=MAX_POSTGRES_INTEGER)] = 1,
     size: Annotated[int, Query(ge=1, le=100)] = 20,
     target_type: TargetType | None = None,
+    target_id: TargetId | None = None,
 ):
-    return await bookmarks_service.list_bookmarks(client, current_user, page, size, target_type)
+    return await bookmarks_service.list_bookmarks(
+        client, current_user, page, size, target_type, target_id
+    )
 
 
 @router.post(

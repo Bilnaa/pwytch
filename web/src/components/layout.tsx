@@ -1,6 +1,6 @@
 import { useState } from 'react'
-import { Link, NavLink, Outlet } from 'react-router'
-import { Bookmark, History, LogOut, Moon, Radio, Sun, User } from 'lucide-react'
+import { Link, NavLink, Outlet, useMatches } from 'react-router'
+import { Bookmark, ChartColumn, History, LogOut, Moon, Radio, Sun, User } from 'lucide-react'
 
 import { FollowedSidebar } from '@/components/followed-sidebar'
 import { SearchBar } from '@/components/search-bar'
@@ -71,17 +71,20 @@ function UserMenu() {
           </Link>
         </DropdownMenuItem>
         <DropdownMenuItem asChild className="md:hidden">
-          <Link to="/go-live">
-            <Radio />
-            Go live
-          </Link>
-        </DropdownMenuItem>
-        <DropdownMenuItem asChild className="md:hidden">
           <Link to="/bookmarks">
             <Bookmark />
             Bookmarks
           </Link>
         </DropdownMenuItem>
+        {/* hidden for everyone else, main answers 403 to them anyway */}
+        {user.role === 'admin' && (
+          <DropdownMenuItem asChild>
+            <Link to="/admin/stats">
+              <ChartColumn />
+              Stats
+            </Link>
+          </DropdownMenuItem>
+        )}
         <DropdownMenuItem onSelect={logout}>
           <LogOut />
           Log out
@@ -91,8 +94,21 @@ function UserMenu() {
   )
 }
 
+// a route with handle: { fullWidth: true } handles its own width and padding
+function useFullWidth() {
+  const matches = useMatches()
+  for (const match of matches) {
+    const handle = match.handle as { fullWidth?: boolean } | undefined
+    if (handle?.fullWidth) {
+      return true
+    }
+  }
+  return false
+}
+
 export function Layout() {
   const { user } = useAuth()
+  const fullWidth = useFullWidth()
 
   return (
     <div className="flex min-h-svh flex-col">
@@ -113,9 +129,6 @@ export function Layout() {
             </NavLink>
             {user && (
               <>
-                <NavLink to="/go-live" className={navClass}>
-                  Go live
-                </NavLink>
                 <NavLink to="/bookmarks" className={navClass}>
                   Bookmarks
                 </NavLink>
@@ -127,13 +140,22 @@ export function Layout() {
           </div>
           <div className="flex items-center gap-2">
             <ThemeButton />
+            {/* next to the profile like on twitch, only the icon on a phone */}
+            {user && (
+              <Button asChild size="sm">
+                <Link to="/go-live" aria-label="Go live">
+                  <Radio />
+                  <span className="hidden sm:inline">Go live</span>
+                </Link>
+              </Button>
+            )}
             <UserMenu />
           </div>
         </div>
       </header>
       <div className="flex flex-1">
         <FollowedSidebar />
-        <main className="mx-auto w-full max-w-6xl min-w-0 flex-1 px-4 py-6">
+        <main className={cn('w-full min-w-0 flex-1', !fullWidth && 'mx-auto max-w-6xl px-4 py-6')}>
           <Outlet />
         </main>
       </div>

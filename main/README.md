@@ -82,6 +82,11 @@ Toute l'API est sous `/api` (ex. `/api/auth/login`, `ws://localhost:8000/api/str
 | `/replays/{stream_id}` | HTTP GET | Renvoie un replay via `replay` |
 | `/stats/search/top` | HTTP GET | Éléments les plus trouvés par la recherche via `stats` (admin) |
 | `/stats/search/{item_type}/{item_id}` | HTTP GET | Nombre de fois qu'un élément a été trouvé par la recherche via `stats` (admin) |
+| `/stats/bookmarks/deleted/top` | HTTP GET | Replays et streamers les plus retirés des bookmarks via `stats` (admin) |
+| `/stats/bookmarks/deleted/{target_type}/{target_id}` | HTTP GET | Nombre de fois qu'un replay ou un streamer a été retiré des bookmarks via `stats` (admin) |
+| `/stats/chat/top` | HTTP GET | Streams avec le plus de messages dans le chat via `stats` (admin) |
+| `/stats/chat/{stream_id}` | HTTP GET | Nombre de messages envoyés dans le chat d'un stream via `stats` (admin) |
+| `/stats/player/{stream_id}` | HTTP GET | Compteurs play, pause et stop d'un stream via `stats` (admin) |
 
 La doc interactive est sur `http://localhost:8000/api/docs`.
 
@@ -301,7 +306,7 @@ Les bookmarks sont propres à chaque utilisateur : toutes les routes demandent u
 
 | Route de `main` | Appel à `bookmarks` | Succès |
 |-----------------|---------------------|--------|
-| `GET /bookmarks?page=&size=&target_type=` | `GET /bookmarks?page=&size=&target_type=` | `200`, page de bookmarks, du plus récent au plus ancien |
+| `GET /bookmarks?page=&size=&target_type=&target_id=` | `GET /bookmarks?page=&size=&target_type=&target_id=` | `200`, page de bookmarks, du plus récent au plus ancien |
 | `POST /bookmarks` | `POST /bookmarks` | `201`, le bookmark créé, `Location: /api/bookmarks/{id}` |
 | `GET /bookmarks/{bookmark_id}` | `GET /bookmarks/{bookmark_id}` | `200`, le bookmark |
 | `PATCH /bookmarks/{bookmark_id}` | `PATCH /bookmarks/{bookmark_id}` | `200`, le bookmark modifié. Seuls les champs envoyés sont transmis |
@@ -322,6 +327,7 @@ Les bookmarks sont propres à chaque utilisateur : toutes les routes demandent u
 | `page`        | `1`    | 1 à 2 147 483 647 |
 | `size`        | `20`   | 1 à 100 |
 | `target_type` | aucun  | `replay` ou `streamer`, ne garde que les bookmarks de ce type |
+| `target_id`   | aucun  | 1 à 2 147 483 647, ne garde que les bookmarks de cette cible (combinable avec `target_type`) |
 | `bookmark_id` |        | 1 à 2 147 483 647 |
 
 Ce sont les bornes de `bookmarks`, à garder alignées : un paramètre hors bornes donne un `422` sans appeler `bookmarks`.
@@ -423,15 +429,25 @@ Réservées aux admins : `401` sans jeton, `403` (`Admin role required`) si le c
 |-----------------|-----------------|--------|
 | `GET /stats/search/{item_type}/{item_id}` | `GET /stats/search/{item_type}/{item_id}` | `200`, le compteur de l'élément (`count` à `0` s'il n'a jamais été trouvé) |
 | `GET /stats/search/top?item_type=&limit=` | `GET /stats/search/top?item_type=&limit=` | `200`, liste des compteurs, du plus grand au plus petit |
+| `GET /stats/bookmarks/deleted/{target_type}/{target_id}` | idem | `200`, le compteur de la cible (`count` à `0` si elle n'a jamais été retirée) |
+| `GET /stats/bookmarks/deleted/top?target_type=&limit=` | idem | `200`, liste des compteurs, du plus grand au plus petit |
+| `GET /stats/chat/{stream_id}` | idem | `200`, le nombre de messages du stream (`0` par défaut) |
+| `GET /stats/chat/top?limit=` | idem | `200`, liste des compteurs, du plus grand au plus petit |
+| `GET /stats/player/{stream_id}` | idem | `200`, les compteurs `play`, `pause` et `stop` du stream (`0` par défaut) |
 
 ```json
 {"item_type": "streamer", "item_id": "42", "count": 3}
+{"target_type": "replay", "target_id": 7, "count": 2}
+{"stream_id": 12, "count": 40}
+{"stream_id": 12, "play": 5, "pause": 2, "stop": 1}
 ```
 
-| Paramètre   | Défaut | Contraintes |
-|-------------|--------|-------------|
-| `item_type` | aucun dans `top` | `streamer` ou `message` |
-| `limit`     | `10`   | 1 à 500 |
+| Paramètre     | Défaut | Contraintes |
+|---------------|--------|-------------|
+| `item_type`   | aucun dans `top` | `streamer` ou `message` |
+| `target_type` | aucun dans `top` | `replay` ou `streamer` |
+| `target_id`, `stream_id` | | 1 à 2 147 483 647 |
+| `limit`       | `10`   | 1 à 500 |
 
 Ce sont les bornes de `stats`, à garder alignées : un paramètre hors bornes donne un `422` sans appeler `stats`. Les erreurs suivent le tableau de « Appeler un satellite ».
 
@@ -589,6 +605,6 @@ Avec le service lancé :
 - Une session dont le `stream/ended` a été perdu reste `live` jusqu'à 30 s de plus, le temps du prochain rattrapage (voir « `stream/ended` manqué »).
 - Pas de migrations : les tables sont créées au démarrage, un changement de modèle demande de recréer la table.
 - Si PostgreSQL n'est pas prêt quand l'API démarre, le `create_all` échoue et l'API plante : il faut la relancer.
-- Seuls `stream` (ingest et HLS), `search`, `replay` (liste et détail), `bookmarks`, le chat de `live-chat` et les stats de recherche de `stats` sont relayés.
+- Seuls `stream` (ingest et HLS), `search`, `replay` (liste et détail), `bookmarks`, le chat de `live-chat` et les lectures de `stats` sont relayés.
 - Un event du player publié pendant une coupure du broker est perdu (pas de file d'attente côté `main`).
 - Les ids de session viennent de l'auto-incrément PostgreSQL, et `stream` refuse un id dont le dossier `lives/{stream_id}/` existe déjà (`Stream id already used`). Si la base est vidée (volume `postgres-data` supprimé) sans vider `stream/lives/`, les nouvelles sessions reprennent à 1 et leurs lives sont refusés : il faut vider les deux ensemble.
