@@ -43,7 +43,7 @@ export function Chat({ streamId, className }: { streamId: number; className?: st
   }
 
   return (
-    <aside className={cn('flex h-[32rem] flex-col rounded-lg border bg-card lg:h-[calc(100svh-6rem)]', className)}>
+    <aside className={cn('flex h-[32rem] flex-col rounded-lg border bg-card', className)}>
       <p className="border-b px-3 py-2 text-center text-sm font-semibold">Chat</p>
 
       <ul ref={listRef} onScroll={onScroll} className="flex-1 space-y-1 overflow-y-auto px-3 py-2 text-sm">

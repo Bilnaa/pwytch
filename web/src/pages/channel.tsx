@@ -90,17 +90,22 @@ export function ChannelPage() {
     return null
   }
   if (lookup.error) {
-    return <p className="text-sm text-destructive">{lookup.error}</p>
+    // the route is full width (see main.tsx), so the padding of the layout is ours to add
+    return <p className="px-4 py-6 text-sm text-destructive">{lookup.error}</p>
   }
   if (!lookup.user) {
-    return <NotFoundPage />
+    return (
+      <div className="px-4 py-6">
+        <NotFoundPage />
+      </div>
+    )
   }
   const user = lookup.user
   const stream = lookup.stream
 
   if (!stream) {
     return (
-      <div className="space-y-4">
+      <div className="space-y-4 px-4 py-6">
         <div className="flex aspect-video max-h-[calc(100svh-12rem)] w-full items-center justify-center rounded-lg bg-black text-white/70">
           {user.display_name} is offline
         </div>
@@ -113,10 +118,11 @@ export function ChannelPage() {
     )
   }
 
-  // chat next to the player on a wide screen, under it on a phone
+  // on a wide screen the chat is a column glued to the right edge, as tall as the window
+  // (like the followed channels on the left). On a phone it is under the player
   return (
-    <div className="grid gap-4 lg:grid-cols-[1fr_20rem]">
-      <div className="min-w-0 space-y-4">
+    <div className="lg:flex">
+      <div className="min-w-0 flex-1 space-y-4 px-4 py-6">
         <LivePlayer streamId={stream.id} onEnded={() => setEndedCount((n) => n + 1)} />
 
 
@@ -133,7 +139,11 @@ export function ChannelPage() {
       </div>
 
       {/* key: a new live of the same channel starts with an empty chat */}
-      <Chat key={stream.id} streamId={stream.id} />
+      <Chat
+        key={stream.id}
+        streamId={stream.id}
+        className="mx-4 mb-6 lg:sticky lg:top-12 lg:m-0 lg:h-[calc(100svh-3rem)] lg:w-80 lg:shrink-0 lg:rounded-none lg:border-y-0 lg:border-r-0"
+      />
     </div>
   )
 }
