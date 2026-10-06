@@ -7,6 +7,7 @@ from app.cache import get_redis
 from app.events import MAX_ATTEMPTS
 from app.main import app
 from app.utils import LIMIT_INTEGER
+from app.cache import get_version, list_key, write
 from common.mqtt import NotConnectedError
 from common.topics import BOOKMARK_DELETED
 
@@ -571,3 +572,21 @@ def test_routes_work_when_redis_is_down(client, bookmark_payload, bookmark_id):
     assert detail.json()["id"] == bookmark_id
     assert detail.headers["X-Cache"] == "MISS"
     assert created.status_code == HTTPStatus.CREATED
+
+
+
+def test_stale_response_written_after_a_write_is_never_read(
+    client, fake_redis, bookmark_payload, bookmark_id
+):
+    # a slow GET reads the version before a concurrent POST...
+    old_version = get_version(fake_redis, OWNER_ID)
+    create_bookmark(client, bookmark_payload, target_id=456)
+
+    # ...then caches its old list (1 bookmark) after the POST
+    stale = '{"items": [], "total": 1, "page": 1, "size": 20}'
+    write(fake_redis, list_key(OWNER_ID, old_version, None, None, 1, 20), stale)
+
+    response = client.get("/bookmarks", headers=create_header(OWNER_ID))
+
+    assert response.headers["X-Cache"] == "MISS"
+    assert response.json()["total"] == 2
