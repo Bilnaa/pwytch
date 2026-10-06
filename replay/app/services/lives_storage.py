@@ -24,3 +24,13 @@ def playlist_is_missing(lives_dir: Path, stream_id: int) -> bool:
     except OSError as exc:
         logger.warning("Playlist of live %s not checked, replay kept: %s", stream_id, exc)
     return False
+
+
+def playlist_is_complete(lives_dir: Path, stream_id: int) -> bool:
+    """Vrai si stream a fini d'écrire la playlist : #EXT-X-ENDLIST marque un replay."""
+    try:
+        playlist = playlist_path(lives_dir, stream_id).read_text()
+    except OSError as exc:
+        logger.info("Playlist of live %s not readable: %s", stream_id, exc)
+        return False
+    return "#EXT-X-ENDLIST" in playlist
