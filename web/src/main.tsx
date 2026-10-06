@@ -37,6 +37,8 @@ const router = createBrowserRouter([
         path: '/:username',
         // the player (vidstack + hls.js) is heavy, it's only loaded when someone opens a channel
         lazy: async () => ({ Component: (await import('@/pages/channel')).ChannelPage }),
+        // the chat is glued to the right edge like on twitch, so no centered column
+        handle: { fullWidth: true },
       },
       {
         element: <RequireAuth />,

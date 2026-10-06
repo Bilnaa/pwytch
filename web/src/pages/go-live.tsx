@@ -160,7 +160,7 @@ export function GoLivePage() {
         </Card>
 
         {/* the streamer reads and answers their chat from here */}
-        {busy && liveId !== null && <Chat key={liveId} streamId={liveId} className="lg:h-[32rem]" />}
+        {busy && liveId !== null && <Chat key={liveId} streamId={liveId} />}
       </div>
     </div>
   )
