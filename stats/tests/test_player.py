@@ -66,7 +66,7 @@ async def test_get_player_stats_does_not_mix_streams(client, session):
 
 @pytest.mark.anyio
 async def test_on_player_event_creates_then_increments_counter(
-    client, session_factory, monkeypatch
+    client, session_factory, fake_redis, monkeypatch
 ):
     # the handler opens its own session: point it to the test database
     monkeypatch.setattr(handlers, "SessionLocal", session_factory)
@@ -84,6 +84,7 @@ async def test_on_player_event_creates_then_increments_counter(
     assert first_response.json()["play"] == 1
 
     await on_player_event(event)
+    await fake_redis.flushall()
     second_response = await client.get("/stats/player/42")
 
     assert second_response.status_code == HTTPStatus.OK

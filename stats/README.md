@@ -9,6 +9,7 @@ live-chat ─MQTT chat/message────────┤
 main ──────MQTT player/event────────┴──> stats (consumer) ──upsert──> Postgres, schéma stats
                                                                             │
 front ──> main ──HTTP GET /stats/...──> stats (API) <───────────────────────┘
+                                             └──> Redis, cache des lectures (5 s)
 ```
 
 ## Lancer
@@ -26,7 +27,7 @@ En image Docker, le build se lance depuis la racine du repo, car l'image embarqu
 
     docker build -f stats/Dockerfile -t stats .
 
-Au démarrage, le service crée son schéma et ses tables s'ils n'existent pas, puis se connecte au broker. Il démarre aussi sans Postgres (un warning est journalisé) et sans broker (le client MQTT réessaie toutes les 5 secondes). Si Postgres était absent au démarrage, les tables ne sont créées qu'au redémarrage suivant.
+Au démarrage, le service crée son schéma et ses tables s'ils n'existent pas, puis se connecte au broker. Il démarre aussi sans Postgres (un warning est journalisé) et sans broker (le client MQTT réessaie toutes les 5 secondes). Si Postgres était absent au démarrage, les tables ne sont créées qu'au redémarrage suivant. Sans Redis, les routes lisent la base (voir « Cache »).
 
 ## Configuration
 
@@ -35,7 +36,7 @@ Les variables se mettent dans `stats/.env` (copier `.env.example`).
 | Variable       | Défaut                                                                 | Rôle                                   |
 |----------------|------------------------------------------------------------------------|----------------------------------------|
 | `DATABASE_URL` | `postgresql+psycopg://postgres:postgres@localhost:5432/microservices`  | Base Postgres (driver async psycopg 3) |
-| `REDIS_URL`    | `redis://localhost:6379/0`                                             | Cache des lectures (pas encore utilisé) |
+| `REDIS_URL`    | `redis://localhost:6379/0`                                             | Cache des lectures                      |
 | `MQTT_HOST`    | `localhost`                                                            | Hôte du broker MQTT                    |
 | `MQTT_PORT`    | `1883`                                                                 | Port du broker MQTT                    |
 
@@ -50,6 +51,7 @@ Les variables se mettent dans `stats/.env` (copier `.env.example`).
 | `models.py`       | Table `counter` |
 | `schemas.py`      | Réponses de l'API, une par compteur (`SearchCountResponse`, `BookmarkDeletedCountResponse`, `ChatMessageCountResponse`, `PlayerEventCountResponse`) |
 | `database.py`     | Engine async, sessions, dépendance `SessionDep` |
+| `cache.py`        | Client Redis async, dépendance `RedisDep`, clé de cache d'une requête, lecture et écriture |
 | `utils.py`        | Découpage des clés `type:id` |
 
 ## Compteurs
@@ -196,8 +198,40 @@ Un stream a jusqu'à trois lignes en base (`12:play`, `12:pause`, `12:stop`). La
 
 Les types d'events (`play`, `pause`, `stop`) sont écrits à trois endroits qui doivent rester alignés : le `Literal` de `PlayerEvent.event_type` dans `common`, la liste `EVENT_TYPES` de `routers/player.py`, et les champs de `PlayerEventCountResponse`. Un nouveau type ajouté dans `common` serait compté en base, mais n'apparaîtrait pas dans la réponse tant que les deux autres ne sont pas mis à jour.
 
+## Cache
+
+Les 7 routes de lecture (`GET /stats/...`, hors `/health`) sont mises en cache dans Redis (`app/cache.py`). Les stats sont les mêmes pour tous les admins : une seule entrée par requête, partagée.
+
+- La route lit Redis d'abord ; si la clé est absente, elle lit la base, écrit la réponse en cache, puis répond
+- Le header `X-Cache` dit d'où vient la réponse : `HIT` (Redis) ou `MISS` (base)
+- Une requête invalide (`422`) n'est pas mise en cache
+- Si Redis est indisponible, le cache est ignoré (un warning est journalisé) : les routes répondent depuis la base. Le client fait un seul essai (`retry=Retry(NoBackoff(), 0)`) avec des timeouts courts (0,5 s), pour qu'une panne de Redis ne ralentisse pas les routes
+
+### Expiration plutôt qu'invalidation
+
+Une entrée expire au bout de **5 secondes** (`CACHE_TTL_SECONDS`) : une stat peut donc avoir jusqu'à 5 s de retard. Les handlers ne vident pas le cache quand un compteur change :
+
+- les compteurs changent en permanence (chaque message du chat, chaque résultat de recherche) : vider le cache à chaque event le rendrait presque inutile
+- un event touche plusieurs entrées (le détail, et chaque top avec ses combinaisons de `limit` et de filtre) : il faudrait toutes les retrouver
+- avec un TTL, une lecture qui croise un event ne peut pas laisser une valeur périmée plus de 5 s
+
+Pour une statistique, quelques secondes de retard ne gênent pas l'admin.
+
+### Clés
+
+La clé est l'URL de la requête, préfixée par `stats:`, avec les paramètres de la query triés :
+
+| Requête | Clé |
+|---------|-----|
+| `GET /stats/chat/12` | `stats:/stats/chat/12` |
+| `GET /stats/search/top?limit=3&item_type=streamer` | `stats:/stats/search/top?item_type=streamer&limit=3` |
+
+Chaque route et chaque combinaison de paramètres a sa propre entrée, sans fonction de clé par route. Grâce au tri, `?limit=3&item_type=streamer` et `?item_type=streamer&limit=3` partagent la même entrée. Le préfixe `stats:` évite toute collision avec les clés de `bookmarks` dans le même Redis.
+
 ## Tests
 
     uv run pytest
 
-Les tests n'ont besoin ni de Postgres ni de Mosquitto : ils tournent sur SQLite en mémoire (`aiosqlite`), sans schéma (`schema_translate_map`). L'upsert Postgres passe aussi sur SQLite. Les routes sont testées avec un `AsyncClient` dont la session est remplacée, les handlers avec `monkeypatch` sur `SessionLocal`. Un fichier de tests par compteur : `test_search.py`, `test_bookmarks.py`, `test_chat.py` et `test_player.py`.
+Les tests n'ont besoin ni de Postgres, ni de Mosquitto, ni de Redis : ils tournent sur SQLite en mémoire (`aiosqlite`), sans schéma (`schema_translate_map`), et Redis est remplacé par `fakeredis` (`FakeAsyncRedis`). L'upsert Postgres passe aussi sur SQLite. Les routes sont testées avec un `AsyncClient` dont la session est remplacée, les handlers avec `monkeypatch` sur `SessionLocal`. Un fichier de tests par compteur : `test_search.py`, `test_bookmarks.py`, `test_chat.py` et `test_player.py`.
+
+`test_cache.py` vérifie le cache sur les 7 routes : `MISS` puis `HIT`, le TTL court, la relecture en base après expiration, une entrée par combinaison de paramètres, l'ordre des paramètres sans effet, une requête invalide jamais mise en cache, et les routes qui répondent avec Redis coupé. Les tests des handlers vident le cache (`flushall`) entre deux lectures : sinon la seconde lecture renverrait la valeur en cache.
