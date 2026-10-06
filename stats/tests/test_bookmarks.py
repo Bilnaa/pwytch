@@ -8,6 +8,7 @@ from common.topics import BOOKMARK_DELETED
 from app import handlers
 from app.counters import increment_counter
 from app.handlers import on_bookmark_deleted
+from app.utils import LIMIT_INTEGER
 
 
 async def record_deletions(session, deletions: dict[str, int]) -> None:
@@ -133,7 +134,8 @@ async def test_on_bookmark_deleted_creates_then_increments_counter(
 
 
 @pytest.mark.anyio
-async def test_get_bookmark_deleted_stats_non_numeric_target_id_returns_422(client):
-    response = await client.get("/stats/bookmarks/deleted/streamer/abc")
+@pytest.mark.parametrize("target_id", ["abc", "0", "-1", str(LIMIT_INTEGER + 1)])
+async def test_get_bookmark_deleted_stats_target_id_returns_422(client, target_id):
+    response = await client.get(f"/stats/bookmarks/deleted/streamer/{target_id}")
 
     assert response.status_code == HTTPStatus.UNPROCESSABLE_ENTITY

@@ -2,7 +2,7 @@ from typing import Annotated
 
 from common.events import TargetType
 from common.topics import BOOKMARK_DELETED
-from fastapi import APIRouter, Query, Request, Response
+from fastapi import APIRouter, Path, Query, Request, Response
 from pydantic import TypeAdapter
 from sqlalchemy import select
 
@@ -10,8 +10,10 @@ from app.cache import RedisDep, cache_key, read, write
 from app.database import SessionDep
 from app.models import Counter
 from app.schemas import BookmarkDeletedCountResponse
+from app.utils import LIMIT_INTEGER
 
 Limit = Annotated[int, Query(gt=0, le=500)]
+TargetId = Annotated[int, Path(gt=0, le=LIMIT_INTEGER)]
 
 BookmarkDeletedList = TypeAdapter(list[BookmarkDeletedCountResponse])
 
@@ -62,7 +64,7 @@ async def get_top_bookmark_deleted(
 @router.get("/stats/bookmarks/deleted/{target_type}/{target_id}")
 async def get_bookmark_deleted(
     target_type: TargetType,
-    target_id: int,
+    target_id: TargetId,  
     session: SessionDep,
     redis: RedisDep,
     request: Request,
