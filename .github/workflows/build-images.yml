@@ -52,3 +52,27 @@ jobs:
           tags: ${{ env.REGISTRY }}/pwytch-${{ matrix.service }}:${{ github.sha }}
           cache-from: type=gha,scope=${{ matrix.service }}
           cache-to: type=gha,mode=max,scope=${{ matrix.service }}
+
+  # Once all 7 images are published, point the dev manifests of the CD repo at them.
+  # One commit per build. The commit lands in another repo, so it cannot retrigger this workflow.
+  update-cd:
+    needs: build
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out the CD repo
+        uses: actions/checkout@v4
+        with:
+          repository: Bilnaa/pwytch-cd
+          ssh-key: ${{ secrets.CD_DEPLOY_KEY }}
+      - name: Update the image tags of dev
+        run: |
+          sed -i -E "s#(ghcr.io/bilnaa/pwytch-[a-z-]+):[0-9a-f]{40}#\1:${GITHUB_SHA}#" k8s/dev/*.yaml
+          git diff --stat
+      - name: Commit and push
+        run: |
+          git diff --quiet && echo "tags already up to date" && exit 0
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git commit -am "deploy(dev): images ${GITHUB_SHA::7}"
+          git pull --rebase
+          git push
