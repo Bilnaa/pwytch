@@ -30,7 +30,7 @@ export function HomePage() {
 
   return (
     <div className="space-y-4">
-      <h1 className="text-2xl font-semibold">Live channels</h1>
+      <h1 className="text-2xl font-semibold">Live channels (demo)</h1>
 
       {error && <p className="text-sm text-destructive">Cannot load the lives: {error}</p>}
 
